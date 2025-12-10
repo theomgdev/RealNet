@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 class RealNet:
-    def __init__(self, num_neurons, input_ids, output_ids):
+    def __init__(self, num_neurons, input_ids, output_ids, learning_rate=0.001):
         self.num_neurons = num_neurons
         self.input_ids = input_ids
         self.output_ids = output_ids
@@ -15,7 +15,7 @@ class RealNet:
         self.prev_values = np.zeros(num_neurons)
         
         # Hyperparameters
-        self.learning_rate = 0.001
+        self.learning_rate = learning_rate
         
     def activation(self, x):
         """ReLU Activation"""
@@ -134,10 +134,10 @@ class RealNet:
 
 def main():
     # Setup
-    num_neurons = 64
+    num_neurons = 61
     input_ids = [0]
-    output_ids = [63]
-    net = RealNet(num_neurons, input_ids, output_ids)
+    output_ids = [60]
+    net = RealNet(num_neurons, input_ids, output_ids, learning_rate=0.000376)
     
     print("Starting RealNet Convergence PoC...")
     print(f"Neurons: {num_neurons}, Input: {input_ids}, Output: {output_ids}")
