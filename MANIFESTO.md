@@ -60,11 +60,15 @@ After every training step, all weights in the network are normalized to the **[-
 
 ##### Strengthening/Weakening Amount
 
-The amount of strengthening/weakening is proportional to the difference in the firing values of the neurons. As the difference increases, the connection weakens; as it decreases, the connection strengthens. Simultaneously, the strengthening/weakening amount is multiplied by a learning factor to provide control over the learning curve.
+The amount of strengthening/weakening is proportional to the difference between the **Source Neuron's Value** and the **Independent Target Value**. As the difference increases, the connection weakens; as it decreases, the connection strengthens.
+*   **Small Difference (Correlation):** Connection strengthens (+).
+*   **Large Difference (No Correlation):** Connection weakens (-).
+
+Simultaneously, the strengthening/weakening amount is multiplied by a learning factor to provide control over the learning curve.
 
 ##### Weight and Value Explosion (Solved)
 
-In RealNet, the "Weight Explosion" problem is solved by the nature of the system's architecture. Since weights are always kept within **[-2, 2]** and values within **[0, 1]**, it is impossible for values to go to infinity. Additionally, during the standard training step, the contribution of the source neuron to the target neuron is calculated and subtracted, ensuring that connections are strengthened only based on indirect correlations. This prevents self-reinforcing loops.
+In RealNet, the "Weight Explosion" problem is solved by the nature of the system's architecture. Since weights are always kept within **[-2, 2]** and values within **[0, 1]**, it is impossible for values to go to infinity. Additionally, during the standard training step, the direct contribution of the source neuron to the target neuron (**Source Value * Weight**) is calculated and subtracted from the Target Neuron's current value. This calculation yields the **"Independent Target Value"** (the state the target would be in without the source). The training algorithm looks at the correlation between this **Independent Target Value** and the **Source Neuron's Value**. This prevents self-reinforcing loops.
 
 #### Dream Training Step
 
