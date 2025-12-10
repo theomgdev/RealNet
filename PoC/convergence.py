@@ -15,7 +15,7 @@ class RealNet:
         self.prev_values = np.zeros(num_neurons)
         
         # Hyperparameters
-        self.learning_rate = 0.01
+        self.learning_rate = 0.001
         
     def activation(self, x):
         """ReLU Activation"""

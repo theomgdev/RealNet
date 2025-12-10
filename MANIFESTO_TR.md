@@ -38,6 +38,10 @@ Ardından her nöron bu toplam değer üzerinden **ReLU** aktivasyon fonksiyonun
 
 *NOT:* RAM veya VRAM optimizasyonu için değerler bağlantıda bekletilmek yerine toplanıp hedef nöronda bir temp değişkeninde tutulabilir. Sonraki timestepte ise tempte bekletilen değer nöron sıfırlandığı için asıl değer yerine konulabilir. Böylelikle temp değişkenleri her bağlantı yerine her nöronda tutularak O(n^2) RAM yükünden O(n) RAM yüküne geçilir. Zaten bu geçici bekletmenin sebebi, verinin üst üste yazılmadan bozulmadan tutulmasıdır. Böylelikle her nöronun eş zamanlı çalıştığı illüzyonu başarıyla sıra sıra hesaplansa bile sağlanabilir.
 
+#### Düşünme Süresi (Thinking Time)
+
+RealNet, zamansal (temporal) bir ağdır. Veri, her timestepte bir nöron ileri gider. Bu yüzden, bir input verildiğinde, bu sinyalin ağın derinliklerine ulaşması, döngülerde işlenmesi ve output nöronlarında kararlı bir hale gelmesi için zaman gerekir. Tek bir timestepte input verip hemen output beklemek, ağın potansiyelini kullanmamak demektir. Hem eğitim (dream training) hem de çıkarım (inference) sırasında, inputlar ağa verildikten sonra ağın "düşünmesi" için (sinyallerin yayılması ve oturması için) belirli bir sayıda timestep (örneğin 5-10 adım) boyunca inputlar sabit tutularak ağ çalıştırılmalıdır. Bu süre zarfında ağ, veriyi zaman düzleminde işler ve daha karmaşık ilişkileri çözer.
+
 ### Training
 
 Training algoritması bilindik gradient descent, back-propagation, genetic algorithms veya reinforcement learning algoritmalardan oldukça farklıdır. Ağın eğitim algoritmasına popüler algoritmalar arasında en yakın olanı hebbian learning algoritmasıdır, yine de ağın eğitim algoritması hebbian learningden bile oldukça farklıdır. Hebbian learningden farklı olarak FTWT(fire together wire together) algoritması yerine FFWF(fire forward wire forward) adını koyduğum bir algoritma işler. Buradaki forward kelimesi inference esnasında timestepler arası zaman için kullanılır.

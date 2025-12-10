@@ -38,6 +38,10 @@ Subsequently, each neuron runs the **ReLU** activation function over this total 
 
 *NOTE:* For RAM or VRAM optimization, instead of holding values in the connection, they can be summed up and kept in a temp variable in the target neuron. In the next timestep, since the neuron is reset, the value held in temp can be put into the actual place.
 
+#### Thinking Time
+
+RealNet is a temporal network. Data moves one neuron forward at each timestep. Therefore, when an input is provided, time is required for this signal to reach the depths of the network, be processed in loops, and stabilize at the output neurons. Expecting an output immediately after a single timestep of input means failing to utilize the network's potential. During both training (dream training) and inference, after inputs are provided to the network, the network should be run for a certain number of timesteps (e.g., 5-10 steps) with the inputs held constant to allow the network to "think" (for signals to propagate and settle). During this period, the network processes the data in the time plane and resolves more complex relationships.
+
 ### Training
 
 The training algorithm is quite different from known gradient descent, back-propagation, genetic algorithms, or reinforcement learning algorithms. Among popular algorithms, the closest to the network's training algorithm is Hebbian learning; however, the network's training algorithm is quite distinct even from Hebbian learning. Unlike Hebbian learning's FTWT (fire together wire together) algorithm, an algorithm I named FFWF (fire forward wire forward) operates here.
