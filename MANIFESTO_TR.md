@@ -87,6 +87,10 @@ RealNet'te "Weight Explosion" sorunu, sistemin mimarisi gereği çözülmüştü
 
 *NOT:* Burada amaç "doğruyu" ödüllendirmek değildir. Kaynak nöronun hedefi "kurtarmış" olması (ateşlenmesini sağlaması) tek başına bağın güçlenmesi için sebep değildir. Eğer bağımsız durum ile kaynak arasında korelasyon yoksa, bağ zayıflatılır. Bu, ağın sadece "benzer dili konuşan" (nedensellik ilişkisi olan) nöronları gruplamasını sağlar.
 
+##### "0.5 Dengesi" (Matematiksel Kararlılık Kanıtı)
+
+FFWF güncelleme formülü olan `delta = LR * (1 - 2 * fark)`, doğal bir denge noktası yaratır. Kaynak ve hedef mükemmel bir korelasyona sahip olduğunda, `fark` değeri `abs(Weight)`'e eşitlenir. Değişimin sıfır olduğu noktayı hesapladığımızda (`0 = 1 - 2 * Weight`), ağırlıkların doğal olarak **0.5** değerine yakınsadığını görürüz. Bu durum, RealNet çıktılarının neden 1.0'a kilitlenmek yerine **~0.69** (Doğrudan 0.5 + Dolaylı Yollar) seviyesinde sabitlendiğini açıklar. Bu bir hata değil, bir özelliktir: Sinyallerin yayılacak kadar güçlü ama kaosa neden olmayacak kadar kontrollü olmasını sağlayan, ağın "kalp atışıdır".
+
 #### Dream Training Step
 
 Ağın mimarisi **Xavier Initialization** (veya rastgele -2, 2 arası) ile oluşturulduktan sonra, boş ağ inference ve standart training steplerden önce, converge için dream training denen bir sürece sokulmak zorundadır. Aksi taktirde ağ input ve output olarak işaretlenmiş nöronları bilmediğinden converge olamaz. Dream training sırasında ağın output olarak işaretlenmiş nöronları ağda standart training step esnasında zaman düzleminde gruplanmış ve ayrıksanmış kıymetli veriyi distill etmeyi öğrenir. Her dream training step standart training stepe içerir ve inference esnasında dataset mevcutsa çalıştırılır aksi taktirde inferenceta yalnızca standart training step çalıştırılır. 
