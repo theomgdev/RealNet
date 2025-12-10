@@ -39,112 +39,98 @@ class RealNet:
         # Scale to [0, 1] then to [-2, 2]
         self.weights = ((self.weights - w_min) / (w_max - w_min)) * 4 - 2
 
-    def step(self, inputs=None, targets=None, mode='inference'):
+    def step(self, inputs=None, targets=None, mode='inference', num_steps=1):
         """
-        Executes one timestep of RealNet.
+        Executes RealNet for num_steps timesteps.
         mode: 'inference' or 'dream'
+        num_steps: Number of timesteps to run with the given inputs/targets.
         """
-        # 1. Calculate Sums (Pre-activation)
-        # Each neuron receives sum of (prev_value * weight) from all other neurons
-        # We use a temporary sum variable as per manifesto
-        sums = np.dot(self.prev_values, self.weights)
+        total_loss = 0.0
+        steps_run = 0
         
-        # 2. Handle Inputs (Overwrite Input Neurons)
-        # "Input neuron carries exactly whatever comes from the external world"
-        # We do this BEFORE activation/normalization so it propagates correctly?
-        # Manifesto says: "This addition process is not performed for neurons marked as Input... external data overwrites this total."
-        if inputs is not None:
-            for i, val in inputs.items():
-                if i in self.input_ids:
-                    sums[i] = val # Overwrite the sum effectively, or just the value after?
-                    # "Input neuron carries exactly whatever comes from the external world"
-                    # If we overwrite the sum, it passes through ReLU. If input is -1, ReLU makes it 0.
-                    # If input is meant to be raw value, we should probably set it after activation?
-                    # "Negative inputs (inhibitory signals) completely silence the neuron (0)."
-                    # So inputs are subject to ReLU? 
-                    # "Input neuron carries exactly whatever comes from the external world (0 if no data)."
-                    # Let's assume inputs are positive [0, 1] usually.
-                    pass
+        # Ensure at least 1 step is run
+        steps_to_run = max(1, num_steps)
+        
+        for _ in range(steps_to_run):
+            # 1. Calculate Sums (Pre-activation)
+            # Each neuron receives sum of (prev_value * weight) from all other neurons
+            # We use a temporary sum variable as per manifesto
+            sums = np.dot(self.prev_values, self.weights)
+            
+            # 2. Handle Inputs (Overwrite Input Neurons)
+            if inputs is not None:
+                for i, val in inputs.items():
+                    if i in self.input_ids:
+                        sums[i] = val 
 
-        # 3. Activation (ReLU)
-        current_values = self.activation(sums)
-        
-        # Force inputs after activation to ensure they are exactly what is given (if we interpret "overwrites" strictly)
-        if inputs is not None:
-            for i, val in inputs.items():
-                if i in self.input_ids:
-                    current_values[i] = val
+            # 3. Activation (ReLU)
+            current_values = self.activation(sums)
+            
+            # Force inputs after activation to ensure they are exactly what is given
+            if inputs is not None:
+                for i, val in inputs.items():
+                    if i in self.input_ids:
+                        current_values[i] = val
 
-        # 4. Value Normalization [0, 1]
-        # Keep track of min/max for indirect correlation calculation later
-        v_min = np.min(current_values)
-        v_max = np.max(current_values)
-        current_values = self.normalize_values(current_values)
-        
-        # Re-force inputs after normalization? 
-        # Manifesto: "Input neuron carries exactly whatever comes from the external world"
-        # If we normalize, the input value might shift. 
-        # Let's assume inputs are already in [0, 1] and should stay that way relative to others?
-        # Or maybe inputs are immune to normalization?
-        # Let's re-apply inputs to be safe, as they are "external truth".
-        if inputs is not None:
-            for i, val in inputs.items():
-                if i in self.input_ids:
-                    current_values[i] = val
+            # 4. Value Normalization [0, 1]
+            # Keep track of min/max for indirect correlation calculation later
+            v_min = np.min(current_values)
+            v_max = np.max(current_values)
+            current_values = self.normalize_values(current_values)
+            
+            # Re-force inputs after normalization
+            if inputs is not None:
+                for i, val in inputs.items():
+                    if i in self.input_ids:
+                        current_values[i] = val
 
-        # 5. Dream Training (Overwrite Outputs)
-        loss = 0.0
-        if mode == 'dream' and targets is not None:
-            batch_errors = []
-            for i, val in targets.items():
-                if i in self.output_ids:
-                    # Calculate error before overwriting
-                    batch_errors.append((val - current_values[i]) ** 2)
-                    current_values[i] = val
-            if batch_errors:
-                loss = np.mean(batch_errors)
+            # 5. Dream Training (Overwrite Outputs)
+            step_loss = 0.0
+            if mode == 'dream' and targets is not None:
+                batch_errors = []
+                for i, val in targets.items():
+                    if i in self.output_ids:
+                        # Calculate error before overwriting
+                        batch_errors.append((val - current_values[i]) ** 2)
+                        current_values[i] = val
+                if batch_errors:
+                    step_loss = np.mean(batch_errors)
+            
+            total_loss += step_loss
+            steps_run += 1
+            
+            # 6. Training (FFWF)
+            # Compare current_values (state t) with prev_values (state t-1)
+            # Update weights based on correlation.
+            
+            # direct_contributions[i, j] = prev_values[i] * weights[i, j]
+            direct_contributions = self.prev_values[:, np.newaxis] * self.weights # Shape (N, N)
+            
+            # target_vals is current_values (which includes forced dream values)
+            # indirect_vals[i, j] = current_values[j] - direct_contributions[i, j]
+            target_vals_matrix = current_values[np.newaxis, :] # Shape (1, N)
+            indirect_vals = target_vals_matrix - direct_contributions
+            
+            # Calculate update
+            # We compare Source (prev_values[i]) with Target (indirect_vals[i, j])
+            source_vals_matrix = self.prev_values[:, np.newaxis] # Shape (N, 1)
+            
+            diff = np.abs(source_vals_matrix - indirect_vals)
+            
+            # Formula: delta = LR * (1 - 2 * diff)
+            updates = self.learning_rate * (1 - 2 * diff)
+            
+            # Apply updates
+            self.weights += updates
+            
+            # 7. Weight Normalization [-2, 2]
+            self.normalize_weights()
+            
+            # 8. Prepare for next step
+            self.prev_values = current_values.copy()
         
-        # 6. Training (FFWF)
-        # Compare current_values (state t) with prev_values (state t-1)
-        # Update weights based on correlation.
-        
-        # We need to calculate 'indirect' activation for the target neuron.
-        # "contribution of the source neuron to the target neuron is calculated and subtracted"
-        # We assume this subtraction happens in the value space.
-        
-        # direct_contributions[i, j] = prev_values[i] * weights[i, j]
-        direct_contributions = self.prev_values[:, np.newaxis] * self.weights # Shape (N, N)
-        
-        # target_vals is current_values (which includes forced dream values)
-        # indirect_vals[i, j] = current_values[j] - direct_contributions[i, j]
-        target_vals_matrix = current_values[np.newaxis, :] # Shape (1, N)
-        indirect_vals = target_vals_matrix - direct_contributions
-        
-        # Calculate update
-        # "Strengthening/Weakening Amount is proportional to the difference in the firing values"
-        # We compare Source (prev_values[i]) with Target (indirect_vals[i, j])
-        
-        source_vals_matrix = self.prev_values[:, np.newaxis] # Shape (N, 1)
-        
-        diff = np.abs(source_vals_matrix - indirect_vals)
-        
-        # Logic:
-        # Small diff -> Strengthen (+)
-        # Large diff -> Weaken (-)
-        # Formula: delta = LR * (1 - 2 * diff)
-        
-        updates = self.learning_rate * (1 - 2 * diff)
-        
-        # Apply updates
-        self.weights += updates
-        
-        # 7. Weight Normalization [-2, 2]
-        self.normalize_weights()
-        
-        # 8. Prepare for next step
-        self.prev_values = current_values.copy()
-        
-        return current_values, loss
+        avg_loss = total_loss / steps_run if steps_run > 0 else 0.0
+        return current_values, avg_loss
 
 def main():
     # Setup
@@ -161,48 +147,44 @@ def main():
     # Input: 0.0 -> Output: 0.0
     # We will alternate inputs and expect the network to learn the mapping.
     
-    epochs = 2000
-    history = []
-    prev_loss = 0.0
+    # Hyperparameters for Training
+    num_samples = 500  # Total number of pattern switches
+    steps_per_sample = 10 # How long to hold each pattern (Thinking time)
     
-    for i in range(epochs):
-        # Alternate pattern
-        val = 1.0 if i % 2 == 0 else 0.0
+    history = []
+    
+    print(f"Training for {num_samples} samples with {steps_per_sample} steps each...")
+
+    for sample_idx in range(num_samples):
+        # Alternate pattern per sample, not per step
+        val = 1.0 if sample_idx % 2 == 0 else 0.0
         inputs = {0: val}
         targets = {31: val}
         
         # Run Step (Dream Mode for training)
-        outputs, loss = net.step(inputs=inputs, targets=targets, mode='dream')
+        # We keep inputs and targets constant for 'steps_per_sample' duration
+        outputs, loss = net.step(inputs=inputs, targets=targets, mode='dream', num_steps=steps_per_sample)
         
-        loss_diff = loss - prev_loss
-        prev_loss = loss
-        
-        # Monitor error (MSE on output neuron)
-        if i % 100 == 0:
-            # Test Inference
-            print(f"Epoch {i}: Loss: {loss:.6f}, Diff: {loss_diff:.6f}, Weights Min/Max: {np.min(net.weights):.2f}/{np.max(net.weights):.2f}")
-            # print(f"Sample Weights (Input->First): {net.weights[0, 1:5]}")
+        # Monitor error
+        if sample_idx % 50 == 0:
+            print(f"Sample {sample_idx}: Avg Loss: {loss:.6f}, Weights Min/Max: {np.min(net.weights):.2f}/{np.max(net.weights):.2f}")
 
-    print("\nTraining Complete. Testing...")
+    print("\nTraining Complete. Testing with Thinking Time...")
     
-    # Test 1: Input 1.0
-    # We need to run a few steps to let signal propagate? 
-    # RealNet is temporal. Input at T affects Output at T+1 (or later depending on path).
-    # Since it's fully connected, T+1 should show some effect.
-    
-    # Reset network state (optional, but good for clean test)
-    net.prev_values = np.zeros(num_neurons)
-    
-    print("\nTest Case: Input 1.0")
-    net.step(inputs={0: 1.0}, mode='inference') # T=1 (Input injected)
-    out_t1, _ = net.step(inputs={0: 0.0}, mode='inference') # T=2 (Signal propagates)
-    print(f"Output at T+1: {out_t1[31]:.4f}")
-    
-    print("\nTest Case: Input 0.0")
-    net.prev_values = np.zeros(num_neurons) # Reset
-    net.step(inputs={0: 0.0}, mode='inference')
-    out_t1, _ = net.step(inputs={0: 0.0}, mode='inference')
-    print(f"Output at T+1: {out_t1[31]:.4f}")
+    # Helper to run test
+    def run_test(input_val, steps=10):
+        print(f"\nTest Case: Input {input_val}")
+        net.prev_values = np.zeros(num_neurons) # Reset state for clean test
+        
+        # Step 1: Inject Input with thinking time
+        inputs = {0: input_val}
+        
+        # Run inference with thinking time
+        out, _ = net.step(inputs=inputs, mode='inference', num_steps=steps)
+        print(f"  Final Output after {steps} steps: {out[31]:.4f}")
+
+    run_test(1.0)
+    run_test(0.0)
 
 if __name__ == "__main__":
     main()
