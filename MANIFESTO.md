@@ -28,6 +28,11 @@ A strict normalization cycle is applied to prevent the system from exploding and
 * **Weight Normalization:** After every operation or learning step, **all** weights in the network are forcibly normalized to the **[-2, 2]** range based on their current minimum and maximum values (Min-Max Normalization).
 * **Value Normalization:** In every inference step, the outputs of activated neurons are normalized to the **[0, 1]** range based on the current population status.
 
+**3. Natural Attention and Data Distillation:**
+RealNet's normalization and ReLU cycle actually acts like a **"Self-Attention"** mechanism running at every step. Every time data jumps from one neuron to another, it is filtered and distilled through this mechanism. Important signals (high activation) survive and are carried to the next step, while unimportant data (noise) is suppressed and silenced.
+
+The same principle occurs in memory through **Weight Normalization**. This is a form of **Meta-Learning** (Learning to Learn) mechanism. Not only instantaneous data but also learned information (connections) are under constant competition and selection. While important connections strengthen, those that become unimportant (lose focus) are erased from the system. This ensures the network pays "attention" not just to the data, but to its own learning process. Instead of calculating "where should I focus" with expensive matrix operations as in Transformer architectures, RealNet keeps both data and knowledge in focus through **natural selection**.
+
 Thanks to this structure, if one connection strengthens excessively (hitting the -2 or 2 limit), other connections must mathematically weaken. This is a natural, Darwinian mechanism that ensures the network forgets old and unnecessary information to make room for new information. There is no need for complex decay formulas.
 
 ## Algorithms

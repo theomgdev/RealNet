@@ -28,6 +28,11 @@ Sistemin patlamaması ve sürekli öğrenmeye açık olması için katı bir nor
 * **Weight (Ağırlık) Normalizasyonu:** Her işlem veya öğrenme adımından sonra ağdaki **tüm** ağırlıklar, o anki minimum ve maksimum değerlerine göre **[-2, 2]** aralığına zorla normalize edilir (Min-Max Normalization).
 * **Value (Değer) Normalizasyonu:** Her inference adımında aktifleşen nöronların çıktıları, o anki popülasyonun durumuna göre **[0, 1]** arasına normalize edilir.
 
+**3. Doğal Dikkat ve Veri Damıtma (Natural Attention):**
+RealNet'in bu normalizasyon ve ReLU döngüsü, aslında her adımda çalışan bir **"Self-Attention"** mekanizması gibi davranır. Veri bir nörondan diğerine her sıçradığında, bu mekanizma sayesinde filtrelenir ve damıtılır. Önemli sinyaller (yüksek aktivasyon) hayatta kalıp bir sonraki adıma taşınırken, önemsiz veriler (gürültü) baskılanarak susturulur.
+
+Aynı prensip **Weight Normalization** ile hafızada da gerçekleşir. Bu bir tür **Meta-Learning** (Öğrenmeyi Öğrenme) mekanizmasıdır. Sadece anlık veri değil, öğrenilen bilgi (bağlantılar) de sürekli bir rekabet ve seleksiyon altındadır. Önemli bağlantılar güçlenirken, önemsizleşenler (odak dışı kalanlar) sistemden silinir. Bu, ağın sadece veriye değil, kendi öğrenme sürecine de "dikkat" etmesini sağlar. Transformers mimarilerindeki gibi pahalı matris işlemleriyle "nereye odaklanmalıyım" diye hesaplamak yerine, RealNet **doğal seleksiyon** ile hem veriyi hem de bilgiyi odakta tutar.
+
 Bu yapı sayesinde, bir bağlantı aşırı güçlenirse (-2 veya 2 sınırına dayanırsa), diğer bağlantılar matematiksel zorunluluk olarak zayıflar. Bu, ağın eski ve gereksiz bilgileri unutup yeni bilgiye yer açmasını sağlayan doğal, Darwinist bir mekanizmadır. Karmaşık decay formüllerine gerek kalmaz.
 
 ## Algoritmalar
