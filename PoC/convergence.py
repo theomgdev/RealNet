@@ -134,9 +134,9 @@ class RealNet:
 
 def main():
     # Setup
-    num_neurons = 32
+    num_neurons = 64
     input_ids = [0]
-    output_ids = [31]
+    output_ids = [63]
     net = RealNet(num_neurons, input_ids, output_ids)
     
     print("Starting RealNet Convergence PoC...")
@@ -148,8 +148,8 @@ def main():
     # We will alternate inputs and expect the network to learn the mapping.
     
     # Hyperparameters for Training
-    num_samples = 500  # Total number of pattern switches
-    steps_per_sample = 10 # How long to hold each pattern (Thinking time)
+    num_samples = 2000  # Increased for better convergence
+    steps_per_sample = 5 # Sweet spot for thinking time
     
     history = []
     
@@ -159,7 +159,7 @@ def main():
         # Alternate pattern per sample, not per step
         val = 1.0 if sample_idx % 2 == 0 else 0.0
         inputs = {0: val}
-        targets = {31: val}
+        targets = {output_ids[0]: val}
         
         # Run Step (Dream Mode for training)
         # We keep inputs and targets constant for 'steps_per_sample' duration
@@ -172,16 +172,16 @@ def main():
     print("\nTraining Complete. Testing with Thinking Time...")
     
     # Helper to run test
-    def run_test(input_val, steps=10):
+    def run_test(input_val, steps=steps_per_sample):
         print(f"\nTest Case: Input {input_val}")
         net.prev_values = np.zeros(num_neurons) # Reset state for clean test
         
         # Step 1: Inject Input with thinking time
-        inputs = {0: input_val}
+        inputs = {input_ids[0]: input_val}
         
         # Run inference with thinking time
         out, _ = net.step(inputs=inputs, mode='inference', num_steps=steps)
-        print(f"  Final Output after {steps} steps: {out[31]:.4f}")
+        print(f"  Final Output after {steps} steps: {out[output_ids[0]]:.4f}")
 
     run_test(1.0)
     run_test(0.0)
