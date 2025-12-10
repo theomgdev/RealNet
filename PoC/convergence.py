@@ -93,10 +93,16 @@ class RealNet:
                     current_values[i] = val
 
         # 5. Dream Training (Overwrite Outputs)
+        loss = 0.0
         if mode == 'dream' and targets is not None:
+            batch_errors = []
             for i, val in targets.items():
                 if i in self.output_ids:
+                    # Calculate error before overwriting
+                    batch_errors.append((val - current_values[i]) ** 2)
                     current_values[i] = val
+            if batch_errors:
+                loss = np.mean(batch_errors)
         
         # 6. Training (FFWF)
         # Compare current_values (state t) with prev_values (state t-1)
@@ -138,7 +144,7 @@ class RealNet:
         # 8. Prepare for next step
         self.prev_values = current_values.copy()
         
-        return current_values
+        return current_values, loss
 
 def main():
     # Setup
@@ -157,6 +163,7 @@ def main():
     
     epochs = 2000
     history = []
+    prev_loss = 0.0
     
     for i in range(epochs):
         # Alternate pattern
@@ -165,12 +172,15 @@ def main():
         targets = {31: val}
         
         # Run Step (Dream Mode for training)
-        outputs = net.step(inputs=inputs, targets=targets, mode='dream')
+        outputs, loss = net.step(inputs=inputs, targets=targets, mode='dream')
+        
+        loss_diff = loss - prev_loss
+        prev_loss = loss
         
         # Monitor error (MSE on output neuron)
         if i % 100 == 0:
             # Test Inference
-            print(f"Epoch {i}: Weights Min/Max: {np.min(net.weights):.2f}/{np.max(net.weights):.2f}")
+            print(f"Epoch {i}: Loss: {loss:.6f}, Diff: {loss_diff:.6f}, Weights Min/Max: {np.min(net.weights):.2f}/{np.max(net.weights):.2f}")
             # print(f"Sample Weights (Input->First): {net.weights[0, 1:5]}")
 
     print("\nTraining Complete. Testing...")
@@ -185,13 +195,13 @@ def main():
     
     print("\nTest Case: Input 1.0")
     net.step(inputs={0: 1.0}, mode='inference') # T=1 (Input injected)
-    out_t1 = net.step(inputs={0: 0.0}, mode='inference') # T=2 (Signal propagates)
+    out_t1, _ = net.step(inputs={0: 0.0}, mode='inference') # T=2 (Signal propagates)
     print(f"Output at T+1: {out_t1[31]:.4f}")
     
     print("\nTest Case: Input 0.0")
     net.prev_values = np.zeros(num_neurons) # Reset
     net.step(inputs={0: 0.0}, mode='inference')
-    out_t1 = net.step(inputs={0: 0.0}, mode='inference')
+    out_t1, _ = net.step(inputs={0: 0.0}, mode='inference')
     print(f"Output at T+1: {out_t1[31]:.4f}")
 
 if __name__ == "__main__":
