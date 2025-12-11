@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 class RealNet:
-    def __init__(self, num_neurons, input_ids, output_ids, learning_rate=0.001, noise_filter=0.0000001):
+    def __init__(self, num_neurons, input_ids, output_ids, learning_rate=0.001, noise_filter=0.0000001, pulse_mode=True):
         self.num_neurons = num_neurons
         self.input_ids = input_ids
         self.output_ids = output_ids
@@ -17,6 +17,11 @@ class RealNet:
         # Hyperparameters
         self.learning_rate = learning_rate
         self.noise_filter = noise_filter
+        
+        # Pulse Mode (default: True)
+        # When enabled: Input is injected ONLY at the first step, Output is overwritten ONLY at the last step
+        # When disabled (Continuous Mode): Input/Output are overwritten at EVERY step (legacy behavior)
+        self.pulse_mode = pulse_mode
         
     def activation(self, x):
         """
@@ -57,6 +62,14 @@ class RealNet:
         Executes RealNet for num_steps timesteps.
         mode: 'inference' or 'dream'
         num_steps: Number of timesteps to run with the given inputs/targets.
+        
+        Pulse Mode (default):
+            - Input is injected ONLY at the FIRST step (pulse in)
+            - Output is overwritten ONLY at the LAST step (pulse out)
+            - Between steps, the network "thinks" freely without locked signals
+            
+        Continuous Mode (pulse_mode=False):
+            - Input/Output are overwritten at EVERY step (legacy behavior)
         """
         total_loss = 0.0
         steps_run = 0
@@ -64,14 +77,27 @@ class RealNet:
         # Ensure at least 1 step is run
         steps_to_run = max(1, num_steps)
         
-        for _ in range(steps_to_run):
+        for step_idx in range(steps_to_run):
+            is_first_step = (step_idx == 0)
+            is_last_step = (step_idx == steps_to_run - 1)
+            
+            # Determine if we should inject inputs/outputs this step
+            if self.pulse_mode:
+                # Pulse Mode: Input only at first, Output only at last
+                inject_inputs = is_first_step
+                inject_outputs = is_last_step
+            else:
+                # Continuous Mode: Always inject (legacy behavior)
+                inject_inputs = True
+                inject_outputs = True
+            
             # 1. Calculate Sums (Pre-activation)
             # Each neuron receives sum of (prev_value * weight) from all other neurons
             # We use a temporary sum variable as per manifesto
             sums = np.dot(self.prev_values, self.weights)
             
-            # 2. Handle Inputs (Overwrite Input Neurons)
-            if inputs is not None:
+            # 2. Handle Inputs (Overwrite Input Neurons) - based on mode
+            if inject_inputs and inputs is not None:
                 for i, val in inputs.items():
                     if i in self.input_ids:
                         sums[i] = val 
@@ -80,7 +106,7 @@ class RealNet:
             current_values = self.activation(sums)
             
             # Force inputs after activation to ensure they are exactly what is given
-            if inputs is not None:
+            if inject_inputs and inputs is not None:
                 for i, val in inputs.items():
                     if i in self.input_ids:
                         current_values[i] = val
@@ -91,15 +117,15 @@ class RealNet:
             v_max = np.max(current_values)
             current_values = self.normalize_values(current_values)
             
-            # Re-force inputs after normalization
-            if inputs is not None:
+            # Re-force inputs after normalization (only if injecting this step)
+            if inject_inputs and inputs is not None:
                 for i, val in inputs.items():
                     if i in self.input_ids:
                         current_values[i] = val
 
-            # 5. Dream Training (Overwrite Outputs)
+            # 5. Dream Training (Overwrite Outputs) - based on mode
             step_loss = 0.0
-            if mode == 'dream' and targets is not None:
+            if mode == 'dream' and targets is not None and inject_outputs:
                 batch_errors = []
                 for i, val in targets.items():
                     if i in self.output_ids:

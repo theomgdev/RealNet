@@ -56,7 +56,23 @@ Subsequently, each neuron runs the **ReLU** activation function over this total 
 
 #### Thinking Time
 
-RealNet is a temporal network. Data moves one neuron forward at each timestep. Therefore, when an input is provided, time is required for this signal to reach the depths of the network, be processed in loops, and stabilize at the output neurons. Expecting an output immediately after a single timestep of input means failing to utilize the network's potential. During both training (dream training) and inference, after inputs are provided to the network, the network should be run for a certain number of timesteps (e.g., 5-10 steps) with the inputs held constant to allow the network to "think" (for signals to propagate and settle). During this period, the network processes the data in the time plane and resolves more complex relationships.
+RealNet is a temporal network. Data moves one neuron forward at each timestep. Therefore, when an input is provided, time is required for this signal to reach the depths of the network, be processed in loops, and stabilize at the output neurons. Expecting an output immediately after a single timestep of input means failing to utilize the network's potential. During both training (dream training) and inference, after inputs are provided to the network, the network should be run for a certain number of timesteps (e.g., 5-10 steps) to allow the network to "think" (for signals to propagate and settle). During this period, the network processes the data in the time plane and resolves more complex relationships.
+
+#### Pulse Mode (Default)
+
+Instead of continuously locking input/output neurons at every timestep (Continuous Mode), **Pulse Mode** offers a more natural and brain-like approach:
+
+*   **Pulse In (First Step):** The input signal is injected **only at the first timestep** of the thinking period. This is analogous to a sensory impulse reaching the brain.
+*   **Free Thinking (Intermediate Steps):** During intermediate steps, the network processes data **freely** without any locked signals. Inputs propagate naturally through the network, interacting with loops and internal representations. The network genuinely "thinks."
+*   **Pulse Out (Last Step):** The target output is overwritten (in dream training) **only at the final timestep**. This allows the network to develop its own prediction before the "teacher" provides the answer.
+
+**Why Pulse Mode?**
+
+1.  **Natural Signal Flow:** Biological neurons don't receive the same signal locked continuously. They receive an impulse and process its echoes.
+2.  **Richer Internal Dynamics:** By not locking inputs every step, the network can develop more complex internal states and utilize its cyclic memory structures.
+3.  **Better Temporal Credit Assignment:** The target is applied only at the end, creating a cleaner gradient signal for learning temporal dependencies.
+
+Pulse Mode is **enabled by default**. To use the legacy Continuous Mode (locking signals at every step), it can be explicitly disabled.
 
 ### Training
 

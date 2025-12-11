@@ -56,7 +56,23 @@ Ardından her nöron bu toplam değer üzerinden **ReLU** aktivasyon fonksiyonun
 
 #### Düşünme Süresi (Thinking Time)
 
-RealNet, zamansal (temporal) bir ağdır. Veri, her timestepte bir nöron ileri gider. Bu yüzden, bir input verildiğinde, bu sinyalin ağın derinliklerine ulaşması, döngülerde işlenmesi ve output nöronlarında kararlı bir hale gelmesi için zaman gerekir. Tek bir timestepte input verip hemen output beklemek, ağın potansiyelini kullanmamak demektir. Hem eğitim (dream training) hem de çıkarım (inference) sırasında, inputlar ağa verildikten sonra ağın "düşünmesi" için (sinyallerin yayılması ve oturması için) belirli bir sayıda timestep (örneğin 5-10 adım) boyunca inputlar sabit tutularak ağ çalıştırılmalıdır. Bu süre zarfında ağ, veriyi zaman düzleminde işler ve daha karmaşık ilişkileri çözer.
+RealNet, zamansal (temporal) bir ağdır. Veri, her timestepte bir nöron ileri gider. Bu yüzden, bir input verildiğinde, bu sinyalin ağın derinliklerine ulaşması, döngülerde işlenmesi ve output nöronlarında kararlı bir hale gelmesi için zaman gerekir. Tek bir timestepte input verip hemen output beklemek, ağın potansiyelini kullanmamak demektir. Hem eğitim (dream training) hem de çıkarım (inference) sırasında, inputlar ağa verildikten sonra ağın "düşünmesi" için (sinyallerin yayılması ve oturması için) belirli bir sayıda timestep (örneğin 5-10 adım) boyunca ağ çalıştırılmalıdır. Bu süre zarfında ağ, veriyi zaman düzleminde işler ve daha karmaşık ilişkileri çözer.
+
+#### Nabız Modu (Pulse Mode) - Varsayılan
+
+Her timestepte input/output nöronlarını sürekli kilitlemek (Continuous Mode) yerine, **Nabız Modu** daha doğal ve beyin benzeri bir yaklaşım sunar:
+
+*   **Nabız Girişi (İlk Adım):** Input sinyali, düşünme süresinin **yalnızca ilk timestep'inde** enjekte edilir. Bu, beyne ulaşan duyusal bir uyarana benzer.
+*   **Serbest Düşünme (Ara Adımlar):** Ara adımlarda, ağ hiçbir kilitli sinyal olmadan veriyi **serbestçe** işler. Inputlar ağ boyunca doğal olarak yayılır, döngülerle ve iç temsillerle etkileşir. Ağ gerçek anlamda "düşünür."
+*   **Nabız Çıkışı (Son Adım):** Hedef çıktı (dream training'de) **yalnızca son timestep'te** overwrite edilir. Bu, ağın "öğretmen" cevabı vermeden önce kendi tahminini geliştirmesine olanak tanır.
+
+**Neden Nabız Modu?**
+
+1.  **Doğal Sinyal Akışı:** Biyolojik nöronlar aynı sinyali sürekli kilitli olarak almazlar. Bir uyaran alır ve onun yankılarını işlerler.
+2.  **Daha Zengin İç Dinamikler:** Inputları her adımda kilitlemeyerek, ağ daha karmaşık iç durumlar geliştirebilir ve döngüsel bellek yapılarını kullanabilir.
+3.  **Daha İyi Zamansal Kredi Ataması:** Hedef yalnızca sonda uygulandığından, zamansal bağımlılıkları öğrenmek için daha temiz bir gradyan sinyali oluşturur.
+
+Nabız Modu **varsayılan olarak etkindir**. Eski Sürekli Modu (her adımda sinyalleri kilitleyen) kullanmak için, açıkça devre dışı bırakılabilir.
 
 ### Training
 
