@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 class RealNet:
-    def __init__(self, num_neurons, input_ids, output_ids, learning_rate=0.001):
+    def __init__(self, num_neurons, input_ids, output_ids, learning_rate=0.001, noise_filter=0.0000001):
         self.num_neurons = num_neurons
         self.input_ids = input_ids
         self.output_ids = output_ids
@@ -16,10 +16,23 @@ class RealNet:
         
         # Hyperparameters
         self.learning_rate = learning_rate
+        self.noise_filter = noise_filter
         
     def activation(self, x):
-        """ReLU Activation"""
-        return np.maximum(0, x)
+        """
+        Modified Activation: ln(x) + shift_y clipped at 0.
+        shift_y is derived from noise_filter: shift_y = -ln(noise_filter)
+        This ensures that activation starts from 0 at x = noise_filter.
+        """
+        # Avoid log(0) issue if noise_filter is too small, though 1e-320 is min float
+        safe_filter = max(self.noise_filter, 1e-300) 
+        shift_y = -np.log(safe_filter)
+        threshold = safe_filter
+        
+        out = np.zeros_like(x)
+        mask = x > threshold
+        out[mask] = np.log(x[mask]) + shift_y
+        return out
     
     def normalize_values(self, values):
         """Normalize values to [0, 1] based on population min/max"""

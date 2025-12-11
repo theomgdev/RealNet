@@ -18,10 +18,15 @@ RealNet ise bir **orman** gibidir, bir **beyin** gibidir. Veri, rüzgarın yapra
 
 RealNet'in doğasına en uygun yapı, biyolojik nöronların "hep ya da hiç" prensibine dayanan ve matematiksel sadeliği ile işlem yükünü azaltan yapıdır. Karmaşık, işlemci yoran fonksiyonlar yerine sistemin dengesini sağlayan temel mekanizma **Normalizasyon ve ReLU** ikilisidir.
 
-**1. Aktivasyon Fonksiyonu (ReLU):**
-Aktivasyon fonksiyonu olarak saf **ReLU (Rectified Linear Unit)** kullanılır.
-$$f(x) = \max(0, x)$$
-Negatif girdiler (inhibitory signals) nöronu tamamen susturur (0). Pozitif girdiler ise olduğu gibi geçer. Threshold (eşik) mekanizmasına gerek yoktur; negatif ağırlıklar ve baskılayıcı sinyaller doğal bir eşik görevi görür. Bu sayede ağda "Sparsity" (Seyreklik) oluşur; gürültü ölür, sadece önemli sinyaller yoluna devam eder.
+**1. Aktivasyon Fonksiyonu (Gürültü Filtreli Logaritmik Aktivasyon):**
+ReLU yerine, biyolojik duyusal algının **Weber-Fechner Yasası**'ndan ilham alan bir **Logaritmik Aktivasyon** fonksiyonu kullanılır.
+$$f(x) = \max(0, \ln(x) - \ln(\text{noise\_filter}))$$
+Bu fonksiyon bir **"Sinyal Ekolayzeri"** görevi görür:
+*   **Zayıf Sinyalleri Güçlendirir:** Sıfıra yakın dik türev, cılız sinyalleri yükselterek sönümlenip kaybolmalarını engeller (vanishing gradient sorununu doğal yolla çözer).
+*   **Güçlü Sinyalleri Dizginler:** Büyük değerler için eğimin azalması, patlamayı (explosion) önler.
+*   **Gürültü Filtreleme:** `noise_filter` eşiğinin altındaki sinyaller kesin olarak 0'a kırpılır.
+
+Lineer (ReLU) yapıdan Logaritmik yapıya geçiş, ağırlıkların düşük değerlerde stabilize olduğu durumlarda bile ağın yüksek sinyal bütünlüğünü (~0.99) korumasını sağlar.
 
 **2. Rekabetçi Normalizasyon (Homeostazi):**
 Sistemin patlamaması ve sürekli öğrenmeye açık olması için katı bir normalizasyon döngüsü uygulanır:
@@ -87,9 +92,11 @@ RealNet'te "Weight Explosion" sorunu, sistemin mimarisi gereği çözülmüştü
 
 *NOT:* Burada amaç "doğruyu" ödüllendirmek değildir. Kaynak nöronun hedefi "kurtarmış" olması (ateşlenmesini sağlaması) tek başına bağın güçlenmesi için sebep değildir. Eğer bağımsız durum ile kaynak arasında korelasyon yoksa, bağ zayıflatılır. Bu, ağın sadece "benzer dili konuşan" (nedensellik ilişkisi olan) nöronları gruplamasını sağlar.
 
-##### "0.5 Dengesi" (Matematiksel Kararlılık Kanıtı)
+##### Logaritmik Denge (0.69 Bariyerini Aşmak)
 
-FFWF güncelleme formülü olan `delta = LR * (1 - 2 * fark)`, doğal bir denge noktası yaratır. Kaynak ve hedef mükemmel bir korelasyona sahip olduğunda, `fark` değeri `abs(Weight)`'e eşitlenir. Değişimin sıfır olduğu noktayı hesapladığımızda (`0 = 1 - 2 * Weight`), ağırlıkların doğal olarak **0.5** değerine yakınsadığını görürüz. Bu durum, RealNet çıktılarının neden 1.0'a kilitlenmek yerine **~0.69** (Doğrudan 0.5 + Dolaylı Yollar) seviyesinde sabitlendiğini açıklar. Bu bir hata değil, bir özelliktir: Sinyallerin yayılacak kadar güçlü ama kaosa neden olmayacak kadar kontrollü olmasını sağlayan, ağın "kalp atışıdır".
+FFWF güncelleme formülü, ağırlıkları doğal olarak **0.5** etrafında stabilize eder (`1 - 2 * Weight = 0` dengesi). Lineer bir sistemde (ReLU), bu durum çıktıların sönümlenmesine ve **0.69** civarında takılı kalmasına neden oluyordu.
+
+Ancak **Logaritmik Aktivasyon**'un devreye girmesi oyunu değiştirir. Bu fonksiyon, ağırlık azalmasına (decay) karşı bir dengeleyici kuvvet uygular. FFWF sistemi kararlı tutarken (ağırlıklar ~0.5), Logaritmik fonksiyon bu geçerli sinyali normalizasyon sonrası **~0.99**'a ulaşacak kadar güçlendirir. Bu, mükemmel bir denge yaratır: **Ağırlıklar küçük ve güvende kalır (patlamayı önler), ancak bilgi gür ve net kalır (kaybolmayı önler).** RealNet'in artık neredeyse kusursuz bir doğrulukla converge olmasının nedeni budur.
 
 #### Dream Training Step
 

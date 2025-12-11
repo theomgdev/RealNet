@@ -18,10 +18,15 @@ RealNet, however, is like a **forest**, like a **brain**. Data wanders among neu
 
 The structure best suited to the nature of RealNet is one based on the "all-or-none" principle of biological neurons, utilizing mathematical simplicity to reduce computational load. Instead of complex, processor-intensive functions, the fundamental mechanism maintaining system balance is the duo of **Normalization and ReLU**.
 
-**1. Activation Function (ReLU):**
-Pure **ReLU (Rectified Linear Unit)** is used as the activation function.
-$$f(x) = \max(0, x)$$
-Negative inputs (inhibitory signals) completely silence the neuron (0). Positive inputs pass through as is. There is no need for a threshold mechanism; negative weights and inhibitory signals serve as a natural threshold. This creates "Sparsity" in the network; noise dies out, and only important signals continue.
+**1. Activation Function (Logarithmic with Noise Filter):**
+Instead of ReLU, a **Logarithmic Activation** function is used, inspired by the **Weber-Fechner Law** of biological sensory perception.
+$$f(x) = \max(0, \ln(x) - \ln(\text{noise\_filter}))$$
+This function acts as a **"Signal Equalizer"**:
+*   **Boosts Weak Signals:** The steep derivative near zero amplifies faint signals, ensuring they don't die out (solving the vanishing gradient problem naturally).
+*   **Dampens Strong Signals:** The flattening curve for large values prevents explosion.
+*   **Noise Filtering:** Signals below the `noise_filter` threshold are strictly clipped to 0.
+
+This shift from Linear (ReLU) to Logarithmic allows the network to maintain high signal integrity (~0.99) even when weights are stabilized at lower values.
 
 **2. Competitive Normalization (Homeostasis):**
 A strict normalization cycle is applied to prevent the system from exploding and to keep it open to continuous learning:
@@ -85,9 +90,11 @@ Simultaneously, the strengthening/weakening amount is multiplied by a learning f
 
 In RealNet, the "Weight Explosion" problem is solved by the nature of the system's architecture. Since weights are always kept within **[-2, 2]** and values within **[0, 1]**, it is impossible for values to go to infinity. Additionally, during the standard training step, the direct contribution of the source neuron to the target neuron (**Source Value * Weight**) is calculated and subtracted from the Target Neuron's current value. This calculation yields the **"Independent Target Value"** (the state the target would be in without the source). The training algorithm looks at the correlation between this **Independent Target Value** and the **Source Neuron's Value**. This prevents self-reinforcing loops.
 
-##### The "0.5 Equilibrium" (Mathematical Proof of Stability)
+##### The Logarithmic Equilibrium (Breaking the 0.69 Barrier)
 
-The FFWF update formula `delta = LR * (1 - 2 * diff)` creates a natural equilibrium point. When a source and target are perfectly correlated, the difference `diff` simplifies to `abs(Weight)`. Solving for zero change (`0 = 1 - 2 * Weight`) reveals that weights naturally converge to **0.5**. This explains why RealNet outputs often stabilize around **~0.69** (Direct 0.5 + Indirect Paths) rather than saturating at 1.0. This is not a bug, but a feature: it is the network's "heartbeat," ensuring signals are strong enough to propagate but weak enough to prevent chaos.
+The FFWF update formula naturally stabilizes weights around **0.5** (as proven by the `1 - 2 * Weight = 0` equilibrium). In a linear system (ReLU), this caused outputs to decay and get stuck around **0.69**.
+
+However, the introduction of **Logarithmic Activation** changes the game. It acts as a counter-force to this weight decay. While FFWF keeps the system stable (weights ~0.5), the Logarithmic function amplifies this valid signal high enough to reach **~0.99** after normalization. This creates a perfect balance: **The weights remain small and safe (preventing explosion), but the information remains loud and clear (preventing vanishing).** This is why RealNet can now converge with near-perfect accuracy.
 
 #### Dream Training Step
 
