@@ -18,12 +18,14 @@ def main():
     print("Initializing training script...")
     # 1. Config
     # Use a small model for quick verification
+    # Model Config
     model_config = RealNetConfig(
         n_embd=384,
         n_neurons=1024,
         n_layers=1,
         thinking_steps=3, # Fast recurrence
-        dropout=0.1
+        dropout=0.1,
+        compile=False # Disable compilation for comparison
     )
     
     train_config = TrainingConfig(

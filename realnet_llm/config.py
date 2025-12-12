@@ -12,6 +12,7 @@ class RealNetConfig:
     dropout: float = 0.1
     bias: bool = True
     pulse_mode: bool = True
+    compile: bool = True     # Enable torch.compile
     
     # Pruning / Sparsity
     pruning_threshold: float = 0.0
@@ -29,6 +30,7 @@ class TrainingConfig:
     context_window: int = 128 # Sequence length (BPTT or just input chunk)
     device: str = 'cuda'
     precision: str = 'mixed' # 'mixed', 'float32'
+    compile: bool = True     # Use torch.compile (Triton)
     log_interval: int = 10
     eval_interval: int = 500
     save_interval: int = 1000

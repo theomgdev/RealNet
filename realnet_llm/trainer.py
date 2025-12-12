@@ -163,10 +163,12 @@ class LMTrainer:
 
     def load_checkpoint(self, path):
         print(f"Resuming from checkpoint: {path}")
-        checkpoint = torch.load(path, map_location=self.device)
+        # Python 3.13 / PyTorch 2.6+ security default changed.
+        # We trust our own checkpoints, so we disable weights_only to load custom configs.
+        # Custom config object requires trusted load.
+        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.iter_num = checkpoint['iter_num']
         self.best_val_loss = checkpoint['best_val_loss']
         print(f"Resumed at iter {self.iter_num} with best val loss {self.best_val_loss:.4f}")
-
