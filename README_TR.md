@@ -95,6 +95,16 @@ Küçük, kaotik bir nöron ormanının, "düşünmek" için yeterli zaman veril
 
 ---
 
+---
+
+## 👨‍💻 Yazar (Author)
+
+**Cahit Karahan**
+*   Doğum: 12/02/1997, Ankara.
+*   "Kaosun Mimarı."
+
+---
+
 ## LİSANS
 
 MIT

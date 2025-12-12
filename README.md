@@ -95,6 +95,16 @@ We have proven that a small, chaotic forest of neurons, given enough time to "th
 
 ---
 
+---
+
+## 👨‍💻 Author
+
+**Cahit Karahan**
+*   Born: 12/02/1997, Ankara.
+*   "The Architect of Chaos."
+
+---
+
 ## LICENSE
 
 MIT
