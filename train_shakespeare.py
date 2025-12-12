@@ -60,7 +60,7 @@ def main():
     print("Training...")
     
     # Auto-Resume
-    ckpt_path = os.path.join(train_config.out_dir, 'latest_ckpt.pt')
+    ckpt_path = os.path.join(train_config.out_dir, 'best_ckpt.pt')
     if os.path.exists(ckpt_path):
         trainer.load_checkpoint(ckpt_path)
 
