@@ -72,16 +72,39 @@ trainer.fit(inputs, inputs, epochs=50)
 
 ## 🧠 Architecture Overview
 
-### Mathematical Model
+## 🌪️ How It Works: Inside the Storm
 
+RealNet is not a feed-forward mechanism; it is a **Resonant Chamber**.
+
+### 1. The Pulse (Input)
+In traditional AI, input is a constant stream (like water in a pipe). In RealNet, input is a **Pulse** (like a stone thrown into a pond).
+*   At $t=0$, the image/data hits the "Input Neurons".
+*   At $t>0$, the input vanishes. The network is left alone with the **ripples**.
+
+### 2. The Echo (Internal Loops)
+The signal travels from every neuron to every other neuron ($N \times N$).
+*   Input neurons effectively become **Hidden Neurons** instantly after the first step.
+*   Information reverberates, splits, and collides. A pixel at the top-left interacts with a pixel at the bottom-right through direct connection or intermediate echoes.
+*   **Holographic Processing:** The "cat-ness" of an image isn't stored in a specific layer; it emerges from the *interference pattern* of all signals colliding.
+
+### 3. Time-Folding (Computation)
+Here lies the magic of **Zero-Hidden** performance.
+*   Step 1: Raw signals mix. (Equivalent to Layer 1 of MLP)
+*   Step 2: Mixed signals mix again. (Equivalent to Layer 2)
+*   Step 15: Highly abstract features emerge. (Equivalent to Layer 15)
+
+By "thinking" for 15 steps, RealNet simulates a 15-layer deep network using **only one physical matrix**. It folds space into time.
+
+### 4. Controlled Chaos (The Taming)
+Uncontrolled feedback loops lead to explosion (infinity) or death (zero).
+*   **StepNorm** acts as the gravity, pulling all neurons back to a stable energy level at every step.
+*   **GELU** acts as the filter, deciding which signals are worth keeping.
+*   **AdamW** sculpts the chaos, turning random noise into a structured symphony.
+
+### Mathematical Model
 The network state $h_t$ evolves as:
 
 $$h_t = \text{StepNorm}(\text{GELU}(h_{t-1} \cdot W + B + I_t))$$
-
-*   **$W$ (Weights):** The memory of the system.
-*   **StepNorm:** Solves the "Butterfly Explosion" problem by normalizing signal amplitude at every step.
-*   **GELU:** Preserves signal flow better than ReLU.
-*   **Pulse Mode:** $I_t$ is non-zero only at $t=0$.
 
 ---
 

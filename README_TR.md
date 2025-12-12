@@ -72,16 +72,39 @@ trainer.fit(inputs, inputs, epochs=50)
 
 ## 🧠 Mimari Genel Bakış
 
-### Matematiksel Model
+## 🌪️ Nasıl Çalışır: Fırtınanın İçi
 
+RealNet ileri beslemeli bir mekanizma değildir; o bir **Yankı Odasıdır (Resonant Chamber)**.
+
+### 1. Nabız (Girdi)
+Geleneksel YZ'de veri bir borudaki su gibi sürekli akar. RealNet'te ise veri bir **Nabızdır** (göle atılan bir taş gibi).
+*   $t=0$ anında görüntü/veri "Giriş Nöronlarına" çarpar.
+*   $t>0$ anında dış veri kesilir. Ağ, kendi içindeki **dalgalanmalarla** baş başa kalır.
+
+### 2. Yankı (İç Döngüler)
+Sinyal her nörondan diğer her nörona seyahat eder ($N \times N$).
+*   Giriş nöronları, ilk adımdan hemen sonra efektif olarak **Gizli Nöronlara** dönüşür.
+*   Bilgi yankılanır, bölünür ve çarpışır. Sol üstteki bir piksel, sağ alttaki bir pikselle doğrudan veya yankılar aracılığıyla "konuşur".
+*   **Holografik İşleme:** Bir görüntünün "kedi olma" bilgisi belirli bir katmanda saklanmaz; tüm sinyallerin *girişim deseninden* (interference pattern) doğar.
+
+### 3. Zamanı Katlamak (Time-Folding)
+**Sıfır-Gizli** performansının sırrı buradadır.
+*   Adım 1: Ham sinyaller karışır. (MLP'nin 1. Katmanına eşdeğer)
+*   Adım 2: Karışmış sinyaller tekrar karışır. (2. Katmana eşdeğer)
+*   Adım 15: Yüksek seviyeli soyut özellikler belirir. (15. Katmana eşdeğer)
+
+RealNet 15 adım boyunca "düşünerek", **tek bir fiziksel matris** kullanarak 15 katmanlı derin bir ağı simüle eder. Uzayı, zamanın içine katlar.
+
+### 4. Kontrollü Kaos (Ehlileştirme)
+Kontrolsüz geri besleme döngüleri patlamaya (sonsuzluk) veya ölüme (sıfır) yol açar.
+*   **StepNorm**, bir yerçekimi gibi her adımda nöronları kararlı bir enerji seviyesine çeker.
+*   **GELU**, hangi sinyallerin saklanmaya değer olduğuna karar veren bir filtre görevi görür.
+*   **AdamW**, kaosu yontarak rastgele gürültüyü organize bir senfoniye dönüştürür.
+
+### Matematiksel Model
 Ağ durumu $h_t$ şu şekilde evrilir:
 
 $$h_t = \text{StepNorm}(\text{GELU}(h_{t-1} \cdot W + B + I_t))$$
-
-*   **$W$ (Ağırlıklar):** Sistemin hafızası.
-*   **StepNorm:** Her adımda sinyal genliğini normalize ederek "Kelebek Patlaması"nı önler.
-*   **GELU:** Sinyal akışını ReLU'dan daha iyi korur.
-*   **Pulse Mode:** $I_t$ sadece $t=0$ anında sıfırdan farklıdır (dürtü).
 
 ---
 
