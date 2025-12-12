@@ -51,7 +51,7 @@ class RealNetTrainer:
                 
         return x_input
 
-    def train_batch(self, input_features, target_values, thinking_steps):
+    def train_batch(self, input_features, target_values, thinking_steps, gradient_accumulation_steps=1):
         """
         Runs a single training step on a batch.
         
@@ -59,13 +59,21 @@ class RealNetTrainer:
             input_features (Tensor or np.array): Shape (Batch, Len(Input_IDs))
             target_values (Tensor or np.array): Shape (Batch, Len(Output_IDs))
             thinking_steps (int): Number of steps to run the network.
+            gradient_accumulation_steps (int): Number of steps to accumulate gradients before stepping optimizer.
             
         Returns:
             float: Loss value
         """
         self.model.train()
-        self.optimizer.zero_grad()
         
+        # Initialize Scaler if not exists (for AMP)
+        if not hasattr(self, 'scaler'):
+            # Use new torch.amp API if available, else fallback
+            if hasattr(torch.amp, 'GradScaler'):
+                self.scaler = torch.amp.GradScaler('cuda', enabled=(self.device == 'cuda'))
+            else:
+                self.scaler = torch.cuda.amp.GradScaler(enabled=(self.device == 'cuda'))
+
         batch_size = len(input_features)
         
         # 1. Prepare Data
@@ -76,24 +84,70 @@ class RealNetTrainer:
         else:
             target_values = target_values.to(self.device)
 
-        # 2. Reset State & Run
-        self.model.reset_state(batch_size)
-        _, final_state = self.model(x_input, steps=thinking_steps)
+        # 2. Reset State & Run (with AMP)
+        # Use autocast for mixed precision
+        device_type = 'cuda' if self.device == 'cuda' else 'cpu'
+        if hasattr(torch.amp, 'autocast'):
+             autocast_ctx = torch.amp.autocast(device_type=device_type, enabled=(self.device == 'cuda'))
+        else:
+             autocast_ctx = torch.cuda.amp.autocast(enabled=(self.device == 'cuda'))
+             
+        with autocast_ctx:
+            self.model.reset_state(batch_size)
+            _, final_state = self.model(x_input, steps=thinking_steps)
+            
+            # 3. Extract Outputs & Calculate Loss
+            output_indices = self.model.output_ids
+            predicted_outputs = final_state[:, output_indices]
+            
+            loss = self.loss_fn(predicted_outputs, target_values)
+            
+            # Normalize loss for gradient accumulation
+            if gradient_accumulation_steps > 1:
+                loss = loss / gradient_accumulation_steps
+
+        # 4. Backward (with Scaler)
+        self.scaler.scale(loss).backward()
         
-        # 3. Extract Outputs & Calculate Loss
-        # Extract values of output neurons
-        output_indices = self.model.output_ids
-        # Shape: (Batch, Len(Output_IDs))
-        predicted_outputs = final_state[:, output_indices]
+        # Optimize only after accumulating enough gradients
+        # We need to track accumulation step externally or here.
+        # For simplicity in this method, we assume the caller handles the loop, 
+        # BUT this method is usually called once per batch. 
+        # To strictly follow the "train_batch" interface, we check internal counter or assume immediate step if accumulation=1.
         
-        loss = self.loss_fn(predicted_outputs, target_values)
+        # NOTE: In a proper loop, we'd check (batch_idx + 1) % accumulation_steps == 0
+        # Here we just assume we step unless specified otherwise, but `train_batch` usually implies a full update.
+        # To support accumulation properly, we'll shift the stepper logic.
         
-        # 4. Backward
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0) # Safety clip
-        self.optimizer.step()
+        # HACK: If we want to support accumulation inside this method without external index, it's tricky.
+        # So we will ALWAYS perform step, but formatted for Scaler.
+        # If the user wants accumulation, they should control the optimizer step outside.
+        # However, to keep API simple:
         
-        return loss.item()
+        if gradient_accumulation_steps == 1:
+            self.scaler.unscale_(self.optimizer)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+            self.optimizer.zero_grad()
+        
+        # For accumulation > 1, the user must handle the stepping or we need a class-level counter.
+        # Let's add a class level counter for safety if not present.
+        elif gradient_accumulation_steps > 1:
+             if not hasattr(self, '_acc_counter'):
+                 self._acc_counter = 0
+             self._acc_counter += 1
+             
+             if self._acc_counter % gradient_accumulation_steps == 0:
+                self.scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+                self.optimizer.zero_grad()
+                self._acc_counter = 0
+
+        # Return the SCALED loss for logging (un-normalize if accumulated)
+        return loss.item() * gradient_accumulation_steps
 
     def predict(self, input_features, thinking_steps):
         """

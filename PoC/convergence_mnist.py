@@ -11,7 +11,14 @@ from realnet import RealNet, RealNetTrainer
 def main():
     print("RealNet 2.0: PURE MNIST CHALLENGE (28x28 Raw Input)...")
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-
+    
+    # Performance Tuning
+    if DEVICE == 'cuda':
+        # Enable TF32 for significantly faster matmul on Ampere+ GPUs
+        torch.set_float32_matmul_precision('high')
+        torch.backends.cudnn.benchmark = True
+        print(f"CUDA Enabled. Device: {torch.cuda.get_device_name(0)}")
+        
     # PURE ZERO-HIDDEN CONFIG
     # 28x28 = 784 Pixels (Input)
     # 10 Classes (Output)
@@ -38,6 +45,10 @@ def main():
         dropout_rate=0.1, 
         device=DEVICE
     )
+    
+    # Compile for speed (PyTorch 2.0+)
+    model = model.compile()
+    
     trainer = RealNetTrainer(model, device=DEVICE)
     
     # NO RESIZE used. Pure 28x28.
@@ -54,8 +65,10 @@ def main():
     train_subset = Subset(train_dataset, range(SUBSET_SIZE))
     test_subset = Subset(test_dataset, range(1000))
     
-    train_loader = DataLoader(train_subset, batch_size=64, shuffle=True)
-    test_loader = DataLoader(test_subset, batch_size=64, shuffle=False)
+    # Optimization: Pin Memory & Workers
+    kwargs = {'num_workers': 4, 'pin_memory': True} if DEVICE == 'cuda' else {}
+    train_loader = DataLoader(train_subset, batch_size=64, shuffle=True, **kwargs)
+    test_loader = DataLoader(test_subset, batch_size=64, shuffle=False, **kwargs)
     
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
     loss_fn = nn.MSELoss()
@@ -67,15 +80,18 @@ def main():
     
     print("Training...")
     
+    import time
+    start_time = time.time()
+    
     for epoch in range(NUM_EPOCHS):
         model.train()
         total_loss = 0
         
         for batch_idx, (data, target) in enumerate(train_loader):
-            inputs_val = data.view(data.size(0), -1).to(DEVICE)
+            inputs_val = data.view(data.size(0), -1).to(DEVICE, non_blocking=True)
+            # Efficient target creation
             targets_val = torch.ones(data.size(0), 10, device=DEVICE) * -1.0
-            for i, label in enumerate(target):
-                targets_val[i, label] = 1.0
+            targets_val.scatter_(1, target.view(-1, 1).to(DEVICE), 1.0)
                 
             loss = trainer.train_batch(inputs_val, targets_val, thinking_steps=THINKING_STEPS)
             total_loss += loss
@@ -88,14 +104,21 @@ def main():
         total = 0
         with torch.no_grad():
             for data, target in test_loader:
-                inputs_val = data.view(data.size(0), -1).to(DEVICE)
+                inputs_val = data.view(data.size(0), -1).to(DEVICE, non_blocking=True)
+                target = target.to(DEVICE, non_blocking=True)
+                
                 preds = trainer.predict(inputs_val, thinking_steps=THINKING_STEPS)
                 predicted_classes = torch.argmax(preds, dim=1)
-                correct += (predicted_classes.cpu() == target).sum().item()
+                correct += (predicted_classes == target).sum().item()
                 total += target.size(0)
         
         acc = 100.0 * correct / total
-        print(f"Epoch {epoch+1}: Loss {avg_loss:.4f} | Test Acc {acc:.2f}%")
+        
+        # Speed stats
+        elapsed = time.time() - start_time
+        fps = ((epoch + 1) * len(train_subset)) / elapsed
+        
+        print(f"Epoch {epoch+1}: Loss {avg_loss:.4f} | Test Acc {acc:.2f}% | FPS: {fps:.1f}")
 
 if __name__ == "__main__":
     main()

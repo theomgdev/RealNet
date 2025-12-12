@@ -28,7 +28,39 @@ class RealNet(nn.Module):
         
         # PRUNING MASK (Synaptic Life)
         # 1 = Alive, 0 = Dead
+        # PRUNING MASK (Synaptic Life)
+        # 1 = Alive, 0 = Dead
         self.register_buffer('mask', torch.ones(num_neurons, num_neurons, device=device))
+        
+        self.is_sparse = False
+
+    def compile(self):
+        """
+        Compiles the model using PyTorch 2.0 torch.compile for faster execution.
+        Returns the compiled model (in-place modification where possible).
+        """
+        if hasattr(torch, 'compile'):
+            try:
+                print("RealNet: Compiling model with torch.compile...")
+                # Use 'inductor' backend explicitly or let it pick default.
+                # On Windows, 'inductor' often needs Triton. 
+                compiled_model = torch.compile(self)
+                
+                # FORCE DRY RUN to catch lazy errors now (e.g. missing Triton)
+                # Create a small dummy input
+                print("RealNet: Performing dry run to verify compilation...")
+                dummy_input = torch.zeros(1, self.num_neurons, device=self.device)
+                with torch.no_grad():
+                    compiled_model(dummy_input, steps=1)
+                
+                print("RealNet: Compilation successful!")
+                return compiled_model
+            except Exception as e:
+                print(f"RealNet: Compilation failed ({e}). Fallback to eager execution.")
+                return self
+        else:
+            print("RealNet: torch.compile not found. Skipping compilation.")
+            return self
 
     def forward(self, x_input, steps=1, current_state=None):
         """
