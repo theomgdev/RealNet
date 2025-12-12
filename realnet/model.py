@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 
 class RealNet(nn.Module):
-    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, device='cpu'):
+    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.0, device='cpu'):
         super(RealNet, self).__init__()
         self.num_neurons = num_neurons
         self.input_ids = input_ids
@@ -13,16 +13,15 @@ class RealNet(nn.Module):
 
         # Initialization
         # W: N x N weights. Anyone can talk to anyone.
-        # Initialized with small random values N(0, 0.02) to start with "Silence".
         self.W = nn.Parameter(torch.randn(num_neurons, num_neurons, device=device) * 0.02)
         
-        # B: Bias vector. Each neuron has a tendency.
-        # Zeros or small random values.
+        # B: Bias vector.
         self.B = nn.Parameter(torch.zeros(num_neurons, device=device))
 
         # Architecturally defined components
         self.norm = nn.LayerNorm(num_neurons).to(device) # StepNorm
         self.act = nn.GELU() # Flow Activation
+        self.drop = nn.Dropout(p=dropout_rate) # Biological Failure Simulation
 
         # Internal State (hidden state h_t)
         self.state = torch.zeros(1, num_neurons, device=device)
@@ -76,7 +75,8 @@ class RealNet(nn.Module):
             # 4. Flow Activation (GELU) & StepNorm
             # The Manifesto says: StepNorm(GELU(...))
             activated = self.act(signal)
-            h_t = self.norm(activated)
+            normalized = self.norm(activated)
+            h_t = self.drop(normalized)
             
             outputs.append(h_t)
 

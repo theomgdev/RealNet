@@ -31,7 +31,19 @@ RealNet 2.0 sadece bir teori değildir. Kaotik ağların genellikle başarısız
 ### 3. Görsel Tanıma (MNIST) (`PoC/convergence_mnist.py`)
 *   **Görev:** 28x28 el yazısı rakamları sınıflandırmak (10 sınıf).
 *   **Sonuç:** Sadece 5 Epoch içinde **~%88 Doğruluk**.
-*   **Anlamı:** RealNet bunu **Konvolüsyonel Katmanlar (CNN) OLMADAN** başardı. Ham pikselleri sadece tam bağlı kaotik dinamikleri kullanarak işledi ve görsel veriyi doğru çıktı havuzuna başarıyla "damıttı".
+*   **Anlamı:** RealNet bunu **Konvolüsyonel Katmanlar (CNN) OLMADAN** başardı. Ham pikselleri sadece tam bağlı kaotik dinamikleri kullanarak işledi.
+
+## ⚡ Edge Testing: Verimlilik ve Sınırlar
+
+"Kaos Verimlidir" tezini kanıtlamak için RealNet'i mutlak sınırlarına kadar zorladık. Nöron sayılarını minimuma indirerek, **zamansal işlemenin uzamsal derinliğin (katmanların) yerini alabileceğini** gösterdik.
+
+| Görev | Geleneksel Çözüm (MLP) | RealNet (Edge) | Nöron | Parametre | Sonuç | Script |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Identity** | 2 Katman (2-2) | **2.0 (Identity)** | **4** | **16** | Loss: 0.0 | `PoC/efficiency/convergence_min.py` |
+| **XOR** | 3 Katman (2-4-1) + Lineer Olmayan | **2.0 (XOR)** | **5** | **25** | Loss: ~0.0002 | `PoC/efficiency/convergence_gates_min.py` |
+| **MNIST** | MLP (784-512-10) ~400k Parametre | **2.0 (Visio)** | **800** | **0.64M** | Acc: ~82% | `PoC/efficiency/convergence_mnist_efficient.py` |
+
+> **Karşılaştırma:** Standart bir MLP'nin MNIST'te ham piksellerle (CNN olmadan) benzer sonuçlar alması için genellikle en az 512 nöronlu bir gizli katmana (784*512 + 512*10 ≈ **400k-500k parametre**) ihtiyacı vardır. RealNet bunu **sıfır gizli katmanla** (giriş/çıkış harici sadece 6 ekstra "kaos" nöronu) başarır. Hesaplamayı uzaydan (katmanlar) alıp zamana (**"Düşünme Süresi"**: 10 adım) yayarak aynı işi yapar.
 
 ---
 
