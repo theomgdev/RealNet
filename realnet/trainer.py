@@ -109,41 +109,22 @@ class RealNetTrainer:
         # 4. Backward (with Scaler)
         self.scaler.scale(loss).backward()
         
-        # Optimize only after accumulating enough gradients
-        # We need to track accumulation step externally or here.
-        # For simplicity in this method, we assume the caller handles the loop, 
-        # BUT this method is usually called once per batch. 
-        # To strictly follow the "train_batch" interface, we check internal counter or assume immediate step if accumulation=1.
-        
-        # NOTE: In a proper loop, we'd check (batch_idx + 1) % accumulation_steps == 0
-        # Here we just assume we step unless specified otherwise, but `train_batch` usually implies a full update.
-        # To support accumulation properly, we'll shift the stepper logic.
-        
-        # HACK: If we want to support accumulation inside this method without external index, it's tricky.
-        # So we will ALWAYS perform step, but formatted for Scaler.
-        # If the user wants accumulation, they should control the optimizer step outside.
-        # However, to keep API simple:
-        
-        if gradient_accumulation_steps == 1:
+        # Step optimizer only if accumulation cycle is complete
+        step_now = True
+        if gradient_accumulation_steps > 1:
+             if not hasattr(self, '_acc_counter'):
+                 self._acc_counter = 0
+             self._acc_counter += 1
+             if self._acc_counter % gradient_accumulation_steps != 0:
+                 step_now = False
+
+        if step_now:
             self.scaler.unscale_(self.optimizer)
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
             self.scaler.step(self.optimizer)
             self.scaler.update()
             self.optimizer.zero_grad()
-        
-        # For accumulation > 1, the user must handle the stepping or we need a class-level counter.
-        # Let's add a class level counter for safety if not present.
-        elif gradient_accumulation_steps > 1:
-             if not hasattr(self, '_acc_counter'):
-                 self._acc_counter = 0
-             self._acc_counter += 1
-             
-             if self._acc_counter % gradient_accumulation_steps == 0:
-                self.scaler.unscale_(self.optimizer)
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-                self.optimizer.zero_grad()
+            if hasattr(self, '_acc_counter'):
                 self._acc_counter = 0
 
         # Return the SCALED loss for logging (un-normalize if accumulated)
