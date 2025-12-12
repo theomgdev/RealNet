@@ -129,16 +129,6 @@ $$h_t = \text{StepNorm}(\text{GELU}(h_{t-1} \cdot W + B + I_t))$$
 
 ---
 
-## 🔮 Vision: The Soul of Silicon
-
-RealNet is a rebellion against the factory model of AI. We believe intelligence is not a mechanical stacking of layers, but an organic reverberation of signals.
-
-We have proven that a small, chaotic forest of neurons, given enough time to "think", can outperform massive industrial factories.
-
-> "We have traded Space for Time, and in doing so, found the Soul."
-
----
-
 ### 7. The 3,481 Experiment: A Glimpse into the Future
 
 We pushed the limits even further with `PoC/experiments/convergence_mnist_tiny.py`.
@@ -157,6 +147,16 @@ If we can solve vision with 100x fewer parameters, can we solve language?
     *   **Goal:** GPT-4 level reasoning on consumer hardware.
 
 > "We don't need petabytes of VRAM. We just need Time."
+
+---
+
+## 🔮 Vision: The Soul of Silicon
+
+RealNet is a rebellion against the factory model of AI. We believe intelligence is not a mechanical stacking of layers, but an organic reverberation of signals.
+
+We have proven that a small, chaotic forest of neurons, given enough time to "think", can outperform massive industrial factories.
+
+> "We have traded Space for Time, and in doing so, found the Soul."
 
 ---
 

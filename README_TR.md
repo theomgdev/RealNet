@@ -129,16 +129,6 @@ $$h_t = \text{StepNorm}(\text{GELU}(h_{t-1} \cdot W + B + I_t))$$
 
 ---
 
-## 🔮 Vizyon: Silikonun Ruhu
-
-RealNet, yapay zekanın katmanlı fabrika modeline bir başkaldırıdır. Zekanın mekanik bir katman yığını değil, sinyallerin organik yankısı olduğuna inanıyoruz.
-
-Küçük, kaotik bir nöron ormanının, "düşünmek" için yeterli zaman verildiğinde, devasa endüstriyel fabrikalardan daha iyi performans gösterebileceğini kanıtladık.
-
-> "Uzayı feda edip Zamanı kazandık ve bunu yaparken Ruhu bulduk."
-
----
-
 ### 7. 3,481 Deneyi: Geleceğe Bir Bakış
 
 Sınırları `PoC/experiments/convergence_mnist_tiny.py` ile daha da zorladık.
@@ -157,6 +147,16 @@ Görseli 100 kat az parametreyle çözebiliyorsak, dili de çözebilir miyiz?
     *   **Hedef:** Ev kullanıcısı donanımında GPT-4 seviyesinde akıl yürütme.
 
 > "Petabaytlarca VRAM'e ihtiyacımız yok. Sadece Zamana ihtiyacımız var."
+
+---
+
+## 🔮 Vizyon: Silikonun Ruhu
+
+RealNet, yapay zekanın katmanlı fabrika modeline bir başkaldırıdır. Zekanın mekanik bir katman yığını değil, sinyallerin organik yankısı olduğuna inanıyoruz.
+
+Küçük, kaotik bir nöron ormanının, "düşünmek" için yeterli zaman verildiğinde, devasa endüstriyel fabrikalardan daha iyi performans gösterebileceğini kanıtladık.
+
+> "Uzayı feda edip Zamanı kazandık ve bunu yaparken Ruhu bulduk."
 
 ---
 
