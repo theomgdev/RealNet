@@ -171,6 +171,10 @@ class RealNetLM(nn.Module):
 
     def compile(self):
         """PyTorch 2.0 Compile"""
+        if not self.config.compile:
+            print("RealNetLM: Compilation disabled in config. Skipping.")
+            return self
+
         if hasattr(torch, 'compile'):
             try:
                 print("RealNetLM: Compiling...")
