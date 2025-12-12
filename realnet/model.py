@@ -9,8 +9,7 @@ class RealNet(nn.Module):
         self.input_ids = input_ids
         self.output_ids = output_ids
         self.pulse_mode = pulse_mode
-        self.device = device
-
+        
         # Initialization
         # W: N x N weights. Anyone can talk to anyone.
         self.W = nn.Parameter(torch.randn(num_neurons, num_neurons, device=device) * 0.02)
@@ -170,3 +169,7 @@ class RealNet(nn.Module):
             del self.W_sparse
         if hasattr(self, 'W_t_sparse'):
             del self.W_t_sparse
+
+    @property
+    def device(self):
+        return self.W.device

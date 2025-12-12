@@ -17,9 +17,12 @@ data/
 
 # RealNet artifacts
 *.pth
+*.pt
 *.checkpoints
 runs/
 logs/
+out_*/
+out/
 
 # OS
 .DS_Store
