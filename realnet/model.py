@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 
 class RealNet(nn.Module):
-    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.0, device='cpu'):
+    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu'):
         super(RealNet, self).__init__()
         self.num_neurons = num_neurons
         self.input_ids = input_ids
