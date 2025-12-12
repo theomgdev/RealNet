@@ -136,8 +136,8 @@ We pushed the limits even further with `PoC/experiments/convergence_mnist_tiny.p
 *   **Total Neurons:** 59.
 *   **Total Parameters:** **3,481**.
 
-**Result:** **~86% Accuracy** on MNIST.
-With parameters fewer than a bootloader, RealNet solved a vision task.
+**Result:** **~92% Accuracy** on MNIST.
+With parameters fewer than a bootloader, RealNet solved a vision task. (Epoch 96: 91.90%)
 
 #### 🔮 The LLM Vision (RealNet-1B)
 If we can solve vision with 100x fewer parameters, can we solve language?

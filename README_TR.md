@@ -136,8 +136,8 @@ Sınırları `PoC/experiments/convergence_mnist_tiny.py` ile daha da zorladık.
 *   **Toplam Nöron:** 59.
 *   **Toplam Parametre:** **3,481**.
 
-**Sonuç:** MNIST üzerinde **~%86 Doğruluk**.
-Bir bilgisayarın açılış yükleyicisinden (bootloader) bile daha az kod/parametre ile RealNet bir görseli tanıdı.
+**Sonuç:** MNIST üzerinde **~%92 Doğruluk**.
+Bir bilgisayarın açılış yükleyicisinden (bootloader) bile daha az kod/parametre ile RealNet bir görseli tanıdı. (Epoch 96: 91.90%)
 
 #### 🔮 LLM Vizyonu (RealNet-1B)
 Görseli 100 kat az parametreyle çözebiliyorsak, dili de çözebilir miyiz?
