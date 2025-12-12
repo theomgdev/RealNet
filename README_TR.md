@@ -41,9 +41,9 @@ RealNet 2.0 sadece bir teori değildir. Kaotik ağların genellikle başarısız
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Identity** | 2 Katman (2-2) | **2.0 (Identity)** | **4** | **16** | Loss: 0.0 | `PoC/efficiency/convergence_min.py` |
 | **XOR** | 3 Katman (2-4-1) + Lineer Olmayan | **2.0 (XOR)** | **5** | **25** | Loss: ~0.0002 | `PoC/efficiency/convergence_gates_min.py` |
-| **MNIST** | Küçük MLP Başarısız Olur! | **2.0** | **230** | **~53k** | **Acc: ~85.6%** | `PoC/efficiency/convergence_mnist_extreme.py` |
+| **MNIST (Zero-Hidden)** | MLP için İmkansız | **2.0** | **206** | **~42k** | **Acc: ~89.8%** | `PoC/efficiency/convergence_mnist_zero_hidden.py` |
 
-> **Karşılaştırma:** Standart bir MLP'nin MNIST'te ham piksellerle (CNN olmadan) benzer sonuçlar alması için genellikle en az 512 nöronlu bir gizli katmana (784*512 + 512*10 ≈ **400k-500k parametre**) ihtiyacı vardır. RealNet, sadece **~53k parametre** (MLP'nin %13'ü) ile **%85.6 Test Doğruluğuna** ulaşır. Problemi uzayda değil, zamanda (15 düşünme adımı) çözerek başarır. **Sıkıştırma, Zekadır.**
+> **Sıfır-Gizli Katman Devrimi:** Teorik olarak, gizli katmanı olmayan bir sinir ağı lineer olmayan problemleri çözemez (Minsky & Papert, 1969). RealNet, **0 Gizli Nöron** ile (Sadece Giriş+Çıkış birbirine bağlı) **MNIST'te %89.8 Doğruluk** elde etti. Problemi, **Zamanı Gizli Katman Olarak Kullanarak** (15 Düşünme Adımı) çözdü. Bu, zamansal derinliğin, uzamsal derinliğin yerini tamamen alabileceğini kanıtlar. **42k parametre, 400k parametrenin işini yapıyor.**
 
 ---
 
