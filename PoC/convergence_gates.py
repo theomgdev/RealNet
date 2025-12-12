@@ -75,7 +75,7 @@ def main():
 
     print("Training...")
     # 15 Thinking steps to allow chaotic resonance to find the XOR pattern
-    history = trainer.fit(inputs_val, targets_val, epochs=200, batch_size=16, thinking_steps=15)
+    history = trainer.fit(inputs_val, targets_val, epochs=100, batch_size=16, thinking_steps=15)
 
     print(f"Final Loss: {history[-1]:.6f}")
 
