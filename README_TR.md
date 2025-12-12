@@ -152,7 +152,7 @@ RealNet'in temel hipotezi olan **"Zamansal Derinlik > Uzamsal Derinlik"** tezini
 *   **Yöntem:** Tam 28x28 ağıyla başlandı ancak her epoch sonunda zayıf bağlantılar **öldürüldü**.
 *   **Seyreklik:** **%93.6 Ölü** (~630k bağlantıdan sadece ~40k'sı hayatta kaldı).
 *   **Sonuç:** **%94.20 Doğruluk** (Epoch 50).
-*   **Script:** `PoC/experiments/convergence_mnist_live.py`
+*   **Script:** `PoC/experiments/convergence_mnist_alive.py`
 *   **İçgörü:** RealNet kendi kendini optimize edebilir; beyninin %93'ünü atarken zekasını tamamen koruyabilir.
 
 #### C. Tiny Challenge (Aşırı Kısıtlamalar) (7x7)

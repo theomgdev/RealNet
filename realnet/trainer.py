@@ -138,7 +138,7 @@ class RealNetTrainer:
         """
         return self.model.prune_synapses(threshold)
 
-    def fit(self, input_features, target_values, epochs, batch_size=32, thinking_steps=10, verbose=True):
+    def fit(self, input_features, target_values, epochs, batch_size=32, thinking_steps=10, verbose=True, pruning_threshold=0.0):
         """
         Trains the model for a fixed number of epochs.
         
@@ -149,6 +149,8 @@ class RealNetTrainer:
             batch_size (int): Size of batches.
             thinking_steps (int): Timesteps for RealNet.
             verbose (bool): Print progress.
+            pruning_threshold (float): If > 0, performs Darwinian pruning after each epoch.
+                                       Recommended: 0.03 for aggressive optimization.
             
         Returns:
             history (list): List of average loss per epoch.
@@ -163,31 +165,42 @@ class RealNetTrainer:
         else:
             target_values = target_values.to(self.device)
             
-        num_samples = len(input_features)
         history = []
         
+        # Prepare Data
+        batch_size = min(batch_size, len(input_features))
+        dataset_len = len(input_features)
+        
+        # Simple Batching Loop
         for epoch in range(epochs):
             self.model.train()
             epoch_loss = 0.0
             num_batches = 0
             
-            # Simple batching implementation
-            permutation = torch.randperm(num_samples)
+            # Helper for random permutation
+            indices = torch.randperm(dataset_len)
             
-            for i in range(0, num_samples, batch_size):
-                indices = permutation[i : i + batch_size]
-                batch_x = input_features[indices]
-                batch_y = target_values[indices]
+            for i in range(0, dataset_len, batch_size):
+                batch_indices = indices[i:i+batch_size]
+                x_batch = input_features[batch_indices]
+                y_batch = target_values[batch_indices]
                 
-                loss = self.train_batch(batch_x, batch_y, thinking_steps)
+                loss = self.train_batch(x_batch, y_batch, thinking_steps)
                 epoch_loss += loss
                 num_batches += 1
             
             avg_loss = epoch_loss / num_batches
             history.append(avg_loss)
             
-            if verbose and (epoch % 50 == 0 or epoch == epochs - 1):
-                print(f"Epoch {epoch}/{epochs}: Loss {avg_loss:.6f}")
+            # --- DARWINIAN PRUNING (If Enabled) ---
+            pruning_info = ""
+            if pruning_threshold > 0.0:
+                 # Prune weak connections
+                 pruned, dead, total = self.prune(threshold=pruning_threshold)
+                 sparsity = (dead / total) * 100.0
+                 pruning_info = f" | Dead: {sparsity:.1f}%"
+            
+            if verbose and (epoch % 10 == 0 or epoch == epochs - 1):
+                print(f"Epoch {epoch}/{epochs}: Loss {avg_loss:.6f}{pruning_info}")
                 
         return history
-

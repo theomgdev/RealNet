@@ -153,7 +153,7 @@ We conducted extensive tests to validate RealNet's core hypothesis: **Temporal D
 *   **Method:** Started with full 28x28 network but **killed** weak connections after every epoch.
 *   **Sparsity:** **93.6% Dead** (Only ~40k connections survived out of ~630k).
 *   **Result:** **94.20% Accuracy** (Epoch 50).
-*   **Script:** `PoC/experiments/convergence_mnist_live.py`
+*   **Script:** `PoC/experiments/convergence_mnist_alive.py`
 *   **Insight:** RealNet can self-optimize, discarding 93% of its brain while retaining full intelligence.
 
 #### C. The Tiny Challenge (Extreme Constraints)
