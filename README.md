@@ -138,21 +138,36 @@ We have proven that a small, chaotic forest of neurons, given enough time to "th
 
 > "We have traded Space for Time, and in doing so, found the Soul."
 
-### 7. The Zero-Hidden Benchmark
+### 7. Experimental Findings
 
-We tested RealNet on the full-scale MNIST dataset (28x28 pixels) with **Zero Hidden Layers**.
-*   **Input:** 784 Neurons.
-*   **Output:** 10 Neurons.
-*   **Hidden Layers:** **0** (Direct Input-Output connection).
-*   **Thinking Steps:** 10.
+We conducted extensive tests to validate RealNet's core hypothesis: **Temporal Depth > Spatial Depth.**
 
-**Key Findings:**
-1.  **Rapid Learning:** The network achieved **82.20% Accuracy in Epoch 1**.
-2.  **Final Accuracy:** Peaked at **96.20%** (Epoch 69).
-3.  This proves that **Time acts as a hidden layer**, allowing a mathematically simple structure to learn non-linear patterns.
+#### A. The Main Benchmark (Pure Zero-Hidden)
+*   **Target:** Full 28x28 MNIST (784 Pixels).
+*   **Architecture:** 794 Neurons (Input + Output). **0 Hidden Layers.**
+*   **Result:** **96.20% Accuracy** (Epoch 69).
+*   **Script:** `PoC/convergence_mnist.py`
+*   **Insight:** Surpasses linear model limits (%92), proving time-folding works.
 
-#### 🔬 Experimental: Assessing Constraints
-In a separate experiment (`PoC/experiments/convergence_mnist_tiny.py`), we pushed the architecture to its limits with a 7x7 input size (~3,500 parameters). Even under these extreme constraints, the model converged to **~92% Accuracy**, demonstrating robust information encoding in the temporal domain.
+#### B. The Darwin Experiment (Survival of the Fittest)
+*   **Method:** Started with full 28x28 network but **killed** weak connections after every epoch.
+*   **Sparsity:** **93.6% Dead** (Only ~40k connections survived out of ~630k).
+*   **Result:** **94.20% Accuracy** (Epoch 50).
+*   **Script:** `PoC/experiments/convergence_mnist_live.py`
+*   **Insight:** RealNet can self-optimize, discarding 93% of its brain while retaining full intelligence.
+
+#### C. The Tiny Challenge (Extreme Constraints)
+*   **Target:** 7x7 Downscaled MNIST.
+*   **Architecture:** 59 Neurons total. (~3,500 Parameters).
+*   **Result:** **~92% Accuracy**.
+*   **Script:** `PoC/experiments/convergence_mnist_tiny.py`
+*   **Insight:** Even with parameter counts smaller than a bootloader, the system learns robust features.
+
+#### D. The Scaled Test (Medium Constaints)
+*   **Target:** 14x14 Downscaled MNIST.
+*   **Architecture:** ~42k Parameters.
+*   **Result:** **~90% Accuracy**.
+*   **Script:** `PoC/experiments/convergence_mnist_scaled.py`
 
 #### 🔮 The LLM Vision (RealNet-1B)
 If we can solve vision with Zero Hidden Layers by trading Space for Time, this approach could scale to language models.

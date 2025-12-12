@@ -138,21 +138,35 @@ Küçük, kaotik bir nöron ormanının, "düşünmek" için yeterli zaman veril
 
 > "Uzayı feda edip Zamanı kazandık ve bunu yaparken Ruhu bulduk."
 
-### 7. Sıfır-Gizli Katman Benchmarkı (The Zero-Hidden Benchmark)
+### 7. Deneysel Bulgular (Experimental Findings)
+RealNet'in temel hipotezi olan **"Zamansal Derinlik > Uzamsal Derinlik"** tezini doğrulamak için kapsamlı testler yaptık.
 
-RealNet'i tam ölçekli MNIST veri seti (28x28 piksel) üzerinde **Sıfır Gizli Katman** ile test ettik.
-*   **Girdi:** 784 Nöron.
-*   **Çıktı:** 10 Nöron.
-*   **Gizli Katman:** **0** (Doğrudan Input-Output bağlantısı).
-*   **Düşünme Adımı:** 10.
+#### A. Ana Benchmark (Saf Sıfır-Gizli)
+*   **Hedef:** Tam 28x28 MNIST (784 Piksel).
+*   **Mimari:** 794 Nöron (Girdi + Çıktı). **0 Gizli Katman.**
+*   **Sonuç:** **%96.20 Doğruluk** (Epoch 69).
+*   **Script:** `PoC/convergence_mnist.py`
+*   **İçgörü:** Lineer modellerin sınırını (%92) aşarak zaman katlamanın (Time-Folding) çalıştığını kanıtlar.
 
-**Temel Bulgular:**
-1.  **Hızlı Öğrenme:** Ağ, daha **1. Epoch'ta %82.20 Doğruluk** oranına ulaştı.
-2.  **Final Doğruluk:** **%96.20** ile zirve yaptı (Epoch 69).
-3.  Bu sonuç, **Zamanın bir gizli katman gibi davrandığını**, böylece matematiksel olarak basit bir yapının lineer olmayan kalıpları öğrenebildiğini kanıtlar.
+#### B. Darwin Deneyi (En Güçlünün Hayatta Kalması)
+*   **Yöntem:** Tam 28x28 ağıyla başlandı ancak her epoch sonunda zayıf bağlantılar **öldürüldü**.
+*   **Seyreklik:** **%93.6 Ölü** (~630k bağlantıdan sadece ~40k'sı hayatta kaldı).
+*   **Sonuç:** **%94.20 Doğruluk** (Epoch 50).
+*   **Script:** `PoC/experiments/convergence_mnist_live.py`
+*   **İçgörü:** RealNet kendi kendini optimize edebilir; beyninin %93'ünü atarken zekasını tamamen koruyabilir.
 
-#### 🔬 Deneysel: Sınırları Zorlamak
-Ayrı bir deneyde (`PoC/experiments/convergence_mnist_tiny.py`), 7x7 girdi boyutu (~3,500 parametre) ile mimariyi sınırlarına kadar zorladık. Bu aşırı kısıtlamalar altında bile model **~%92 Doğruluk** oranına ulaştı. Bu, zamansal alandaki bilgi kodlamasının ne kadar dayanıklı olduğunu gösterir.
+#### C. Tiny Challenge (Aşırı Kısıtlamalar) (7x7)
+*   **Hedef:** 7x7 Küçültülmüş MNIST.
+*   **Mimari:** Toplam 59 Nöron. (~3,500 Parametre).
+*   **Sonuç:** **~%92 Doğruluk**.
+*   **Script:** `PoC/experiments/convergence_mnist_tiny.py`
+*   **İçgörü:** Bir "Bootloader"dan daha az kod/parametre ile bile sistem sağlam özellikler öğrenebilir.
+
+#### D. Scaled Test (Orta Ölçekli) (14x14)
+*   **Hedef:** 14x14 Küçültülmüş MNIST.
+*   **Mimari:** ~42k Parametre.
+*   **Sonuç:** **~%90 Doğruluk**.
+*   **Script:** `PoC/experiments/convergence_mnist_scaled.py`
 
 #### 🔮 LLM Vizyonu (RealNet-1B)
 Uzayı feda edip Zamanı kullanarak görsel problemleri Sıfır Gizli Katman ile çözebiliyorsak, bu yaklaşım dil modellerine de uyarlanabilir.

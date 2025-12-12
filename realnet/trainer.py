@@ -132,6 +132,12 @@ class RealNetTrainer:
             loss = self.loss_fn(preds, target_values)
             return loss.item()
 
+    def prune(self, threshold=0.01):
+        """
+        Triggers synaptic pruning on the model.
+        """
+        return self.model.prune_synapses(threshold)
+
     def fit(self, input_features, target_values, epochs, batch_size=32, thinking_steps=10, verbose=True):
         """
         Trains the model for a fixed number of epochs.
