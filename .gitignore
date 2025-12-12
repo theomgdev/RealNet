@@ -1,0 +1,26 @@
+# Python / PyTorch
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+
+# Data
+data/
+*.dataset
+
+# VS Code
+.vscode/
+
+# RealNet artifacts
+*.pth
+*.checkpoints
+runs/
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
