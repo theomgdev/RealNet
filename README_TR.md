@@ -101,6 +101,27 @@ Kontrolsüz geri besleme döngüleri patlamaya (sonsuzluk) veya ölüme (sıfır
 *   **GELU**, hangi sinyallerin saklanmaya değer olduğuna karar veren bir filtre görevi görür.
 *   **AdamW**, kaosu yontarak rastgele gürültüyü organize bir senfoniye dönüştürür.
 
+### 5. Neden RNN veya LSTM Değil?
+
+Kağıt üzerinde RealNet, Tekrarlayan Sinir Ağlarına (RNN) benzese de felsefesi temelden farklıdır.
+
+| Özellik | Standart RNN / LSTM | RealNet 2.0 |
+| :--- | :--- | :--- |
+| **Girdi Akışı** | Sürekli Akış (Örn: Cümledeki kelimeler) | **Tek Nabız** ($t=0$ anında Dürtü) |
+| **Amaç** | Sıralı İşleme (Ayrıştırma) | **Derin Düşünme** (Sindirme) |
+| **Bağlantısallık** | Yapılandırılmış (Input Gate, Forget Gate vb.) | **Ham Kaos** (Tam Bağlı $N \times N$) |
+| **Dinamikler** | Sönümlemeyi önlemek için mühendislik ürünü | Rezonansı bulmak için **Evrilir** (Doğal) |
+
+*   **RNN'ler dış dünyayı dinler.** Dışarıdan gelen bir olay dizisini işlerler.
+*   **RealNet iç sesini dinler.** Probleme **bir kez** bakar ve ardından gözlerini kapatıp 15 adım boyunca "düşünür". Kendi zamansal derinliğini yaratır.
+
+### 6. Biyolojik Gerçekçilik: Senkron Kaos
+
+RealNet, beyni katmanlı ağlardan daha iyi taklit eder:
+*   **Katman Yok:** Beyinde "Katman 1" ve "Katman 2" yoktur, birbirine bağlı nöron bölgeleri vardır. RealNet tek bir bölgedir.
+*   **Senkron Ateşleme:** RealNet'te tüm nöronlar senkronize bir saat tiklemesiyle (Adım) aynı anda ateşlenir. Veri, tıpkı aksiyon potansiyelleri gibi Nöron A'dan aynı anda B, C ve D'ye akar.
+*   **Plastisite:** Eğitim süreci (AdamW), rezonansa yol açan yolları güçlendirip uyumsuzluk yaratanları bastıran, steroidli bir "Hebbian Öğrenme" gibidir.
+
 ### Matematiksel Model
 Ağ durumu $h_t$ şu şekilde evrilir:
 

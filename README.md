@@ -101,6 +101,27 @@ Uncontrolled feedback loops lead to explosion (infinity) or death (zero).
 *   **GELU** acts as the filter, deciding which signals are worth keeping.
 *   **AdamW** sculpts the chaos, turning random noise into a structured symphony.
 
+### 5. Why Not RNN or LSTM?
+
+While RealNet looks like a Recurrent Neural Network (RNN) on paper, its philosophy is fundamentally different.
+
+| Feature | Standard RNN / LSTM | RealNet 2.0 |
+| :--- | :--- | :--- |
+| **Input Flow** | Continuous Stream (e.g., words in a sentence) | **Single Pulse** (Impulse at $t=0$) |
+| **Purpose** | Sequence Processing (Parsing) | **Deep Thinking** (Digestion) |
+| **Connectivity** | Structured (Input Gate, Forget Gate, etc.) | **Raw Chaos** (Fully Connected $N \times N$) |
+| **Dynamics** | Engineered to avoid fading (LSTM) | **Evolves** to find resonance (Chaos) |
+
+*   **RNNs listen to the outside world.** They process a sequence of external inputs.
+*   **RealNet listens to its inner voice.** It takes **one** look at the problem and then closes its eyes to "think" about it for 15 steps. It creates its own temporal depth.
+
+### 6. Biological Realism: Synchronous Chaos
+
+RealNet mimics the brain more closely than layered networks:
+*   **No Layers:** The brain doesn't have "Layer 1" and "Layer 2". It has regions of interconnected neurons. RealNet is a single region.
+*   **Synchronous Firing:** In RealNet, all neurons fire at once in a synchronized clock tick (Step). The data flows from Neuron A to Neuron B, C, and D simultaneously, just like action potentials.
+*   **Plasticity:** The training process (AdamW) is effectively "Hebbian Learning" on steroids, reinforcing paths that lead to resonance and suppressing those that lead to dissonance.
+
 ### Mathematical Model
 The network state $h_t$ evolves as:
 
