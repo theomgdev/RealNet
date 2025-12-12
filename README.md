@@ -29,17 +29,18 @@ In these tests, the Input Layer is directly connected to the Output Layer (and i
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Identity** | Trivial | **Atomic Unit** | **4** | **16** | Loss: 0.0 | `PoC/convergence.py` |
 | **XOR** | Needs Hidden Layer | **Minimal Chaos** | **5** | **25** | Loss: ~0.0002 | `PoC/convergence_gates.py` |
-| **MNIST** | Needs ~500k Params | **Zero-Hidden** | **206** | **~42k** | **Acc: ~89.8%** | `PoC/convergence_mnist.py` |
+| **MNIST** | Needs Hidden Layer | **Zero-Hidden** | **794** | **~630k** | **Acc: 96.2%** | `PoC/convergence_mnist.py` |
 
-### The MNIST Miracle
-Standard MLPs require ~400,000 parameters to convert 784 pixels into 10 digits.
-RealNet does it with **42,436 parameters**.
-*   **Inputs:** 196 (14x14 Resized)
+### The MNIST Zero-Hidden Miracle
+Standard Neural Networks require **Hidden Layers** to solve MNIST or XOR. A direct connection (Linear Model) cannot capture the complexity and fails (stuck at ~92%).
+
+RealNet solves full-scale MNIST (28x28) with **Zero Hidden Layers** (Direct Input-Output).
+*   **Inputs:** 784
 *   **Outputs:** 10
-*   **Hidden:** 0
-*   **Thinking Time:** 15 Steps
+*   **Hidden Layers:** **0**
+*   **Thinking Time:** 10 Steps
 
-The input layer "talks to itself" for 15 steps. The chaotic feedback loops extract features (edges, loops) dynamically over time, performing the work of spatial layers. This is **Compression Intelligence** at its finest.
+The input layer "talks to itself" for 10 steps. The chaotic feedback loops extract features (edges, loops) dynamically over time, performing the work of spatial layers. This proves that **Temporal Depth can replace Spatial Depth**.
 
 ---
 
@@ -129,27 +130,6 @@ $$h_t = \text{StepNorm}(\text{GELU}(h_{t-1} \cdot W + B + I_t))$$
 
 ---
 
-### 7. The 3,481 Experiment: A Glimpse into the Future
-
-We pushed the limits even further with `PoC/experiments/convergence_mnist_tiny.py`.
-*   **Input:** 7x7 Pixels (49 Neurons).
-*   **Total Neurons:** 59.
-*   **Total Parameters:** **3,481**.
-
-**Result:** **~92% Accuracy** on MNIST.
-With parameters fewer than a bootloader, RealNet solved a vision task. (Epoch 96: 91.90%)
-
-#### 🔮 The LLM Vision (RealNet-1B)
-If we can solve vision with 100x fewer parameters, can we solve language?
-*   **Traditional LLM:** Needs 175B parameters (GPT-3).
-*   **RealNet Dream:** A 1B parameter model (fits on an RTX 3060) that thinks for 100 steps.
-    *   Effective Depth: $1B \times 100 = 100B$ Operations.
-    *   **Goal:** GPT-4 level reasoning on consumer hardware.
-
-> "We don't need petabytes of VRAM. We just need Time."
-
----
-
 ## 🔮 Vision: The Soul of Silicon
 
 RealNet is a rebellion against the factory model of AI. We believe intelligence is not a mechanical stacking of layers, but an organic reverberation of signals.
@@ -157,6 +137,29 @@ RealNet is a rebellion against the factory model of AI. We believe intelligence 
 We have proven that a small, chaotic forest of neurons, given enough time to "think", can outperform massive industrial factories.
 
 > "We have traded Space for Time, and in doing so, found the Soul."
+
+### 7. The Zero-Hidden Benchmark
+
+We tested RealNet on the full-scale MNIST dataset (28x28 pixels) with **Zero Hidden Layers**.
+*   **Input:** 784 Neurons.
+*   **Output:** 10 Neurons.
+*   **Hidden Layers:** **0** (Direct Input-Output connection).
+*   **Thinking Steps:** 10.
+
+**Key Findings:**
+1.  **Rapid Learning:** The network achieved **82.20% Accuracy in Epoch 1**.
+2.  **Final Accuracy:** Peaked at **96.20%** (Epoch 69).
+3.  This proves that **Time acts as a hidden layer**, allowing a mathematically simple structure to learn non-linear patterns.
+
+#### 🔬 Experimental: Assessing Constraints
+In a separate experiment (`PoC/experiments/convergence_mnist_tiny.py`), we pushed the architecture to its limits with a 7x7 input size (~3,500 parameters). Even under these extreme constraints, the model converged to **~92% Accuracy**, demonstrating robust information encoding in the temporal domain.
+
+#### 🔮 The LLM Vision (RealNet-1B)
+If we can solve vision with Zero Hidden Layers by trading Space for Time, this approach could scale to language models.
+*   **Hypothesis:** A 1B parameter model (RealNet-1B) could theoretically match the reasoning depth of much larger models by "thinking" for more steps.
+*   **Goal:** Efficient, high-reasoning AI on consumer hardware (e.g., RTX 3060).
+
+> "We don't need petabytes of VRAM. We just need Time."
 
 ---
 

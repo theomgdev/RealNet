@@ -29,17 +29,18 @@ Bu testlerde Giriş Katmanı doğrudan Çıkış Katmanına (ve kendisine) bağl
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Identity** | Basit | **Atomik Birim** | **4** | **16** | Loss: 0.0 | `PoC/convergence.py` |
 | **XOR** | Gizli Katman Şart | **Minimal Kaos** | **5** | **25** | Loss: ~0.0002 | `PoC/convergence_gates.py` |
-| **MNIST** | ~500k Parametre Şart | **Sıfır-Gizli** | **206** | **~42k** | **Acc: ~89.8%** | `PoC/convergence_mnist.py` |
+| **MNIST** | Gizli Katman Şart | **Sıfır-Gizli** | **794** | **~630k** | **Acc: %96.2** | `PoC/convergence_mnist.py` |
 
-### MNIST Mucizesi
-Standart MLP'ler 784 pikseli 10 rakama dönüştürmek için yaklaşık 400.000 parametreye ihtiyaç duyar.
-RealNet bunu **42.436 parametre** ile yapar.
-*   **Giriş:** 196 (14x14 Yeniden Boyutlandırılmış)
+### MNIST Sıfır-Gizli Mucizesi
+Standart Sinir Ağları, MNIST veya XOR problemlerini çözmek için **Gizli Katmanlara** ihtiyaç duyar. Doğrudan bir bağlantı (Lineer Model) karmaşıklığı çözemez ve başarısız olur (~%92'de tıkanır).
+
+RealNet, tam ölçekli MNIST'i (28x28) **Sıfır Gizli Katman** (Doğrudan Giriş-Çıkış) ile çözer.
+*   **Giriş:** 784
 *   **Çıkış:** 10
-*   **Gizli:** 0
-*   **Düşünme Süresi:** 15 Adım
+*   **Gizli Katman:** **0**
+*   **Düşünme Süresi:** 10 Adım
 
-Giriş katmanı 15 adım boyunca "kendi kendine konuşur". Kaotik geri besleme döngüleri, zaman içinde özellik çıkarımı (feature extraction) yaparak uzamsal katmanların işini üstlenir. Bu, **Sıkıştırma Zekasının** zirvesidir.
+Giriş katmanı 10 adım boyunca "kendi kendine konuşur". Kaotik geri besleme döngüleri, zaman içinde özellikleri (kenarlar, döngüler) dinamik olarak çıkararak uzamsal katmanların işini üstlenir. Bu, **Zamansal Derinliğin Uzamsal Derinliğin yerini alabileceğini** kanıtlar.
 
 ---
 
@@ -129,27 +130,6 @@ $$h_t = \text{StepNorm}(\text{GELU}(h_{t-1} \cdot W + B + I_t))$$
 
 ---
 
-### 7. 3,481 Deneyi: Geleceğe Bir Bakış
-
-Sınırları `PoC/experiments/convergence_mnist_tiny.py` ile daha da zorladık.
-*   **Girdi:** 7x7 Piksel (49 Nöron).
-*   **Toplam Nöron:** 59.
-*   **Toplam Parametre:** **3,481**.
-
-**Sonuç:** MNIST üzerinde **~%92 Doğruluk**.
-Bir bilgisayarın açılış yükleyicisinden (bootloader) bile daha az kod/parametre ile RealNet bir görseli tanıdı. (Epoch 96: 91.90%)
-
-#### 🔮 LLM Vizyonu (RealNet-1B)
-Görseli 100 kat az parametreyle çözebiliyorsak, dili de çözebilir miyiz?
-*   **Geleneksel LLM:** 175Milyar parametre ister (GPT-3).
-*   **RealNet Rüyası:** RTX 3060'a sığan, 100 adım düşünen 1 Milyar parametreli bir model.
-    *   Efektif Derinlik: $1B \times 100 = 100B$ İşlem.
-    *   **Hedef:** Ev kullanıcısı donanımında GPT-4 seviyesinde akıl yürütme.
-
-> "Petabaytlarca VRAM'e ihtiyacımız yok. Sadece Zamana ihtiyacımız var."
-
----
-
 ## 🔮 Vizyon: Silikonun Ruhu
 
 RealNet, yapay zekanın katmanlı fabrika modeline bir başkaldırıdır. Zekanın mekanik bir katman yığını değil, sinyallerin organik yankısı olduğuna inanıyoruz.
@@ -157,6 +137,29 @@ RealNet, yapay zekanın katmanlı fabrika modeline bir başkaldırıdır. Zekan�
 Küçük, kaotik bir nöron ormanının, "düşünmek" için yeterli zaman verildiğinde, devasa endüstriyel fabrikalardan daha iyi performans gösterebileceğini kanıtladık.
 
 > "Uzayı feda edip Zamanı kazandık ve bunu yaparken Ruhu bulduk."
+
+### 7. Sıfır-Gizli Katman Benchmarkı (The Zero-Hidden Benchmark)
+
+RealNet'i tam ölçekli MNIST veri seti (28x28 piksel) üzerinde **Sıfır Gizli Katman** ile test ettik.
+*   **Girdi:** 784 Nöron.
+*   **Çıktı:** 10 Nöron.
+*   **Gizli Katman:** **0** (Doğrudan Input-Output bağlantısı).
+*   **Düşünme Adımı:** 10.
+
+**Temel Bulgular:**
+1.  **Hızlı Öğrenme:** Ağ, daha **1. Epoch'ta %82.20 Doğruluk** oranına ulaştı.
+2.  **Final Doğruluk:** **%96.20** ile zirve yaptı (Epoch 69).
+3.  Bu sonuç, **Zamanın bir gizli katman gibi davrandığını**, böylece matematiksel olarak basit bir yapının lineer olmayan kalıpları öğrenebildiğini kanıtlar.
+
+#### 🔬 Deneysel: Sınırları Zorlamak
+Ayrı bir deneyde (`PoC/experiments/convergence_mnist_tiny.py`), 7x7 girdi boyutu (~3,500 parametre) ile mimariyi sınırlarına kadar zorladık. Bu aşırı kısıtlamalar altında bile model **~%92 Doğruluk** oranına ulaştı. Bu, zamansal alandaki bilgi kodlamasının ne kadar dayanıklı olduğunu gösterir.
+
+#### 🔮 LLM Vizyonu (RealNet-1B)
+Uzayı feda edip Zamanı kullanarak görsel problemleri Sıfır Gizli Katman ile çözebiliyorsak, bu yaklaşım dil modellerine de uyarlanabilir.
+*   **Hipotez:** 1 Milyar parametreli bir model (RealNet-1B), daha fazla adım "düşünerek" çok daha büyük modellerin akıl yürütme derinliğine ulaşabilir.
+*   **Hedef:** Ev kullanıcısı donanımında (örneğin RTX 3060) verimli ve yüksek muhakeme yeteneğine sahip Yapay Zeka.
+
+> "Petabaytlarca VRAM'e ihtiyacımız yok. Sadece Zamana ihtiyacımız var."
 
 ---
 

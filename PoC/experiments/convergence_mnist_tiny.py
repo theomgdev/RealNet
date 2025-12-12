@@ -9,29 +9,28 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from realnet import RealNet, RealNetTrainer
 
 def main():
-    print("RealNet 2.0: THE 3k PARAMETER MIRACLE (7x7 Input)...")
+    print("RealNet 2.0: TINY EXPERIMENT (7x7 Input)...")
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    # THE 100x CONFIG
+    # EXPERIMENTAL CONFIG: "Tiny RealNet"
     # 28x28 resized to 7x7 = 49 Pixels (Input)
     # 10 Classes (Output)
     # 0 Hidden Neurons.
     # Total: 59 Neurons.
-    # Params: 59*59 = 3481.
-    # Traditional MLP: ~400,000.
-    # Efficiency: >114x.
+    # Params: 59*59 = 3,481.
+    
+    # Goal: Observe behavior under extreme parameter constraints.
     
     INPUT_SIZE = 49
     OUTPUT_SIZE = 10
     NUM_NEURONS = INPUT_SIZE + OUTPUT_SIZE
     
     print(f"Neurons: {NUM_NEURONS} (49 In + 10 Out + 0 Hidden)")
-    print(f"Params: {NUM_NEURONS*NUM_NEURONS} (3.4k)")
+    print(f"Params: {NUM_NEURONS*NUM_NEURONS} (~3.5k)")
     
     input_ids = list(range(49))
     output_ids = list(range(49, 59))
     
-    # Tiny Brain, Huge Thoughts
     model = RealNet(
         num_neurons=NUM_NEURONS, 
         input_ids=input_ids, 
@@ -43,7 +42,7 @@ def main():
     trainer = RealNetTrainer(model, device=DEVICE)
     
     transform = transforms.Compose([
-        transforms.Resize((7, 7)), # EXTREME DOWNSCALING
+        transforms.Resize((7, 7)), # Downscaling for experimental constraints
         transforms.ToTensor(), 
         transforms.Normalize((0.5,), (0.5,))
     ])
@@ -51,13 +50,11 @@ def main():
     train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
     test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
     
-    # Full dataset subset for fair comparison
     SUBSET_SIZE = 5000 
     train_subset = Subset(train_dataset, range(SUBSET_SIZE))
-    # Test on enough samples
-    test_subset = Subset(test_dataset, range(1000))
-    
     train_loader = DataLoader(train_subset, batch_size=32, shuffle=True)
+    
+    test_subset = Subset(test_dataset, range(1000))
     test_loader = DataLoader(test_subset, batch_size=32, shuffle=False)
     
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.01)
@@ -65,10 +62,10 @@ def main():
     trainer.optimizer = optimizer
     trainer.loss_fn = loss_fn
     
-    NUM_EPOCHS = 100 # Push it to the limit
+    NUM_EPOCHS = 50 
     THINKING_STEPS = 15
     
-    print("Training the Tiny Giant...")
+    print("Training Tiny RealNet...")
     
     for epoch in range(NUM_EPOCHS):
         model.train()

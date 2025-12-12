@@ -5,30 +5,31 @@ from torch.utils.data import DataLoader, Subset
 import sys
 import os
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from realnet import RealNet, RealNetTrainer
 
 def main():
-    print("RealNet 2.0: PURE MNIST CHALLENGE (28x28 Raw Input)...")
+    print("RealNet 2.0: SCALED EXPERIMENT (14x14 Input)...")
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    # PURE ZERO-HIDDEN CONFIG
-    # 28x28 = 784 Pixels (Input)
+    # SCALED ZERO-HIDDEN CONFIG
+    # 28x28 resized to 14x14 = 196 Pixels (Input)
     # 10 Classes (Output)
     # 0 Hidden Neurons.
-    # Total: 794 Neurons. (Zero Buffer Layers)
+    # Total: 206 Neurons.
+    # Params: 206*206 = ~42k.
     
-    # Challenge: Can a single matrix solve full-scale MNIST using Time-Folding?
+    # Goal: Medium efficiency test.
     
-    INPUT_SIZE = 784
+    INPUT_SIZE = 196
     OUTPUT_SIZE = 10
     NUM_NEURONS = INPUT_SIZE + OUTPUT_SIZE
     
-    print(f"Neurons: {NUM_NEURONS} (784 In + 10 Out + 0 Hidden)")
-    print(f"Params: {NUM_NEURONS*NUM_NEURONS} (~630k)")
+    print(f"Neurons: {NUM_NEURONS} (196 In + 10 Out + 0 Hidden)")
+    print(f"Params: {NUM_NEURONS*NUM_NEURONS} (~42k)")
     
-    input_ids = list(range(784))
-    output_ids = list(range(784, 794))
+    input_ids = list(range(196))
+    output_ids = list(range(196, 206))
     
     model = RealNet(
         num_neurons=NUM_NEURONS, 
@@ -40,8 +41,8 @@ def main():
     )
     trainer = RealNetTrainer(model, device=DEVICE)
     
-    # NO RESIZE used. Pure 28x28.
     transform = transforms.Compose([
+        transforms.Resize((14, 14)), # Medium Downscaling
         transforms.ToTensor(), 
         transforms.Normalize((0.5,), (0.5,))
     ])
@@ -49,23 +50,22 @@ def main():
     train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
     test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
     
-    # Fair subset size
-    SUBSET_SIZE = 10000 
+    SUBSET_SIZE = 5000 
     train_subset = Subset(train_dataset, range(SUBSET_SIZE))
     test_subset = Subset(test_dataset, range(1000))
     
-    train_loader = DataLoader(train_subset, batch_size=64, shuffle=True)
-    test_loader = DataLoader(test_subset, batch_size=64, shuffle=False)
+    train_loader = DataLoader(train_subset, batch_size=32, shuffle=True)
+    test_loader = DataLoader(test_subset, batch_size=32, shuffle=False)
     
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=2e-4, weight_decay=0.01)
     loss_fn = nn.MSELoss()
     trainer.optimizer = optimizer
     trainer.loss_fn = loss_fn
     
-    NUM_EPOCHS = 100
-    THINKING_STEPS = 10 # 10 Steps should be enough for full resolution
+    NUM_EPOCHS = 20
+    THINKING_STEPS = 15
     
-    print("Training...")
+    print("Training Scaled RealNet...")
     
     for epoch in range(NUM_EPOCHS):
         model.train()
