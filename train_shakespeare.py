@@ -28,7 +28,7 @@ def main():
     )
     
     train_config = TrainingConfig(
-        batch_size=1024,
+        batch_size=8,
         gradient_accumulation_steps=32, # Effective 32
         learning_rate=5e-4,
         max_steps=5000, # Increased steps for bit learning
