@@ -96,7 +96,7 @@ class LMTrainer:
                      ctx = torch.cuda.amp.autocast(enabled=(device_type=='cuda'))
                      
                 with ctx:
-                     logits, loss = self.model(x, y)
+                     logits, loss, _ = self.model(x, y)
                      # Scale loss for accumulation
                      loss = loss / self.config.gradient_accumulation_steps
                 
@@ -146,7 +146,7 @@ class LMTrainer:
         for k in range(20):
              x, y = self.dataset.get_split_batch('val', self.config.batch_size, device=self.device)
              with torch.no_grad():
-                  logits, loss = self.model(x, y)
+                  logits, loss, _ = self.model(x, y)
                   losses[k] = loss.item()
         self.model.train()
         return losses.mean().item()
