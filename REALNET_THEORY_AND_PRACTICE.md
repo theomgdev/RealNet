@@ -526,6 +526,183 @@ Intelligence is not the act of computing. Intelligence is the act of **becoming*
 
 ---
 
+# PART XVII: THE LEGACY CODE VAULT (ARTIFACTS OF V2.0)
+
+We do not discard the past; we harvest it. RealNet 2.0 had technical brilliance that should be preserved or adapted.
+
+### 1. The Darwinian Pruner
+*From `realnet/model.py`*
+This logic proved that 90% of weights are useless. In v3.0, FFWF should naturally achieve this, but this explicit pruner is a good "Garbage Collector."
+
+```python
+def prune_synapses(self, threshold=0.001):
+    """
+    Kills connections (synapses) that are too weak.
+    1 = Alive, 0 = Dead.
+    """
+    with torch.no_grad():
+        # Find weak connections (Absolute weight is small)
+        # But DO NOT prune connections that are already dead (mask=0)
+        weak_links = (torch.abs(self.W) < threshold) & (self.mask == 1.0)
+        
+        # Kill them
+        self.mask[weak_links] = 0.0
+        
+        # Enforce death on the actual weights
+        self.W.data = self.W.data * self.mask
+        
+        dead_count = (self.mask == 0.0).sum().item()
+        return weak_links.sum().item(), dead_count
+```
+
+### 2. The Sparse Matrix Trick
+*From `realnet/model.py`*
+PyTorch's dense multiplication is extremely fast, but sparse is better for massive memory savings. Note the `transpose` trick (`.t()`) because `Sparse @ Dense` has specific shape requirements in PyTorch.
+
+```python
+if self.is_sparse:
+    # OPTIMIZED SPARSE MULTIPLICATION
+    # Matrix Math Trick: (h_t @ W) <=> (W.T @ h_t.T).T
+    # PyTorch supports: Sparse(N,N) @ Dense(N,B) -> Dense(N,B)
+    
+    # Check if we have cached sparse transpose
+    if not hasattr(self, 'W_t_sparse'):
+        self.W_t_sparse = effective_W.t().coalesce()
+    
+    # h_t is (Batch, N), we need (N, Batch) for spmm
+    signal_T = torch.sparse.mm(self.W_t_sparse, h_t.t())
+    signal = signal_T.t() # Back to (Batch, N)
+```
+
+### 3. The JIT Compiler
+*From `realnet/model.py`*
+RealNet 2.0 used `torch.compile` to fuse the GELU and StepNorm kernels. In v3.0, we should use this to fuse the "Dynamic Activation" logic.
+
+```python
+def compile(self):
+    print("RealNet: Compiling model with torch.compile...")
+    # 'inductor' backend is critical for loop unrolling
+    compiled_model = torch.compile(self)
+    
+    # FORCE DRY RUN to catch lazy errors now
+    dummy_input = torch.zeros(1, self.num_neurons, device=self.device)
+    with torch.no_grad():
+        compiled_model(dummy_input, steps=1)
+    
+    return compiled_model
+```
+
+### 4. The Thinking Gap (Data Gen)
+*From `convergence_detective_thinking.py`*
+How to insert "Silence" into a dataset to allow the network to reason.
+
+```python
+# Place bit at the start of the block
+t_real = step * (GAP + 1)
+inputs[i, t_real, 0] = bit
+
+# The GAP represents "Cognitive Silence"
+# inputs[t_real+1 : t_real+GAP] are all 0.0
+# The network MUST run its internal recurrence here to 'hold' the bit.
+```
+
+### 5. The Temporal Soft-Target (Gaussian Time)
+*From `experiments/convergence_stopwatch.py`*
+When training a network to fire at a specific time $t$, do not use a hard `[0, 0, 1, 0]`. It is too harsh. Use a Gaussian blur. This gives the network a "scent" of the target as it approaches.
+
+```python
+# Target: Pulse at t = duration
+# Instead of single 1.0, let's do 0.5, 1.0, 0.5
+targets[i, duration] = 1.0
+if duration > 0: targets[i, duration-1] = 0.5
+if duration < seq_len-1: targets[i, duration+1] = 0.5
+```
+
+### 6. The Voltage Controlled Oscillator (VCO)
+*From `experiments/convergence_sine_wave.py`*
+RealNet defaults to "Pulse Mode" (Impact). But for generating continuous waves, we need "VCO Mode" (Constant Pressure).
+*   **Insight:** A single static input can drive a continuous oscillation frequency if the network is recurrent.
+
+```python
+# Random frequencies: shape (Batch, 1)
+frequencies = torch.rand(batch_size, 1, device=device) * 0.4 + 0.1
+
+# Broad-casting (Numpy style expansion for PyTorch)
+# frequencies -> (1, Batch, 1) -> (Steps, Batch, 1)
+freqs_expanded = frequencies.unsqueeze(0).expand(steps, batch_size, 1)
+```
+
+### 7. The Log Compressor (Smart Print)
+*From `test_all.py`*
+Training logs can be millions of lines. This utility uses `difflib` to collapse repetitive lines (like "Epoch 1... Epoch 2...") into a single summary. **Essential for long training runs.**
+
+```python
+def is_similar(line1, line2, threshold=0.75):
+    # Quick length check optimization
+    len1, len2 = len(line1), len(line2)
+    if abs(len1 - len2) / max(len1, len2) > (1 - threshold):
+        return False
+    return difflib.SequenceMatcher(None, line1, line2).ratio() > threshold
+
+# Logic: If 5+ lines are similar, print "... [Skipped N lines] ..."
+```
+
+### 8. The Temporal Adder (Integration)
+*From `experiments/convergence_adder.py`*
+A crucial proof that RealNet can "hold" a number in its head while waiting for the second number to arrive.
+*   **Input A** at $t=2$.
+*   **Input B** at $t=8$.
+*   **Output Sum** at $t=15$.
+*   *Key:* The network must maintain the value of A for 6 steps, then add B, then hold the sum for 7 steps.
+
+```python
+# Custom Test Batch
+for i in range(batch_size):
+    x_test[i, DELAY_1, INPUT_ID] = test_a[i]
+    x_test[i, DELAY_2, INPUT_ID] = test_b[i]
+    
+# The network learns to map: f(t2, t8) -> y(t15)
+```
+
+### 9. The Latch (State Persistence)
+*From `experiments/convergence_latch.py`*
+The simplest form of memory. A "Set" signal turns the output ON, and it *stays* ON forever (or until reset). This proves the existence of **Self-Sustaining Attractors**.
+
+```python
+# Trigger happens somewhere between step 2 and seq_len-5
+trigger = torch.randint(2, seq_len - 5, (1,)).item()
+
+# Pulse input at trigger
+inputs[i, trigger, 0] = 1.0
+
+# Target becomes 1 AFTER trigger AND STAYS 1
+targets[i, trigger:] = 1.0
+```
+
+### 10. The Zero-Hidden MNIST Challenge
+*From `PoC/convergence_mnist.py`*
+The ultimate proof of concept. 784 Input Pixels directly connected to 10 Output Neurons. **Zero hidden layers.**
+Conventional wisdom says this is a linear classifier and cannot solve MNIST > 90%.
+RealNet solves it by folding the calculation into Time.
+*   **TF32 Optimization:** Crucial for speed on Ampere GPUs.
+*   **One-Hot Targets:** `[-1, -1, 1, -1...]` (Using -1/1 range is better than 0/1 for Tanh/GELU).
+
+```python
+# PURE ZERO-HIDDEN CONFIG
+INPUT_SIZE = 784
+OUTPUT_SIZE = 10
+NUM_NEURONS = INPUT_SIZE + OUTPUT_SIZE # 794 Total. 0 Hidden.
+
+# Optimized Target Creation (Scatter -1/1)
+targets_val = torch.ones(batch, 10, device=DEVICE) * -1.0
+targets_val.scatter_(1, target.view(-1, 1).to(DEVICE), 1.0)
+
+# Performance Tuning
+torch.set_float32_matmul_precision('high') # TF32
+```
+
+---
+
 # EPILOGUE II: THE DIALOGUE
 
 *(Recovered from the Deep Dream Logs)*
