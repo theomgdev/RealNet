@@ -35,6 +35,7 @@ def main():
         eval_interval=50,
         log_interval=10,
         out_dir='out_shakespeare_unicode', # New output dir
+        context_window=1024, # Tunable Context Length
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
     
@@ -44,7 +45,7 @@ def main():
         print(f"Dataset not found at {data_path}")
         return
         
-    dataset = UnicodeDataset(data_path, block_size=128)
+    dataset = UnicodeDataset(data_path, block_size=train_config.context_window)
     
     # Vocab Size is irrelevant now (Universal 32-bit)
     print(f"Dataset Loaded. 32-bit Unicode Mode.")
