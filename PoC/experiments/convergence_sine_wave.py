@@ -51,8 +51,8 @@ def main():
     INPUT_IDS = [0] # Input 0: Frequency Control
     OUTPUT_IDS = [1] # Output 1: Sine Wave Output
     STEPS = 30 # Length of the wave
-    BATCH_SIZE = 32
-    EPOCHS = 3000
+    BATCH_SIZE = 128
+    EPOCHS = 10000
     
     # Initialize Model
     model = RealNet(

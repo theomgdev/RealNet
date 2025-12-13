@@ -52,8 +52,8 @@ def main():
     DELAY_1 = 2
     DELAY_2 = 8
     
-    BATCH_SIZE = 64
-    EPOCHS = 5000
+    BATCH_SIZE = 1024
+    EPOCHS = 10000
     
     # Initialize Model
     # Pulse Mode is irrelevant here because we will feed 3D sequence manually
@@ -61,6 +61,7 @@ def main():
         num_neurons=NUM_NEURONS,
         input_ids=[INPUT_ID],
         output_ids=[OUTPUT_ID],
+        dropout_rate=0.1,
         device=DEVICE
     )
     

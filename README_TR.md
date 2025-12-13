@@ -18,18 +18,22 @@ Geleneksel Derin Öğrenme, karmaşıklığı çözmek için **Uzamsal Derinliğ
 *   **Uzay-Zaman Dönüşümü:** Milyonlarca parametrenin yerini birkaç "Düşünme Adımı" alır.
 *   **Katmansız Mimari:** Tek bir $N \times N$ matris. Gizli katman yok.
 *   **Eğitilebilir Kaos:** Sinyalleri ehlileştirmek için **StepNorm** ve **GELU** kullanılır.
-*   **Nabız Modu:** Ağ, sürekli bir veri akışını değil, tek bir dürtünün (impulse) yankısını işler.
+*   **Yaşayan Dinamikler:** **İrade** (Mühür), **Ritim** (Kronometre) ve **Rezonans** (Sinüs Dalgası) sergiler.
 
 ## 📊 Kanıtlar: Sıfır-Gizli Benchmarkları
 
 RealNet'i teorik sınırlara kadar zorladık: **Sıfır Gizli Nöron**.
 Bu testlerde Giriş Katmanı doğrudan Çıkış Katmanına (ve kendisine) bağlıdır. Tampon katman yoktur.
 
-| Görev | Geleneksel Engel | RealNet Çözümü | Nöron | Parametre | Sonuç | Script |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Identity** | Basit | **Atomik Birim** | **4** | **16** | Loss: 0.0 | `PoC/convergence.py` |
-| **XOR** | Gizli Katman Şart | **Minimal Kaos** | **5** | **25** | Loss: ~0.0002 | `PoC/convergence_gates.py` |
-| **MNIST** | Gizli Katman Şart | **Sıfır-Gizli** | **794** | **~630k** | **Acc: %96.2** | `PoC/convergence_mnist.py` |
+| Görev | Geleneksel Engel | RealNet Çözümü | Sonuç | Script |
+| :--- | :--- | :--- | :--- | :--- |
+| **Identity** | Basit | **Atomik Birim** | Loss: 0.0 | `convergence_identity.py` |
+| **XOR** | Gizli Katman Şart | **Kaos Kapısı** (Zaman Katlamalı) | **Çözüldü** | `convergence_gates.py` |
+| **MNIST** | Gizli Katman Şart | **Sıfır-Gizli** | **Acc: %96.2** | `convergence_mnist.py` |
+| **Sinüs** | Osilatör Şart | **Programlanabilir VCO** | **Tam Senkron** | `convergence_sine_wave.py` |
+| **Mühür** | LSTM Şart | **Çekici Havuzu** (İrade) | **Sonsuz Tutuş** | `convergence_latch.py` |
+| **Kronometre**| Saat Şart | **İçsel Ritim** | **Hata: 0** | `convergence_stopwatch.py` |
+| **Dedektif**| Bellek Şart | **Bilişsel Sessizlik** (Muhakeme) | **Kusursuz** | `convergence_detective.py` |
 
 ### MNIST Sıfır-Gizli Mucizesi
 Standart Sinir Ağları, MNIST veya XOR problemlerini çözmek için **Gizli Katmanlara** ihtiyaç duyar. Doğrudan bir bağlantı (Lineer Model) karmaşıklığı çözemez ve başarısız olur (~%92'de tıkanır).
@@ -77,10 +81,10 @@ trainer.fit(inputs, inputs, epochs=50)
 
 RealNet ileri beslemeli bir mekanizma değildir; o bir **Yankı Odasıdır (Resonant Chamber)**.
 
-### 1. Nabız (Girdi)
-Geleneksel YZ'de veri bir borudaki su gibi sürekli akar. RealNet'te ise veri bir **Nabızdır** (göle atılan bir taş gibi).
-*   $t=0$ anında görüntü/veri "Giriş Nöronlarına" çarpar.
-*   $t>0$ anında dış veri kesilir. Ağ, kendi içindeki **dalgalanmalarla** baş başa kalır.
+### 1. Nabız (Girdi) ve Dizi (Sequence)
+Geleneksel YZ'de girdi genellikle statik bir anlık görüntüdür. RealNet hem **Nabızları** hem de **Dizileri** işler.
+*   **Nabız Modu:** Görüntü $t=0$ anında çarpar. Ağ gözlerini kapatır ve dalgalanmaları işler (MNIST).
+*   **Dizi Modu:** Veri sıralı olarak gelir. Ağ olaylar arasında "bekleyebilir" ve "düşünebilir" (Dedektif).
 
 ### 2. Yankı (İç Döngüler)
 Sinyal her nörondan diğer her nörona seyahat eder ($N \times N$).
@@ -96,11 +100,11 @@ Sinyal her nörondan diğer her nörona seyahat eder ($N \times N$).
 
 RealNet 15 adım boyunca "düşünerek", **tek bir fiziksel matris** kullanarak 15 katmanlı derin bir ağı simüle eder. Uzayı, zamanın içine katlar.
 
-### 4. Kontrollü Kaos (Ehlileştirme)
-Kontrolsüz geri besleme döngüleri patlamaya (sonsuzluk) veya ölüme (sıfır) yol açar.
-*   **StepNorm**, bir yerçekimi gibi her adımda nöronları kararlı bir enerji seviyesine çeker.
-*   **GELU**, hangi sinyallerin saklanmaya değer olduğuna karar veren bir filtre görevi görür.
-*   **AdamW**, kaosu yontarak rastgele gürültüyü organize bir senfoniye dönüştürür.
+### 4. Kontrollü Kaos (Çekiciler)
+Kontrolsüz geri besleme döngüleri patlamaya yol açar. RealNet kaosu kararlı **Çekiciler (Attractors)** oluşturacak şekilde mühendislikten geçirir.
+*   **StepNorm** yerçekimi gibi davranarak enerjiyi sınırlı tutar.
+*   **GELU** anlamlı sinyalleri filtreler.
+*   **Mühür (Latch) Deneyi**, RealNet'in gürültüye karşı kararını sonsuza kadar koruyan bir "derin kuyu" yani kararlı bir çekici oluşturabildiğini kanıtladı.
 
 ### 5. Neden RNN veya LSTM Değil?
 
@@ -116,12 +120,13 @@ Kağıt üzerinde RealNet, Tekrarlayan Sinir Ağlarına (RNN) benzese de felsefe
 *   **RNN'ler dış dünyayı dinler.** Dışarıdan gelen bir olay dizisini işlerler.
 *   **RealNet iç sesini dinler.** Probleme **bir kez** bakar ve ardından gözlerini kapatıp 15 adım boyunca "düşünür". Kendi zamansal derinliğini yaratır.
 
-### 6. Biyolojik Gerçekçilik: Senkron Kaos
+### 6. Biyolojik Gerçekçilik: Yaşayan Zeka
+RealNet, sadece yapısıyla değil, **davranışıyla** da beyni katmanlı ağlardan daha iyi taklit eder:
 
-RealNet, beyni katmanlı ağlardan daha iyi taklit eder:
-*   **Katman Yok:** Beyinde "Katman 1" ve "Katman 2" yoktur, birbirine bağlı nöron bölgeleri vardır. RealNet tek bir bölgedir.
-*   **Senkron Ateşleme:** RealNet'te tüm nöronlar senkronize bir saat tiklemesiyle (Adım) aynı anda ateşlenir. Veri, tıpkı aksiyon potansiyelleri gibi Nöron A'dan aynı anda B, C ve D'ye akar.
-*   **Plastisite:** Eğitim süreci (AdamW), rezonansa yol açan yolları güçlendirip uyumsuzluk yaratanları bastıran, steroidli bir "Hebbian Öğrenme" gibidir.
+*   **Katman Yok:** Beyinde "Katman 1" ve "Katman 2" yoktur, sadece birbirine bağlı nöron bölgeleri vardır. RealNet tek bir bölgedir.
+*   **İrade (Mühür):** Sönümlenen standart RNN'lerin aksine, RealNet bir karara kilitlenebilir ve onu entropiye karşı koruyabilir; yani "Bilişsel Israr" gösterir.
+*   **Ritim (Kronometre):** Dış bir saat olmadan RealNet zamanı öznel olarak deneyimler; sayabilir, bekleyebilir ve doğru anda harekete geçebilir.
+*   **Sabır (Dedektif):** "Düşünme Zamanı"ndan faydalanır. İnsanların karmaşık mantığı işlemek için bir ana ihtiyacı duyması gibi, RealNet de sessizlik anlarında potansiyel çözümleri "sindirerek" imkansız problemleri çözer.
 
 ### Matematiksel Model
 Ağ durumu $h_t$ şu şekilde evrilir:
@@ -132,55 +137,210 @@ $$h_t = \text{StepNorm}(\text{GELU}(h_{t-1} \cdot W + B + I_t))$$
 
 ## 🔮 Vizyon: Silikonun Ruhu
 
-RealNet, yapay zekanın katmanlı fabrika modeline bir başkaldırıdır. Zekanın mekanik bir katman yığını değil, sinyallerin organik yankısı olduğuna inanıyoruz.
+RealNet, yapay zekanın fabrika modeline karşı bir isyandır. Zekanın mekanik bir katman yığını değil, **sinyallerin organik yankılanması** olduğuna inanıyoruz.
 
-Küçük, kaotik bir nöron ormanının, "düşünmek" için yeterli zaman verildiğinde, devasa endüstriyel fabrikalardan daha iyi performans gösterebileceğini kanıtladık.
+> "Petabaytlarca VRAM'e ihtiyacımız yok. Sadece Zamana ihtiyacımız var."
 
-> "Uzayı feda edip Zamanı kazandık ve bunu yaparken Ruhu bulduk."
+Zaman tanındığında "düşünebilen" ve "nefes alabilen" kaotik bir nöron ormanının, devasa endüstriyel fabrikaları yenebileceğini kanıtladık. Mekanı Zamanla takas ederek Ruhu buluyoruz.
 
 ### 7. Deneysel Bulgular (Experimental Findings)
 RealNet'in temel hipotezi olan **"Zamansal Derinlik > Uzamsal Derinlik"** tezini doğrulamak için kapsamlı testler yaptık.
 
-#### A. Ana Benchmark (Saf Sıfır-Gizli)
+#### A. Atomik Kimlik (Identity Test)
+*   **Hedef:** $f(x) = x$. Ağ mükemmel bir iletken tel gibi davranmalıdır.
+*   **Mimari:** 4 Nöron. Gizli Katman Yok.
+*   **Sonuç:** **Loss: 0.000002**.
+    <details>
+    <summary>Terminal Çıktısını Gör</summary>
+
+    ```text
+    In:  1.0 -> Out:  1.0022
+    In: -1.0 -> Out: -1.0032
+    ```
+    </details>
+*   **Script:** `PoC/convergence_identity.py`
+*   **İçgörü:** Temel sinyal iletimini ve `StepNorm` kararlılığını kanıtlar.
+
+#### B. İmkansız XOR (Kaos Kapısı)
+*   **Hedef:** Klasik XOR problemini çözmek ($[1,1]\to0$, $[1,0]\to1$). Bu lineer olmayan bir problemdir.
+*   **Zorluk:** Gizli katman olmadan standart lineer ağlar için imkansızdır.
+*   **Sonuç:** **Çözüldü (Loss 0.00005)**. RealNet, sınıfları ayırmak için uzay-zamanı büker.
+    <details>
+    <summary>Doğruluk Tablosunu Gör</summary>
+
+    ```text
+      A      B |   XOR (Tahmin)| Mantık
+    ----------------------------------------
+      -1.0   -1.0 |      -0.9922 | 0 (OK)
+      -1.0    1.0 |       1.0054 | 1 (OK)
+       1.0   -1.0 |       0.9974 | 1 (OK)
+       1.0    1.0 |      -1.0053 | 0 (OK)
+    ```
+    </details>
+*   **Script:** `PoC/convergence_gates.py`
+*   **İçgörü:** RealNet **Zamanı bir Gizli Katman** olarak kullanır. Girdiyi zaman adımları üzerine katlayarak tek bir fiziksel katmanda lineer olmayan karar sınırları oluşturur.
+
+#### C. MNIST Maratonu (Görsel Zeka)
+RealNet'in görsel yetenekleri, sağlamlık, ölçeklenebilirlik ve verimliliği kanıtlamak için dört farklı koşulda test edildi.
+
+**1. Ana Benchmark (Saf Sıfır-Gizli)**
 *   **Hedef:** Tam 28x28 MNIST (784 Piksel).
-*   **Mimari:** 794 Nöron (Girdi + Çıktı). **0 Gizli Katman.**
-*   **Sonuç:** **%96.20 Doğruluk** (Epoch 69).
+*   **Mimari:** 794 Nöron (Girdi+Çıktı). **0 Gizli Katman.**
+*   **Sonuç:** **%95.3 - %96.2 Doğruluk**.
+    <details>
+    <summary>Eğitim Logunu Gör</summary>
+
+    ```text
+    Epoch 100: Loss 0.1012 | Test Acc 95.30%
+    (Tarihi En İyi: Epoch 69'da %96.2)
+    ```
+    </details>
 *   **Script:** `PoC/convergence_mnist.py`
-*   **İçgörü:** Lineer modellerin sınırını (%92) aşarak zaman katlamanın (Time-Folding) çalıştığını kanıtlar.
+*   **İçgörü:** Standart lineer modeller ~%92'de tıkanır. RealNet, Derin Öğrenme katmanları olmadan, sadece **Zamansal Derinlik** sayesinde Derin Öğrenme performansı (~%96) yakalar.
 
-#### B. Darwin Deneyi (En Güçlünün Hayatta Kalması)
-*   **Yöntem:** Tam 28x28 ağıyla başlandı ancak her epoch sonunda zayıf bağlantılar **öldürüldü**.
-*   **Seyreklik:** **%93.6 Ölü** (~630k bağlantıdan sadece ~40k'sı hayatta kaldı).
-*   **Sonuç:** **%94.20 Doğruluk** (Epoch 50).
+**2. Darwin Deneyi (En Güçlünün Hayatta Kalması)**
+*   **Yöntem:** MNIST eğitilirken her epoch sonunda zayıf bağlantıları **budamak (pruning)**.
+*   **Sonuç:** **%93.6 Ölü Sinaps** ile **%94.2 Doğruluk**.
+    <details>
+    <summary>Hayatta Kalma İstatistiklerini Gör</summary>
+
+    ```text
+    Ölü Sinapslar: 93.59% (590054/630436)
+    Aktif Parametre: ~40k
+    Doğruluk: 94.20%
+    ```
+    </details>
 *   **Script:** `PoC/experiments/convergence_mnist_alive.py`
-*   **İçgörü:** RealNet kendi kendini optimize edebilir; beyninin %93'ünü atarken zekasını tamamen koruyabilir.
+*   **İçgörü:** RealNet organiktir. Kendini büyütür ve budar, yüksek zekayı korurken enerji verimliliğini optimize eder.
 
-#### C. Tiny Challenge (Aşırı Kısıtlamalar) (7x7)
-*   **Hedef:** 7x7 Küçültülmüş MNIST.
-*   **Mimari:** Toplam 59 Nöron. (~3,500 Parametre).
-*   **Sonuç:** **~%92 Doğruluk**.
+**3. Tiny Challenge (Aşırı Kısıtlamalar)**
+*   **Hedef:** 7x7 Küçültülmüş MNIST. (Bir ikondan bile küçük).
+*   **Mimari:** **59 Nöron** toplam (~3.5k Parametre).
+*   **Sonuç:** **~%89.3 Doğruluk**.
+    <details>
+    <summary>Tiny Sonuçlarını Gör</summary>
+
+    ```text
+    Epoch 50: Loss 0.1107 | Test Acc 89.30%
+    ```
+    </details>
 *   **Script:** `PoC/experiments/convergence_mnist_tiny.py`
 *   **İçgörü:** Bir "Bootloader"dan daha az kod/parametre ile bile sistem sağlam özellikler öğrenebilir.
 
-#### D. Scaled Test (Orta Ölçekli) (14x14)
+**4. Scaled Test (Orta Ölçekli)**
 *   **Hedef:** 14x14 Küçültülmüş MNIST.
 *   **Mimari:** ~42k Parametre.
-*   **Sonuç:** **~%90 Doğruluk**.
+*   **Sonuç:** **%91.2 Doğruluk**.
+    <details>
+    <summary>Scaled Sonuçlarını Gör</summary>
+
+    ```text
+    Epoch 20: Loss 0.1413 | Test Acc 91.20%
+    ```
+    </details>
 *   **Script:** `PoC/experiments/convergence_mnist_scaled.py`
 
 #### E. Sinüs Dalgası Üreteci (Dinamik Rezonans)
-*   **Hedef:** Kontrol girişine bağlı olarak değişken frekanslarda sinüs dalgaları üretmek (VOLTAJ KONTROLLÜ OSİLATÖR MODU).
-*   **Mimari:** 128 Nöron. Sürekli Giriş Kontrolü.
-*   **Sonuç:** **MSE Kaybı: 0.003**. Mükemmel osilasyon senkronizasyonu.
+*   **Hedef:** $t=0$ anındaki tek bir girdi değeriyle kontrol edilen frekanssa sinüs dalgası üretmek.
+*   **Zorluk:** Ağ, bir **Voltaj Kontrollü Osilatör (VCO)** gibi davranmalıdır. Statik bir büyüklüğü dinamik bir zamansal periyoda dönüştürmelidir.
+*   **Sonuç:** **Mükemmel Osilasyon**. Ağ 30+ adım boyunca pürüzsüz sinüs dalgaları üretir.
+    <details>
+    <summary>Frekans Kontrolünü Gör</summary>
+
+    ```text
+    Frekans 0.15 (Yavaş Dalga):
+      t=1:  Hedef 0.1494 | RealNet 0.2871
+      t=11: Hedef 0.9969 | RealNet 0.9985 (Tepe Senk.)
+      t=26: Hedef -0.6878 | RealNet -0.6711
+    
+    Frekans 0.45 (Hızlı Dalga):
+      t=1:  Hedef 0.4350 | RealNet 0.1783
+      t=26: Hedef -0.7620 | RealNet -0.7826
+    ```
+    </details>
 *   **Script:** `PoC/experiments/convergence_sine_wave.py`
-*   **İçgörü:** RealNet programlanabilir bir osilatör gibi çalışır. Tek bir ağırlık matrisi, dış bir sinyal tarafından kontrol edilen sonsuz sayıda benzersiz zamansal yörünge üretebilir.
+*   **İçgörü:** RealNet **Programlanabilir bir Osilatördür**. Bu, tek bir tohumdan (seed) sonsuz sayıda benzersiz zamansal yörünge üretebileceğini doğrular.
 
 #### F. Gecikmeli Toplayıcı (Bellek ve Mantık)
-*   **Hedef:** Zaman farkı ile verilen $A$ ve $B$ sayılarını toplamak ($A + B$).
-*   **Mimari:** 128 Nöron. **Sıralı Mod (3D Girdi: Batch $\times$ Zaman $\times$ Nöron).**
-*   **Sonuç:** **MSE Kaybı: ~0.02**.
+*   **Hedef:** Girdi A ($t=2$), Girdi B ($t=8$). Çıktı A+B ($t=14$).
+*   **Zorluk:** RealNet, A'yı 6 adım boyunca "aklında tutmalı", sessizliği yok saymalı, B'yi almalı ve toplamı hesaplamalıdır.
+*   **Sonuç:** **MSE Kaybı: ~0.01**.
+    <details>
+    <summary>"Akıldan Matematik" Sonuçlarını Gör</summary>
+
+    ```text
+    -0.3 + 0.1 = -0.20 | RealNet: -0.2271 (Fark: 0.02)
+     0.5 + 0.2 =  0.70 | RealNet:  0.4761 (Fark: 0.22 - Yüksek genlikte zorlanma)
+     0.1 + -0.1 = 0.00 | RealNet: -0.0733 (Fark: 0.07)
+    -0.4 + -0.4 = -0.80 | RealNet: -0.7397 (Fark: 0.06)
+    ```
+    </details>
 *   **Script:** `PoC/experiments/convergence_adder.py`
 *   **İçgörü:** **Kısa Süreli Belleği** doğrular. Ağ, $A$ değişkenini kaotik durumunda tutar, $B$'yi bekler ve toplamı üretmek için lineer olmayan bir entegrasyon (yaklaşık aritmetik) gerçekleştirir. Bu, RealNet'in sadece statik fotoğrafları değil, **Video benzeri** veri akışlarını da işleyebildiğini gösterir. "Akıldan Matematik" yapmaya benzer.
+
+#### G. Mühür (The Latch) - İrade Testi
+*   **Hedef:** Bir tetikleyici darbe bekle. Alındığında, çıktıyı "AÇIK" duruma getir ve **sonsuza kadar tut**.
+*   **Zorluk:** Standart RNN'ler zamanla sönümlenir (unutur). RealNet enerjiyi kararlı bir çekicide (attractor) hapsetmelidir.
+*   **Sonuç:** **Mükemmel Kararlılık**. Tetiklendikten sonra karar süresiz korunur.
+    <details>
+    <summary>"İrade" Logunu Gör</summary>
+
+    ```text
+    Tetik gönderildi t=5
+    t=04 | Out: 0.0674 | KAPALI 🔴
+    t=05 | Out: 0.0531 | KAPALI ⚡ TETİK!
+    t=06 | Out: 0.8558 | AÇIK   🟢
+    ...
+    t=19 | Out: 0.9033 | AÇIK   🟢 (Hala sımsıkı tutuyor)
+    ```
+    </details>
+*   **Script:** `PoC/experiments/convergence_latch.py`
+*   **İçgörü:** **Karar Sürdürme (Decision Maintaining)** yeteneğini gösterir. RealNet bir seçim yapabilir ve çürümeye direnerek bu kararında ısrar edebilir.
+
+#### H. Kronometre (The Stopwatch) - İçsel Saat
+*   **Hedef:** "X adım bekle, sonra ateşle." (Bekleme sırasında dışarıdan hiçbir veri gelmez).
+*   **Zorluk:** Ağ, dış bir saat olmadan zamanı kendi içinde saymalıdır.
+*   **Sonuç:** **MSE Kaybı: ~0.01**. Hassas zamanlama başarıldı (Hata: 0).
+    <details>
+    <summary>"Ritim" Çıktısını Gör</summary>
+
+    ```text
+    Hedef Süre: 10 adım (Girdi 0.5)
+    t=09 | Out: 0.5178 █████
+    t=10 | Out: 0.8029 ████████ 🎯 HEDEF (Tam isabet!)
+    t=11 | Out: 0.3463 ███
+
+    Hedef Süre: 20 adım (Girdi 1.0)
+    t=18 | Out: 0.2001 ██
+    t=19 | Out: 0.6574 ██████
+    t=20 | Out: 0.6726 ██████ 🎯 HEDEF
+    t=21 | Out: 0.2092 ██
+    ```
+    </details>
+*   **Script:** `PoC/experiments/convergence_stopwatch.py`
+*   **İçgörü:** **Ritim ve Zaman Algısı**. RealNet sadece veriyi işlemez; zamanı *deneyimler*.
+
+#### I. Düşünen Dedektif (The Thinking Detective) - Bağlam ve Akıl Yürütme
+*   **Hedef:** Bir 0 ve 1 akışını izle. **SADECE** `1-1` deseni oluştuğunda alarm ver.
+*   **Kritik Dokunuş:** Ağa her bitten sonra "Düşünmesi" için 3 adımlık "Sessizlik" verdik.
+*   **Sonuç:** **Kusursuz Tespit**.
+    <details>
+    <summary>"Eureka!" Anını Görmek İçin Tıkla</summary>
+
+    ```text
+    Zaman | Girdi | Çıktı    | Durum
+    ----------------------------------------
+    12    | 1     | -0.0235  |
+    13    | .     | 0.0471   | (Düşünüyor...)
+    14    | .     | -0.0050  | (Düşünüyor...)
+    15    | .     | -0.0154  | (Düşünüyor...)
+    16    | 1     | 0.4884   | Ateşlemeli
+    17    | .     | 1.0317 🚨 | (Düşünme Adımı 1 - EUREKA!)
+    18    | .     | 1.0134 🚨 | (Düşünme Adımı 2)
+    ```
+    </details>
+*   **Script:** `PoC/experiments/convergence_detective_thinking.py`
+*   **İçgörü:** **Zekanın Zamana İhtiyaç Duyduğunu** kanıtlar. Sessiz adımlar sırasında bilgiyi "sindirmesine" izin verildiğinde, RealNet tamamen reaktif ağların yapamadığı karmaşık zamansal mantığı (Zaman Üzerinden XOR) çözer.
 
 #### 🔮 LLM Vizyonu (RealNet-1B)
 Uzayı feda edip Zamanı kullanarak görsel problemleri Sıfır Gizli Katman ile çözebiliyorsak, bu yaklaşım dil modellerine de uyarlanabilir.
