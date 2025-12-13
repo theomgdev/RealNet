@@ -22,20 +22,20 @@ def main():
     model_config = RealNetConfig(
         n_neurons=1024,
         n_layers=1,
-        thinking_steps=5, # Increased for bit-level reasoning
+        thinking_steps=3, # Increased for bit-level reasoning
         dropout=0.1,
         compile=False # Disable compilation for comparison
     )
     
     train_config = TrainingConfig(
-        batch_size=8,
+        batch_size=128,
         gradient_accumulation_steps=4, # Effective 32
         learning_rate=5e-4,
         max_steps=200, # Increased steps for bit learning
         eval_interval=50,
         log_interval=10,
         out_dir='out_shakespeare', # New output dir
-        context_window=1024, # Tunable Context Length
+        context_window=8, # Tunable Context Length
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
     
