@@ -34,7 +34,7 @@ def main():
         max_steps=200, # Increased steps for bit learning
         eval_interval=50,
         log_interval=10,
-        out_dir='out_shakespeare_unicode', # New output dir
+        out_dir='out_shakespeare', # New output dir
         context_window=1024, # Tunable Context Length
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
