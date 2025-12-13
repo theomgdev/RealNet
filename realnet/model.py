@@ -117,11 +117,18 @@ class RealNet(nn.Module):
                         signal = signal + x_input
                 else:
                     signal = signal + x_input
+            
+            # 5. Gradient Clipping (Firewall)
+            if signal.requires_grad:
+                signal.register_hook(lambda grad: torch.clamp(grad, -1.0, 1.0))
 
             # 4. Flow Activation (GELU) & StepNorm
+            # CLAMPING to prevent NaN/Inf during deep recurrence
+            # We must clamp *after* activation/norm/dropout but *before* the next reuse
             activated = self.act(signal)
             normalized = self.norm(activated)
             h_t = self.drop(normalized)
+            h_t = torch.clamp(h_t, min=-10.0, max=10.0)
             
             outputs.append(h_t)
 
