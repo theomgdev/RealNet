@@ -9,57 +9,27 @@ class RealNetLM(nn.Module):
         super().__init__()
         self.config = config
         
-        # 1. Embedding Layer: Token -> Vector
-        self.tokenizer_embedding = nn.Embedding(config.vocab_size, config.n_embd)
+        # 1. Input Interface: 32-bit Bitwise Projection
+        # Replaces Embedding Table. We project 32 raw bits to N neurons.
+        self.input_proj = nn.Linear(32, config.n_neurons)
         
-        # 2. Input Projection (if n_embd != n_neurons input area)
-        # To map embeddings to RealNet neurons, we can either:
-        # A) Use first n_embd neurons as input.
-        # B) Linearly project n_embd -> n_neurons (or partial).
-        # We choose (A) for now, but we need to supply input_ids to RealNet.
-        # However, RealNet core uses `input_ids` list. 
-        # If n_embd matches n_neurons, we might need no projection.
-        # But usually n_embd < n_neurons.
-        # Let's use a Linear project to mix inputs into the system if sizes differ widely.
-        # For simplicity and "Deep Learning" standard:
-        self.input_proj = nn.Linear(config.n_embd, config.n_neurons) if config.n_embd != config.n_neurons else nn.Identity()
-        
-        # 3. Backbone: RealNet
-        # Construct input_ids/output_ids logic? 
-        # Actually RealNet core is flexible. If we feed it a vector of size (Batch, N), it works.
-        # But RealNet.forward expects `x_input` of size (Batch, N).
-        # If we use `input_proj`, we get (Batch, N). Perfect.
-        # We just need to ensure RealNet knows which neurons are "input" if we want special initialization?
-        # No, RealNet 2.0 treats all neurons as potentially active. 
-        # We just need to pass an initialization mask? 
-        # Actually, in `realnet/model.py`, `input_ids` is used mainly for `_prepare_input` in Trainer.
-        # Here we are bypassing Trainer's input handling and feeding directly.
-        # So we can define input_ids as ALL neurons or None.
-        
-        input_ids = list(range(config.n_neurons)) # Theoretically we can drive all neurons
-        output_ids = list(range(config.n_neurons)) # We can read all neurons
+        # 2. Backbone: RealNet
+        # Conceptually we are driving the "whole brain" with these projected bits.
+        input_ids = list(range(config.n_neurons)) 
+        output_ids = list(range(config.n_neurons))
         
         self.backbone = RealNet(
             num_neurons=config.n_neurons,
             input_ids=input_ids,
-            output_ids=output_ids, # We will read all and project back
+            output_ids=output_ids,
             pulse_mode=config.pulse_mode,
             dropout_rate=config.dropout,
             device='cpu' # Will be moved later
         )
         
-        # 4. Unembedding Head: Vector -> Token Logits
-        # We project the internal state (n_neurons) back to n_embd, then to vocab?
-        # Or directly n_neurons -> vocab?
-        # Usually: State -> LayerNorm -> Linear(n_embd) -> Linear(vocab)
+        # 3. Output Interface: N Neurons -> 32 Bits
         self.ln_f = nn.LayerNorm(config.n_neurons)
-        
-        # Project back to embedding dimension first (optional, but good for weight tying)
-        self.output_proj = nn.Linear(config.n_neurons, config.n_embd, bias=False) 
-        self.head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
-        
-        # Weight Tying (Optional but standard in GPT)
-        # self.tokenizer_embedding.weight = self.head.weight 
+        self.output_proj = nn.Linear(config.n_neurons, 32, bias=True) # Bias allows default 0/1 lean
         
         # Init weights
         self.apply(self._init_weights)
@@ -69,103 +39,95 @@ class RealNetLM(nn.Module):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
-        elif isinstance(module, nn.Embedding):
-            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+
+    def to_bits(self, input_ids):
+        """
+        Converts Integer Code Points to 32-bit Binary Float Vectors.
+        Args:
+            input_ids: (Batch, Seq) or (Batch, 1) int64
+        Returns:
+            bits: (Batch, Seq, 32) float32
+        """
+        # Create a bit mask: [2^31, 2^30, ..., 2^0]
+        # We cache this mask in the model buffers if possible, but here dynamic is fine.
+        mask = 2 ** torch.arange(31, -1, -1, device=input_ids.device)
+        
+        # Bitwise AND to extract bits, then Boolean to Float
+        # unsqueeze(-1) extends inputs to (B, S, 1) to broadcast against mask (32)
+        # Result (B, S, 32)
+        return (input_ids.unsqueeze(-1) & mask).ne(0).float()
 
     def forward(self, input_ids, targets=None):
         """
         Args:
-            input_ids: (Batch, Seq_Len) - Sequence of tokens
-            targets: (Batch, Seq_Len) - Next token targets
+            input_ids: (Batch, Seq_Len) - Sequence of Unicode Code Points (int64)
+            targets: (Batch, Seq_Len) - Next Code Points (int64)
         Returns:
-            logits: (Batch, Seq_Len, Vocab_Size)
-            loss: scalar (if targets provided)
+            logits: (Batch, Seq_Len, 32) - Logits for each bit
+            loss: scalar (BCE)
         """
         batch_size, seq_len = input_ids.shape
-        device = input_ids.device
         
-        # 1. Embed
-        # (Batch, Seq, Emb)
-        x_emb = self.tokenizer_embedding(input_ids)
+        # 1. Convert to Bits
+        x_bits = self.to_bits(input_ids) # (Batch, Seq, 32)
         
-        # 2. Process Sequence (Time-Folding)
-        # RealNet expects (Batch, N). We have a sequence.
-        # We need to run RealNet step-by-step for each token?
-        # OR is the sequence the "Thinking Steps"?
-        # NO. In LLMs, Sequence is T=1, T=2... each step feeds a new token.
-        # So we iterate over Seq_Len.
-        
-        # Initialize State
+        # 2. Reset Backbone State
         self.backbone.reset_state(batch_size=batch_size)
         
         logits_list = []
         
-        # Iterate over sequence
+        # 3. Iterate Sequence
         for t in range(seq_len):
-            # Input for this timestep
-            xt = x_emb[:, t, :] # (Batch, Emb)
+            # Input Bits for this timestep
+            xt = x_bits[:, t, :] # (Batch, 32)
             
             # Project to Neurons
             xt_neuron = self.input_proj(xt) # (Batch, N)
             
-            # RealNet Step (Micro-Thinking per token)
-            # "Thinking Steps" determines how many internal recurrent loops run PER TOKEN.
-            # This allows "System 2" thinking between words.
+            # RealNet Step (Thinking)
             _, final_state = self.backbone(x_input=xt_neuron, steps=self.config.thinking_steps)
             
             # Readout
-            # Normalize
             h_norm = self.ln_f(final_state)
-            
-            # Project to Logits
-            h_emb = self.output_proj(h_norm)
-            logit = self.head(h_emb) # (Batch, Vocab)
+            logit = self.output_proj(h_norm) # (Batch, 32)
             
             logits_list.append(logit)
             
-        # Stack: (Batch, Seq, Vocab)
+        # Stack: (Batch, Seq, 32)
         logits = torch.stack(logits_list, dim=1)
         
         loss = None
         if targets is not None:
-            # Shift Logic is usually handled by caller (Input[:-1], Target[1:])
-            # But standard HF style: Loss is calculated on shifted internally or mismatched?
-            # Let's assume input_ids and targets are aligned such that logits[i] predicts targets[i].
+            # We must predict the bits of the target
+            target_bits = self.to_bits(targets) # (Batch, Seq, 32)
             
-            # Flatten
-            B, T, V = logits.shape
-            logits_flat = logits.view(B*T, V)
-            targets_flat = targets.view(B*T)
-            
-            loss = nn.functional.cross_entropy(logits_flat, targets_flat)
+            # Binary Cross Entropy with Logits
+            loss = nn.functional.binary_cross_entropy_with_logits(logits, target_bits)
             
         return logits, loss
 
     def inference_step(self, input_ids, state=None):
         """
-        Runs a single step for generation (O(1) complexity).
+        O(1) Step for generation.
         Args:
-            input_ids: (Batch, 1) - Current token
-            state: (Batch, N) - Previous state
+            input_ids: (Batch, 1) Int64
         Returns:
-            logits: (Batch, 1, Vocab)
+            logits: (Batch, 1, 32)
             new_state: (Batch, N)
         """
-        # 1. Embed
-        x_emb = self.tokenizer_embedding(input_ids) # (Batch, 1, Emb)
-        xt = x_emb[:, 0, :] # (Batch, Emb)
+        # 1. Convert to Bits
+        x_bits = self.to_bits(input_ids)
+        xt = x_bits[:, 0, :] # (Batch, 32)
         
         # 2. Project
         xt_neuron = self.input_proj(xt)
         
-        # 3. RealNet Step (Preserve State)
-        # Note: We pass 'state' as 'current_state' to RealNet
+        # 3. RealNet Step
         _, new_state = self.backbone(x_input=xt_neuron, steps=self.config.thinking_steps, current_state=state)
         
         # 4. Readout
         h_norm = self.ln_f(new_state)
-        h_emb = self.output_proj(h_norm)
-        logit = self.head(h_emb) # (Batch, Vocab)
+        logit = self.output_proj(h_norm) # (Batch, 32)
         
         return logit.unsqueeze(1), new_state
 
@@ -178,14 +140,11 @@ class RealNetLM(nn.Module):
         if hasattr(torch, 'compile'):
             try:
                 print("RealNetLM: Compiling...")
-                # Attempt compilation
                 compiled_model = torch.compile(self)
                 
-                # DRY RUN to force error now if backend fails (e.g. Windows/Triton)
+                # DRY RUN
                 print("RealNetLM: Performing dry run...")
-                # Create dummy input (Batch=1, Seq=1)
-                dummy_ids = torch.zeros(1, 1, dtype=torch.long, device='cpu') # We are on CPU during init usually, or check device
-                # Model parameters device?
+                dummy_ids = torch.zeros(1, 1, dtype=torch.long, device='cpu')
                 p = next(self.parameters())
                 dummy_ids = dummy_ids.to(p.device)
                 

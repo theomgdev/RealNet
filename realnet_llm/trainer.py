@@ -7,10 +7,11 @@ import os
 import math
 from .config import TrainingConfig
 from .model import RealNetLM
-from .data import TextDataset
+from .model import RealNetLM
+from .data import UnicodeDataset
 
 class LMTrainer:
-    def __init__(self, model: RealNetLM, dataset: TextDataset, config: TrainingConfig):
+    def __init__(self, model: RealNetLM, dataset: UnicodeDataset, config: TrainingConfig):
         self.model = model
         self.dataset = dataset
         self.config = config

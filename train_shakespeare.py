@@ -3,7 +3,7 @@ import os
 import torch
 from realnet_llm.config import RealNetConfig, TrainingConfig
 from realnet_llm.model import RealNetLM
-from realnet_llm.data import TextDataset
+from realnet_llm.data import UnicodeDataset
 from realnet_llm.trainer import LMTrainer
 try:
     from realnet_llm.generate import generate
@@ -20,10 +20,9 @@ def main():
     # Use a small model for quick verification
     # Model Config
     model_config = RealNetConfig(
-        n_embd=384,
         n_neurons=1024,
         n_layers=1,
-        thinking_steps=3, # Fast recurrence
+        thinking_steps=5, # Increased for bit-level reasoning
         dropout=0.1,
         compile=False # Disable compilation for comparison
     )
@@ -32,10 +31,10 @@ def main():
         batch_size=8,
         gradient_accumulation_steps=4, # Effective 32
         learning_rate=5e-4,
-        max_steps=100, # Short run
+        max_steps=200, # Increased steps for bit learning
         eval_interval=50,
         log_interval=10,
-        out_dir='out_shakespeare',
+        out_dir='out_shakespeare_unicode', # New output dir
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
     
@@ -45,11 +44,10 @@ def main():
         print(f"Dataset not found at {data_path}")
         return
         
-    dataset = TextDataset(data_path, block_size=128)
+    dataset = UnicodeDataset(data_path, block_size=128)
     
-    # Update Vocab Size
-    print(f"Dataset Vocab Size: {dataset.vocab_size}")
-    model_config.vocab_size = dataset.vocab_size
+    # Vocab Size is irrelevant now (Universal 32-bit)
+    print(f"Dataset Loaded. 32-bit Unicode Mode.")
     
     # 3. Model
     model = RealNetLM(model_config)

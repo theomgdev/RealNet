@@ -4,42 +4,27 @@ import os
 import numpy as np
 from typing import Tuple, Optional
 
-# Try importing tiktoken, fallback to simple char-level if missing
-try:
-    import tiktoken
-    HAS_TIKTOKEN = True
-except ImportError:
-    HAS_TIKTOKEN = False
-
-class TextDataset:
+class UnicodeDataset:
     """
-    Handles loading text data, tokenizing it, and serving batches.
+    Handles loading text data and converting to Unicode Code Points (32-bit Integers).
     """
-    def __init__(self, file_path: str, block_size: int = 128, encoding_name: str = "cl100k_base"):
+    def __init__(self, file_path: str, block_size: int = 128):
         self.file_path = file_path
         self.block_size = block_size
         
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"Data file not found: {file_path}")
             
+        print(f"Loading data from {file_path}...")
         with open(file_path, 'r', encoding='utf-8') as f:
             self.raw_text = f.read()
             
-        if HAS_TIKTOKEN:
-            print(f"Tokenizing data with {encoding_name}...")
-            enc = tiktoken.get_encoding(encoding_name)
-            self.tokens = enc.encode_ordinary(self.raw_text) # list of ints
-            self.vocab_size = enc.n_vocab
-        else:
-            print("TikToken not found. Falling back to Char-Level encoding.")
-            chars = sorted(list(set(self.raw_text)))
-            self.vocab_size = len(chars)
-            self.stoi = { ch:i for i,ch in enumerate(chars) }
-            self.itos = { i:ch for i,ch in enumerate(chars) }
-            self.tokens = [self.stoi[c] for c in self.raw_text]
-            
-        # Convert to Tensor (in-memory for NOW, use memmap for huge datasets)
-        print(f"Data loaded. Total tokens: {len(self.tokens)}")
+        # Convert chars to Unicode Code Points (Integers)
+        # 'A' -> 65, '€' -> 8364, '😀' -> 128512
+        self.tokens = [ord(c) for c in self.raw_text]
+        
+        # Convert to Tensor (int64 is needed for full Unicode range > 65535)
+        print(f"Data loaded. Total chars: {len(self.tokens)}")
         self.data_tensor = torch.tensor(self.tokens, dtype=torch.long)
         
     def get_batch(self, batch_size: int, device: str = 'cpu') -> Tuple[torch.Tensor, torch.Tensor]:

@@ -4,11 +4,10 @@ from typing import Optional
 @dataclass
 class RealNetConfig:
     """Configuration for the RealNet Language Model."""
-    vocab_size: int = 50257  # GPT-2/3 standard (TikToken cl100k usually ~100k, but let's default to typical)
-    n_embd: int = 768        # Embedding dimension (Input/Output interface width)
+    input_dim: int = 32      # 32-bit Integer Input (Unicode)
     n_neurons: int = 2048    # Size of the internal RealNet matrix (Global Workspace)
-    n_layers: int = 1        # Number of stacked RealNet blocks (Recurrent loop usually handles depth, but we allow stacking)
-    thinking_steps: int = 5  # Recurrence steps per token (Time-Folding)
+    n_layers: int = 1        # Number of stacked RealNet blocks
+    thinking_steps: int = 5  # Recurrence steps per token
     dropout: float = 0.1
     bias: bool = True
     pulse_mode: bool = True
