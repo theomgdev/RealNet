@@ -80,7 +80,7 @@ def main():
         device=DEVICE
     )
     
-    optimizer = optim.AdamW(model.parameters(), lr=1e-4)
+    optimizer = optim.AdamW(model.parameters(), lr=2e-5)
     loss_fn = nn.MSELoss()
     
     print(f"Logic Steps: {LOGIC_LEN} | Thinking Gap: {GAP} | Total Physical Steps: {SEQ_LEN}")
@@ -105,6 +105,10 @@ def main():
         
         optimizer.zero_grad()
         loss.backward()
+        
+        # Gradient Clipping to prevent explosion/NaN during deep BPTT
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
+        
         optimizer.step()
         
         if epoch % 100 == 0:
