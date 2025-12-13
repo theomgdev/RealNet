@@ -22,16 +22,16 @@ def main():
     model_config = RealNetConfig(
         n_neurons=1024,
         n_layers=1,
-        thinking_steps=3, # Increased for bit-level reasoning
+        thinking_steps=4, # Increased for bit-level reasoning
         dropout=0.1,
         compile=False # Disable compilation for comparison
     )
     
     train_config = TrainingConfig(
-        batch_size=8,
-        gradient_accumulation_steps=32, # Effective 32
+        batch_size=4096,
+        gradient_accumulation_steps=1, # Effective 32
         learning_rate=5e-4,
-        max_steps=5000, # Increased steps for bit learning
+        max_steps=5000000000, # Increased steps for bit learning
         eval_interval=50,
         log_interval=10,
         out_dir='out_shakespeare', # New output dir
