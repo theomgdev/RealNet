@@ -16,7 +16,7 @@ from realnet.vocab import RealNetVocab
 # Configuration
 SEQ_LEN = 1024
 THINKING_STEPS = 10
-BATCH_SIZE = 64 # Small batch size due to extreme depth (10k steps)
+BATCH_SIZE = 256 # Small batch size due to extreme depth (10k steps)
 EPOCHS = 100
 LEARNING_RATE = 1e-4
 
@@ -168,6 +168,8 @@ def main():
     
     model.train()
     
+    best_loss = float('inf')
+    
     for epoch in range(EPOCHS):
         total_loss = 0
         start_time = time.time()
@@ -236,7 +238,13 @@ def main():
             avg_seq_loss = seq_loss_sum / num_chunks
             total_loss += avg_seq_loss
             
-            if batch_idx % 10 == 0:
+            # SAVE BEST
+            if avg_seq_loss < best_loss:
+                best_loss = avg_seq_loss
+                torch.save(model.state_dict(), os.path.join(cp_dir, 'realnet_llm_zero_best.pt'))
+                if batch_idx % 10 == 0:
+                     print(f"Epoch {epoch} | Batch {batch_idx} | Loss: {avg_seq_loss:.4f} [BEST]")
+            elif batch_idx % 10 == 0:
                 print(f"Epoch {epoch} | Batch {batch_idx} | Loss: {avg_seq_loss:.4f}")
                 
             # Periodic Save & Gen
