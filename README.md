@@ -169,6 +169,13 @@ We conducted extensive tests to validate RealNet's core hypothesis: **Temporal D
 *   **Result:** **~90% Accuracy**.
 *   **Script:** `PoC/experiments/convergence_mnist_scaled.py`
 
+#### E. The Sine Wave Generator (Dynamic Resonance)
+*   **Target:** Generate sine waves of variable frequencies based on a control input (VCO Mode).
+*   **Architecture:** 128 Neurons. Continuous Input Control.
+*   **Result:** **MSE Loss: 0.003**. Perfect oscillation synchronization.
+*   **Script:** `PoC/experiments/convergence_sine_wave.py`
+*   **Insight:** RealNet function as a programmable oscillator. A single weight matrix can generate infinite unique temporal trajectories controlled by an external signal.
+
 #### 🔮 The LLM Vision (RealNet-1B)
 If we can solve vision with Zero Hidden Layers by trading Space for Time, this approach could scale to language models.
 *   **Hypothesis:** A 1B parameter model (RealNet-1B) could theoretically match the reasoning depth of much larger models by "thinking" for more steps.

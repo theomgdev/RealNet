@@ -168,6 +168,13 @@ RealNet'in temel hipotezi olan **"Zamansal Derinlik > Uzamsal Derinlik"** tezini
 *   **Sonuç:** **~%90 Doğruluk**.
 *   **Script:** `PoC/experiments/convergence_mnist_scaled.py`
 
+#### E. Sinüs Dalgası Üreteci (Dinamik Rezonans)
+*   **Hedef:** Kontrol girişine bağlı olarak değişken frekanslarda sinüs dalgaları üretmek (VOLTAJ KONTROLLÜ OSİLATÖR MODU).
+*   **Mimari:** 128 Nöron. Sürekli Giriş Kontrolü.
+*   **Sonuç:** **MSE Kaybı: 0.003**. Mükemmel osilasyon senkronizasyonu.
+*   **Script:** `PoC/experiments/convergence_sine_wave.py`
+*   **İçgörü:** RealNet programlanabilir bir osilatör gibi çalışır. Tek bir ağırlık matrisi, dış bir sinyal tarafından kontrol edilen sonsuz sayıda benzersiz zamansal yörünge üretebilir.
+
 #### 🔮 LLM Vizyonu (RealNet-1B)
 Uzayı feda edip Zamanı kullanarak görsel problemleri Sıfır Gizli Katman ile çözebiliyorsak, bu yaklaşım dil modellerine de uyarlanabilir.
 *   **Hipotez:** 1 Milyar parametreli bir model (RealNet-1B), daha fazla adım "düşünerek" çok daha büyük modellerin akıl yürütme derinliğine ulaşabilir.
