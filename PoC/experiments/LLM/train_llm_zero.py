@@ -16,7 +16,7 @@ from realnet.vocab import RealNetVocab
 # Configuration
 SEQ_LEN = 1024
 THINKING_STEPS = 10
-BATCH_SIZE = 1024 # Small batch size due to extreme depth (10k steps)
+BATCH_SIZE = 64 # Small batch size due to extreme depth (10k steps)
 EPOCHS = 100
 LEARNING_RATE = 1e-4
 
