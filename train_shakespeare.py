@@ -29,7 +29,7 @@ def main():
     
     train_config = TrainingConfig(
         batch_size=128,
-        gradient_accumulation_steps=4, # Effective 32
+        gradient_accumulation_steps=32, # Effective 32
         learning_rate=5e-4,
         max_steps=200, # Increased steps for bit learning
         eval_interval=50,
