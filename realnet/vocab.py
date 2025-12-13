@@ -3,37 +3,30 @@ import torch
 
 class RealNetVocab:
     def __init__(self):
-        # 1. Printable ASCII (32-126)
-        self.chars = [chr(i) for i in range(32, 127)]
-        
-        # 2. Newline
-        self.chars.append('\n')
-        
-        # 3. Turkish Symbols
-        tr_chars = ['ç', 'ğ', 'ı', 'ö', 'ş', 'ü', 'Ç', 'Ğ', 'İ', 'Ö', 'Ş', 'Ü']
-        self.chars.extend(tr_chars)
-        
-        # 4. Unknown Token
-        self.unk_token = '<UNK>'
-        self.chars.append(self.unk_token)
-        
-        # Mapping
-        self.char_to_id = {ch: i for i, ch in enumerate(self.chars)}
-        self.id_to_char = {i: ch for i, ch in enumerate(self.chars)}
-        
-        self.vocab_size = len(self.chars)
-        self.unk_id = self.char_to_id[self.unk_token]
+        # RAW BYTE LEVEL VOCAB (0-255)
+        # Supports ALL languages (UTF-8) including Turkish.
+        # 'ğ' becomes 2 tokens: [196, 159]
+        self.vocab_size = 256
         
     def encode(self, text):
-        ids = []
-        for ch in text:
-            ids.append(self.char_to_id.get(ch, self.unk_id))
-        return torch.tensor(ids, dtype=torch.long)
+        # Convert string directly to its UTF-8 byte representation
+        # 'text' -> bytes -> list of ints
+        if isinstance(text, str):
+            bytes_data = text.encode('utf-8')
+        else:
+            bytes_data = text # Assume already bytes
+            
+        return torch.tensor(list(bytes_data), dtype=torch.long)
     
     def decode(self, ids):
         if isinstance(ids, torch.Tensor):
             ids = ids.tolist()
-        return ''.join([self.id_to_char.get(i, self.unk_token) for i in ids])
+        
+        # Convert list of ints back to bytes
+        bytes_data = bytes(ids)
+        
+        # Decode UTF-8, replacing invalid sequences (e.g. partial bytes at end)
+        return bytes_data.decode('utf-8', errors='replace')
 
     def get_vocab_size(self):
         return self.vocab_size

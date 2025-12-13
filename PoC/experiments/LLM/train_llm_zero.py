@@ -16,7 +16,7 @@ from realnet.vocab import RealNetVocab
 # Configuration
 SEQ_LEN = 1024
 THINKING_STEPS = 10
-BATCH_SIZE = 256 # Small batch size due to extreme depth (10k steps)
+BATCH_SIZE = 256
 EPOCHS = 100
 LEARNING_RATE = 1e-4
 
@@ -76,17 +76,24 @@ class TinyStoriesDataset(Dataset):
             
         text_chunk = text_chunk[valid_start:]
         
-        if len(text_chunk) < self.seq_len + 1:
-            # Retry or pad? With randomly chosen large file, this happens only at EOF.
-            # We controlled max_start_byte, so it shouldn'be rare. 
-            # If it happens, just pad with spaces
-            text_chunk = text_chunk + " " * (self.seq_len + 1 - len(text_chunk))
+        if len(text_chunk) < self.seq_len + 20: # Read plenty
+            pass
             
-        # Take exact length
-        text_chunk = text_chunk[:self.seq_len + 1]
-        
-        # Encode
+        # Encode (Convert to bytes list)
         data = self.vocab.encode(text_chunk)
+        
+        # We need data to be at least seq_len + 1 tokens long
+        # Since we deal with raw bytes, 1 char might be >1 byte.
+        # But we read bytes based on seq_len, so we might have TOO MANY bytes.
+        # That's good. We just slice.
+        
+        if len(data) < self.seq_len + 1:
+            # If we somehow got less bytes (EOF or weird encoding), pad with spaces (32)
+            padding = torch.full((self.seq_len + 1 - len(data),), 32, dtype=torch.long)
+            data = torch.cat([data, padding])
+            
+        # STRICT SLICE
+        data = data[:self.seq_len + 1]
         
         x = data[:-1]
         y = data[1:]
