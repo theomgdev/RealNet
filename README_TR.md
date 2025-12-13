@@ -175,6 +175,13 @@ RealNet'in temel hipotezi olan **"Zamansal Derinlik > Uzamsal Derinlik"** tezini
 *   **Script:** `PoC/experiments/convergence_sine_wave.py`
 *   **İçgörü:** RealNet programlanabilir bir osilatör gibi çalışır. Tek bir ağırlık matrisi, dış bir sinyal tarafından kontrol edilen sonsuz sayıda benzersiz zamansal yörünge üretebilir.
 
+#### F. Gecikmeli Toplayıcı (Bellek ve Mantık)
+*   **Hedef:** Zaman farkı ile verilen $A$ ve $B$ sayılarını toplamak ($A + B$).
+*   **Mimari:** 128 Nöron. **Sıralı Mod (3D Girdi: Batch $\times$ Zaman $\times$ Nöron).**
+*   **Sonuç:** **MSE Kaybı: ~0.02**.
+*   **Script:** `PoC/experiments/convergence_adder.py`
+*   **İçgörü:** **Kısa Süreli Belleği** doğrular. Ağ, $A$ değişkenini kaotik durumunda tutar, $B$'yi bekler ve toplamı üretmek için lineer olmayan bir entegrasyon (yaklaşık aritmetik) gerçekleştirir. Bu, RealNet'in sadece statik fotoğrafları değil, **Video benzeri** veri akışlarını da işleyebildiğini gösterir. "Akıldan Matematik" yapmaya benzer.
+
 #### 🔮 LLM Vizyonu (RealNet-1B)
 Uzayı feda edip Zamanı kullanarak görsel problemleri Sıfır Gizli Katman ile çözebiliyorsak, bu yaklaşım dil modellerine de uyarlanabilir.
 *   **Hipotez:** 1 Milyar parametreli bir model (RealNet-1B), daha fazla adım "düşünerek" çok daha büyük modellerin akıl yürütme derinliğine ulaşabilir.

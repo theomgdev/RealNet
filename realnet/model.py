@@ -104,9 +104,15 @@ class RealNet(nn.Module):
             # 2. Add Character (Bias)
             signal = signal + self.B
             
-            # 3. Add Input (Impulse or Continuous)
+            # 3. Add Input (Impulse, Continuous, or Sequence)
             if x_input is not None:
-                if self.pulse_mode:
+                if x_input.ndim == 3:
+                     # Sequential Input: (Batch, Steps, Neurons)
+                     # If steps mismatch, we assume x_input covers the requested steps or we clamp? 
+                     # For safety, let's assume if t < x_input.shape[1], we use it.
+                     if t < x_input.shape[1]:
+                         signal = signal + x_input[:, t, :]
+                elif self.pulse_mode:
                     if t == 0:
                         signal = signal + x_input
                 else:

@@ -176,6 +176,13 @@ We conducted extensive tests to validate RealNet's core hypothesis: **Temporal D
 *   **Script:** `PoC/experiments/convergence_sine_wave.py`
 *   **Insight:** RealNet function as a programmable oscillator. A single weight matrix can generate infinite unique temporal trajectories controlled by an external signal.
 
+#### F. The Delayed Adder (Memory & Logic)
+*   **Target:** Perform $A + B$ where A and B are separated by a time delay.
+*   **Architecture:** 128 Neurons. **Sequential Mode (3D Input: Batch $\times$ Time $\times$ Neurons).**
+*   **Result:** **MSE Loss: ~0.02**.
+*   **Script:** `PoC/experiments/convergence_adder.py`
+*   **Insight:** Validates **Short-Term Memory**. The network holds variable $A$ in its chaotic state, waits for $B$, and performs non-linear integration (approximate arithmetic) to output the sum. This demonstrates RealNet's ability to process **Video-like** data streams, not just static snapshots. Similar to "Mental Math".
+
 #### 🔮 The LLM Vision (RealNet-1B)
 If we can solve vision with Zero Hidden Layers by trading Space for Time, this approach could scale to language models.
 *   **Hypothesis:** A 1B parameter model (RealNet-1B) could theoretically match the reasoning depth of much larger models by "thinking" for more steps.
