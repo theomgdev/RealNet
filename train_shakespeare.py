@@ -22,13 +22,13 @@ def main():
     model_config = RealNetConfig(
         n_neurons=1024,
         n_layers=1,
-        thinking_steps=4, # Increased for bit-level reasoning
+        thinking_steps=5, # Increased for bit-level reasoning
         dropout=0.1,
         compile=False # Disable compilation for comparison
     )
     
     train_config = TrainingConfig(
-        batch_size=8,
+        batch_size=8192,
         gradient_accumulation_steps=1, # Effective 32
         learning_rate=5e-4,
         max_steps=5000000000, # Increased steps for bit learning
@@ -61,7 +61,7 @@ def main():
     print("Training...")
     
     # Auto-Resume
-    ckpt_path = os.path.join(train_config.out_dir, 'best_ckpt.pt')
+    ckpt_path = os.path.join(train_config.out_dir, 'latest_ckpt.pt')
     if os.path.exists(ckpt_path):
         trainer.load_checkpoint(ckpt_path)
 
