@@ -57,22 +57,29 @@ class RealNetLM(nn.Module):
         # Result (B, S, 32)
         return (input_ids.unsqueeze(-1) & mask).ne(0).float()
 
-    def forward(self, input_ids, targets=None):
+    def forward(self, input_ids, targets=None, state=None):
         """
         Args:
             input_ids: (Batch, Seq_Len) - Sequence of Unicode Code Points (int64)
             targets: (Batch, Seq_Len) - Next Code Points (int64)
+            state: (Batch, N) - Optional initial state for TBPTT
         Returns:
             logits: (Batch, Seq_Len, 32) - Logits for each bit
             loss: scalar (BCE)
+            final_state: (Batch, N) - Detached state for next batch? No, caller detaches.
         """
         batch_size, seq_len = input_ids.shape
         
         # 1. Convert to Bits
         x_bits = self.to_bits(input_ids) # (Batch, Seq, 32)
         
-        # 2. Reset Backbone State
-        self.backbone.reset_state(batch_size=batch_size)
+        # 2. Backbone State Management
+        if state is None:
+             self.backbone.reset_state(batch_size=batch_size)
+             current_state = None
+        else:
+             # Use provided state (Infinite Context)
+             current_state = state
         
         logits_list = []
         
@@ -85,10 +92,11 @@ class RealNetLM(nn.Module):
             xt_neuron = self.input_proj(xt) # (Batch, N)
             
             # RealNet Step (Thinking)
-            _, final_state = self.backbone(x_input=xt_neuron, steps=self.config.thinking_steps)
+            # We pass current_state explicitly to maintain flow
+            _, current_state = self.backbone(x_input=xt_neuron, steps=self.config.thinking_steps, current_state=current_state)
             
             # Readout
-            h_norm = self.ln_f(final_state)
+            h_norm = self.ln_f(current_state)
             logit = self.output_proj(h_norm) # (Batch, 32)
             
             logits_list.append(logit)
@@ -104,7 +112,7 @@ class RealNetLM(nn.Module):
             # Binary Cross Entropy with Logits
             loss = nn.functional.binary_cross_entropy_with_logits(logits, target_bits)
             
-        return logits, loss
+        return logits, loss, current_state
 
     def inference_step(self, input_ids, state=None):
         """

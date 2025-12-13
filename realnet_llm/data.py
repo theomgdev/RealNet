@@ -27,6 +27,52 @@ class UnicodeDataset:
         print(f"Data loaded. Total chars: {len(self.tokens)}")
         self.data_tensor = torch.tensor(self.tokens, dtype=torch.long)
         
+    def __len__(self):
+        return len(self.data_tensor)
+
+    def get_sequential_batch(self, start_index: int, batch_size: int, block_size: int, device: str = 'cpu') -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Returns a deterministic slice of data for sequential training (TBPTT).
+        Args:
+            start_index: The starting token index in the dataset.
+        """
+        # We need (Batch, Block_Size)
+        # But for strictly sequential single-stream training (Batch=1), it is easy.
+        # For Batch > 1, we need B parallel streams.
+        # Let's support Batch=1 for "Infinite Context" purity first, or B streams.
+        
+        # Implementation for B parallel streams:
+        # Split dataset into B chunks. Each row of batch reads from its own chunk.
+        # This is complex to manage state for.
+        
+        # Simpler approach:
+        # Just return ONE chunk [start : start+block].
+        # Batching acts as "Parallel Universes" but here we just want 1 context stream?
+        # No, we usually want batch training.
+        
+        # Let's implement BATCHED sequential reading:
+        # Dataset is split into B segments.
+        # Batch[0] reads from 0..L/B
+        # Batch[1] reads from L/B..2L/B
+        
+        total_len = len(self.data_tensor)
+        segment_len = total_len // batch_size
+        
+        ix = torch.arange(batch_size) * segment_len + start_index
+        
+        # Handle wrap around or limit (simply modulo or crop)
+        # For infinite training, we can wrap around?
+        ix = ix % (total_len - block_size - 1) 
+        
+        x = torch.stack([self.data_tensor[i:i+block_size] for i in ix])
+        y = torch.stack([self.data_tensor[i+1:i+block_size+1] for i in ix])
+        
+        if device != 'cpu':
+            x = x.to(device)
+            y = y.to(device)
+            
+        return x, y
+
     def get_batch(self, batch_size: int, device: str = 'cpu') -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Returns a random batch of (inputs, targets).
