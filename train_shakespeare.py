@@ -28,10 +28,10 @@ def main():
     )
     
     train_config = TrainingConfig(
-        batch_size=128,
+        batch_size=1024,
         gradient_accumulation_steps=32, # Effective 32
         learning_rate=5e-4,
-        max_steps=200, # Increased steps for bit learning
+        max_steps=5000, # Increased steps for bit learning
         eval_interval=50,
         log_interval=10,
         out_dir='out_shakespeare', # New output dir
@@ -67,7 +67,7 @@ def main():
 
     def gen_cb(model_ref):
         if generate:
-            generate(model_ref, "To be or not to be", max_new_tokens=50, device=train_config.device)
+            generate(model_ref, "To be or not to be", max_new_tokens=100, device=train_config.device)
 
     trainer.train(generation_callback=gen_cb)
     
