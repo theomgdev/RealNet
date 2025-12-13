@@ -34,7 +34,7 @@ def main():
         max_steps=5000000000, # Increased steps for bit learning
         eval_interval=50,
         log_interval=10,
-        out_dir='out_shakespeare', # New output dir
+        out_dir='out_realnet', # Shared unified brain directory
         context_window=8, # Tunable Context Length
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
