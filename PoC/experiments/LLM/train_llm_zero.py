@@ -16,7 +16,7 @@ from realnet.vocab import RealNetVocab
 # Configuration
 SEQ_LEN = 1024
 THINKING_STEPS = 10
-BATCH_SIZE = 4 # Small batch size due to extreme depth (10k steps)
+BATCH_SIZE = 1024 # Small batch size due to extreme depth (10k steps)
 EPOCHS = 100
 LEARNING_RATE = 1e-4
 
@@ -94,6 +94,9 @@ class TinyStoriesDataset(Dataset):
         return x, y
 
 def main():
+    # Set matmul precision for performance on Ampere+ GPUs
+    torch.set_float32_matmul_precision('high')
+    
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Using device: {device}")
     
