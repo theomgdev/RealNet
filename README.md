@@ -28,7 +28,7 @@ In these tests, the Input Layer is directly connected to the Output Layer (and i
 | Task | Traditional Constraint | RealNet Solution | Result | Script |
 | :--- | :--- | :--- | :--- | :--- |
 | **Identity** | Trivial | **Atomic Unit** | Loss: 0.0 | `convergence_identity.py` |
-| **XOR** | Needs Hidden Layer | **Chaos Gate** (Time-folded) | **Solved** | `convergence_gates.py` |
+| **XOR** | Needs Hidden Layer | **Chaos Gate** (Time-folded) | **Solved (3 Neurons)** | `convergence_gates.py` |
 | **MNIST** | Needs Hidden Layer | **Zero-Hidden** | **Acc: 96.2%** | `convergence_mnist.py` |
 | **Sine Wave** | Needs Oscillator | **Programmable VCO** | **Perfect Sync** | `convergence_sine_wave.py` |
 | **Latch** | Needs LSTM | **Attractor Basin** (Willpower) | **Infinite Hold** | `convergence_latch.py` |
@@ -165,21 +165,23 @@ We conducted extensive tests to validate RealNet's core hypothesis: **Temporal D
 #### B. The Impossible XOR (The Chaos Gate)
 *   **Target:** Solve the classic XOR problem ($[1,1]\to0$, $[1,0]\to1$, etc.) which implies non-linearity.
 *   **Challenge:** Impossible for standard linear networks without hidden layers.
-*   **Result:** **Solved (Loss 0.00005)**. RealNet bends space-time to separate the classes.
+*   **Result:** **Solved (Loss 0.000000)**. RealNet bends space-time to separate the classes.
     <details>
     <summary>See Truth Table Verification</summary>
 
     ```text
       A      B |   XOR (Pred) | Logic
     ----------------------------------------
-      -1.0   -1.0 |      -0.9922 | 0 (OK)
-      -1.0    1.0 |       1.0054 | 1 (OK)
-       1.0   -1.0 |       0.9974 | 1 (OK)
-       1.0    1.0 |      -1.0053 | 0 (OK)
+      -1.0   -1.0 |      -1.0009 | 0 (OK)
+      -1.0    1.0 |       1.0000 | 1 (OK)
+       1.0   -1.0 |       1.0000 | 1 (OK)
+       1.0    1.0 |      -1.0004 | 0 (OK)
     ```
     </details>
+*   **Architecture:** **3 Neurons** (2 Input, 1 Output). **0 Hidden Neurons**. Total **9 Parameters**.
+*   **Thinking Time:** **5 Steps**.
 *   **Script:** `PoC/convergence_gates.py`
-*   **Insight:** RealNet uses **Time as a Hidden Layer**. By folding the input over time steps, it creates a non-linear decision boundary in a single physical layer.
+*   **Insight:** RealNet uses **Time as a Hidden Layer**. By folding the input over just 5 time steps, it creates a non-linear decision boundary in a single physical layer, proving that 3 chaos-coupled neurons can solve XOR.
 
 #### C. The MNIST Marathon (Visual Intelligence)
 RealNet's vision capabilities were tested under four distinct conditions to prove robustness, scalability, and efficiency.

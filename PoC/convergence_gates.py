@@ -21,12 +21,12 @@ def main():
     
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
     
-    # 2 Inputs, 1 Output, 2 Chaos Buffers = 5 Neurons
-    NUM_NEURONS = 5
+    # 2 Inputs, 1 Output, 0 Hidden = 3 Neurons (True Zero-Hidden)
+    NUM_NEURONS = 3
     INPUT_IDS = [0, 1]
     OUTPUT_ID = [2]
     
-    print(f"Neurons: {NUM_NEURONS} (25 Parameters)")
+    print(f"Neurons: {NUM_NEURONS} (9 Parameters)")
     
     # CRITICAL CONFIG FOR TINY NETWORKS:
     # 1. dropout_rate=0.0 (Every neuron is vital)
@@ -74,8 +74,8 @@ def main():
     targets_val = torch.tensor(targets_list, device=DEVICE)
 
     print("Training...")
-    # 15 Thinking steps to allow chaotic resonance to find the XOR pattern
-    history = trainer.fit(inputs_val, targets_val, epochs=100, batch_size=16, thinking_steps=15)
+    # 5 Thinking steps to allow chaotic resonance to find the XOR pattern
+    history = trainer.fit(inputs_val, targets_val, epochs=100, batch_size=16, thinking_steps=5)
 
     print(f"Final Loss: {history[-1]:.6f}")
 
@@ -84,7 +84,7 @@ def main():
     print("-" * 40)
     
     test_data = torch.tensor([[-1.0,-1.0], [-1.0,1.0], [1.0,-1.0], [1.0,1.0]], device=DEVICE)
-    preds = trainer.predict(test_data, thinking_steps=15)
+    preds = trainer.predict(test_data, thinking_steps=5)
     
     success = True
     for i in range(4):
