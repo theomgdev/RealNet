@@ -28,7 +28,7 @@ Bu testlerde Giriş Katmanı doğrudan Çıkış Katmanına (ve kendisine) bağl
 | Görev | Geleneksel Engel | RealNet Çözümü | Sonuç | Script |
 | :--- | :--- | :--- | :--- | :--- |
 | **Identity** | Basit | **Atomik Birim** | Loss: 0.0 | `convergence_identity.py` |
-| **XOR** | Gizli Katman Şart | **Kaos Kapısı** (Zaman Katlamalı) | **Çözüldü** | `convergence_gates.py` |
+| **XOR** | Gizli Katman Şart | **Kaos Kapısı** (Zaman Katlamalı) | **Çözüldü (3 Nöron)** | `convergence_gates.py` |
 | **MNIST** | Gizli Katman Şart | **Sıfır-Gizli** | **Acc: %96.2** | `convergence_mnist.py` |
 | **Sinüs** | Osilatör Şart | **Programlanabilir VCO** | **Tam Senkron** | `convergence_sine_wave.py` |
 | **Mühür** | LSTM Şart | **Çekici Havuzu** (İrade) | **Sonsuz Tutuş** | `convergence_latch.py` |
@@ -164,21 +164,23 @@ RealNet'in temel hipotezi olan **"Zamansal Derinlik > Uzamsal Derinlik"** tezini
 #### B. İmkansız XOR (Kaos Kapısı)
 *   **Hedef:** Klasik XOR problemini çözmek ($[1,1]\to0$, $[1,0]\to1$). Bu lineer olmayan bir problemdir.
 *   **Zorluk:** Gizli katman olmadan standart lineer ağlar için imkansızdır.
-*   **Sonuç:** **Çözüldü (Loss 0.00005)**. RealNet, sınıfları ayırmak için uzay-zamanı büker.
+*   **Sonuç:** **Çözüldü (Loss 0.000000)**. RealNet, sınıfları ayırmak için uzay-zamanı büker.
     <details>
     <summary>Doğruluk Tablosunu Gör</summary>
 
     ```text
       A      B |   XOR (Tahmin)| Mantık
     ----------------------------------------
-      -1.0   -1.0 |      -0.9922 | 0 (OK)
-      -1.0    1.0 |       1.0054 | 1 (OK)
-       1.0   -1.0 |       0.9974 | 1 (OK)
-       1.0    1.0 |      -1.0053 | 0 (OK)
+      -1.0   -1.0 |      -1.0009 | 0 (OK)
+      -1.0    1.0 |       1.0000 | 1 (OK)
+       1.0   -1.0 |       1.0000 | 1 (OK)
+       1.0    1.0 |      -1.0004 | 0 (OK)
     ```
     </details>
+*   **Mimari:** **3 Nöron** (2 Giriş, 1 Çıkış). **0 Gizli Nöron**. Toplam **9 Parametre**.
+*   **Düşünme Süresi:** **5 Adım**.
 *   **Script:** `PoC/convergence_gates.py`
-*   **İçgörü:** RealNet **Zamanı bir Gizli Katman** olarak kullanır. Girdiyi zaman adımları üzerine katlayarak tek bir fiziksel katmanda lineer olmayan karar sınırları oluşturur.
+*   **İçgörü:** RealNet **Zamanı bir Gizli Katman** olarak kullanır. Girdiyi sadece 5 zaman adımı üzerine katlayarak, kaotik olarak birbirine bağlı 3 nöronun XOR problemini tek bir fiziksel katmanda çözebildiğini kanıtlar.
 
 #### C. MNIST Maratonu (Görsel Zeka)
 RealNet'in görsel yetenekleri, sağlamlık, ölçeklenebilirlik ve verimliliği kanıtlamak için dört farklı koşulda test edildi.
