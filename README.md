@@ -149,18 +149,18 @@ We conducted extensive tests to validate RealNet's core hypothesis: **Temporal D
 
 #### A. The Atomic Identity (Unit Test)
 *   **Target:** $f(x) = x$. The network must act as a perfect wire.
-*   **Architecture:** 4 Neurons. No Hidden Layers.
-*   **Result:** **Loss: 0.000002**.
+*   **Architecture:** **2 Neurons** (1 Input, 1 Output). **0 Hidden Layers**. Total **4 Parameters**.
+*   **Result:** **Loss: 0.000000**.
     <details>
     <summary>See Terminal Output</summary>
 
     ```text
-    In:  1.0 -> Out:  1.0022
-    In: -1.0 -> Out: -1.0032
+    In:  1.0 -> Out:  1.0001
+    In: -1.0 -> Out: -0.9998
     ```
     </details>
 *   **Script:** `PoC/convergence_identity.py`
-*   **Insight:** Proves the basic signal transmission and `StepNorm` stability.
+*   **Insight:** Proves the basic signal transmission and `StepNorm` stability with the absolute minimum complexity.
 
 #### B. The Impossible XOR (The Chaos Gate)
 *   **Target:** Solve the classic XOR problem ($[1,1]\to0$, $[1,0]\to1$, etc.) which implies non-linearity.

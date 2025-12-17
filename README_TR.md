@@ -148,18 +148,18 @@ RealNet'in temel hipotezi olan **"Zamansal Derinlik > Uzamsal Derinlik"** tezini
 
 #### A. Atomik Kimlik (Identity Test)
 *   **Hedef:** $f(x) = x$. Ağ mükemmel bir iletken tel gibi davranmalıdır.
-*   **Mimari:** 4 Nöron. Gizli Katman Yok.
-*   **Sonuç:** **Loss: 0.000002**.
+*   **Mimari:** **2 Nöron** (1 Giriş, 1 Çıkış). **0 Gizli Katman**. Toplam **4 Parametre**.
+*   **Sonuç:** **Loss: 0.000000**.
     <details>
     <summary>Terminal Çıktısını Gör</summary>
 
     ```text
-    In:  1.0 -> Out:  1.0022
-    In: -1.0 -> Out: -1.0032
+    In:  1.0 -> Out:  1.0001
+    In: -1.0 -> Out: -0.9998
     ```
     </details>
 *   **Script:** `PoC/convergence_identity.py`
-*   **İçgörü:** Temel sinyal iletimini ve `StepNorm` kararlılığını kanıtlar.
+*   **İçgörü:** Temel sinyal iletimini ve `StepNorm` kararlılığını mutlak minimum karmaşıklıkla kanıtlar.
 
 #### B. İmkansız XOR (Kaos Kapısı)
 *   **Hedef:** Klasik XOR problemini çözmek ($[1,1]\to0$, $[1,0]\to1$). Bu lineer olmayan bir problemdir.

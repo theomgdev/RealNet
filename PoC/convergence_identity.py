@@ -10,10 +10,10 @@ def main():
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
     
     # ATOMIC UNIT OF CHAOS
-    # To have a stable StepNorm distribution, we need at least 4 neurons.
-    # 1 Input, 1 Output, 2 Chaos Buffers.
+    # 1 Input, 1 Output. 
+    # Minimum possible configuration for RealNet.
     
-    NUM_NEURONS = 4
+    NUM_NEURONS = 2
     INPUT_ID = 0
     OUTPUT_ID = 1
     
@@ -26,17 +26,21 @@ def main():
         device=DEVICE
     )
     trainer = RealNetTrainer(model, device=DEVICE)
+
+    # CRITICAL OPTIMIZER: NO WEIGHT DECAY
+    # Small networks shouldn't be penalized for magnitude.
+    trainer.optimizer = torch.optim.AdamW(model.parameters(), lr=0.01, weight_decay=0.0)
     
     # Data
     inputs_val = torch.randint(0, 2, (100, 1)).float() * 2 - 1 
     targets_val = inputs_val
 
     print("Training...")
-    trainer.fit(inputs_val, targets_val, epochs=50, batch_size=8, thinking_steps=5)
+    trainer.fit(inputs_val, targets_val, epochs=50, batch_size=64, thinking_steps=50)
 
     print("\nTest Result:")
     test_inputs = torch.tensor([[1.0], [-1.0]], device=DEVICE)
-    preds = trainer.predict(test_inputs, thinking_steps=5)
+    preds = trainer.predict(test_inputs, thinking_steps=50)
     
     for i in range(len(test_inputs)):
         print(f"In: {test_inputs[i].item()} -> Out: {preds[i].item():.4f}")
