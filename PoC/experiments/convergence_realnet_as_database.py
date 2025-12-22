@@ -85,6 +85,7 @@ def main():
         device=DEVICE,
         dropout_rate=0.0,
         activation='gelu', # Gelu is beter at gating than tanh
+        weight_init='quiet' # We need silence to save data
     )
     
     trainer = RealNetTrainer(model, device=DEVICE, gradient_persistence=0.5) # Increased for deeper memory
@@ -101,36 +102,31 @@ def main():
     for epoch in range(EPOCHS):
         inputs, targets = generate_db_data(BATCH_SIZE, NUM_KEYS, SEQ_PER_OP, NUM_OPS, DEVICE)
         
-        # Manual Train Step for masking
-        model.train()
-        trainer.optimizer.zero_grad()
-        
-        x_input, _ = prepare_input(inputs, model.input_ids, model.num_neurons, DEVICE)
-        model.reset_state(BATCH_SIZE)
-        preds_all, _ = model(x_input, steps=total_steps)
-        preds = preds_all[:, :, output_ids].permute(1, 0, 2) # (Batch, Steps, 1)
-        
         # CREATE MASK: Weight is 0 for first THINK_STEPS of every op, 1 otherwise
         mask = torch.ones_like(targets)
         for op in range(NUM_OPS):
             t_start = op * SEQ_PER_OP
             mask[:, t_start : t_start + THINK_STEPS, :] = 0.0
             
-        # Calculate Weighted MSE Loss
-        loss = (torch.square(preds - targets) * mask).mean()
-        
-        loss.backward()
-        nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        trainer.optimizer.step()
+        # TRAIN using Library with Mask support
+        loss = trainer.train_batch(inputs, targets, thinking_steps=total_steps, full_sequence=True, mask=mask)
         
         if epoch % 100 == 0:
             with torch.no_grad():
+                # Get predictions for validation
+                preds = trainer.predict(inputs, thinking_steps=total_steps, full_sequence=True)
+                
+                # Check shapes and types
+                if not isinstance(preds, torch.Tensor):
+                    preds = torch.tensor(preds, device=DEVICE)
+                
                 # Accuracy only for masked (meaningful) steps
+                # targets is already a tensor on DEVICE from generate_db_data
                 diff = torch.abs(preds - targets)
-                # Count accurate if diff < 0.1 on segments where mask == 1
+                
                 accurate = (diff < 0.1).float() * mask
                 acc = (accurate.sum() / mask.sum()) * 100
-                print(f"Epoch {epoch}: Loss {loss.item():.6f} | Acc {acc.item():.2f}%")
+                print(f"Epoch {epoch}: Loss {loss:.6f} | Acc {acc.item():.2f}%")
                 
             if loss < 0.0005: 
                 print("Convergence Reached!")
