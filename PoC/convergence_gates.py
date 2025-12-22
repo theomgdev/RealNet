@@ -30,6 +30,8 @@ def main():
     
     # CRITICAL CONFIG FOR TINY NETWORKS:
     # 1. dropout_rate=0.0 (Every neuron is vital)
+    # 2. activation='gelu' (Flow allows better gradient flow in small circuits)
+    # 3. weight_init='xavier_uniform' (Higher variance needed for signal propagation in small nets)
     model = RealNet(
         num_neurons=NUM_NEURONS, 
         input_ids=INPUT_IDS, 
@@ -37,11 +39,9 @@ def main():
         pulse_mode=True, 
         device=DEVICE,
         dropout_rate=0.0,
+        activation='gelu',
         weight_init='xavier_uniform'
     )
-    
-    # Removed manual W init loop, using built-in xavier_uniform instead.
-
 
     trainer = RealNetTrainer(model, device=DEVICE)
     

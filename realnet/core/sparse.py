@@ -22,7 +22,8 @@ class SparseRealNet(RealNet):
             output_ids=dense_model.output_ids,
             pulse_mode=dense_model.pulse_mode,
             dropout_rate=dense_model.drop.p,
-            device=dense_model.device
+            device=dense_model.device,
+            activation=getattr(dense_model, 'activation_type', 'gelu') # Default to GELU if legacy model
         )
         
         # Copy State Dictionary (weights, biases, mask, etc.)

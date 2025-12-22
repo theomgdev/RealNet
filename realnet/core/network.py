@@ -3,12 +3,13 @@ import torch.nn as nn
 import numpy as np
 
 class RealNet(nn.Module):
-    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='quiet'):
+    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='orthogonal', activation='tanh'):
         super(RealNet, self).__init__()
         self.num_neurons = num_neurons
         self.input_ids = input_ids
         self.output_ids = output_ids
         self.pulse_mode = pulse_mode
+        self.activation_type = activation
         self._device = device # Private variable for property
         
         # Initialization
@@ -21,7 +22,23 @@ class RealNet(nn.Module):
 
         # Architecturally defined components
         self.norm = nn.LayerNorm(num_neurons).to(device) # StepNorm
-        self.act = nn.GELU() # Flow Activation
+        
+        # Activation Function
+        if activation == 'tanh':
+            self.act = nn.Tanh()
+        elif activation == 'relu':
+            self.act = nn.ReLU()
+        elif activation == 'leaky_relu':
+            self.act = nn.LeakyReLU()
+        elif activation == 'sigmoid':
+            self.act = nn.Sigmoid()
+        elif activation == 'gelu':
+            self.act = nn.GELU()
+        elif activation == 'silu':
+             self.act = nn.SiLU()
+        else:
+             raise ValueError(f"Unknown activation function: {activation}")
+
         self.drop = nn.Dropout(p=dropout_rate) # Biological Failure Simulation
 
         # Internal State (hidden state h_t)
@@ -38,6 +55,8 @@ class RealNet(nn.Module):
         with torch.no_grad():
             if strategy == 'quiet':
                 nn.init.normal_(self.W, mean=0.0, std=0.02)
+            elif strategy == 'classic':
+                self.W.data = torch.randn(self.num_neurons, self.num_neurons, device=self._device) * 0.5
             elif strategy == 'xavier_uniform':
                 nn.init.xavier_uniform_(self.W)
             elif strategy == 'xavier_normal':

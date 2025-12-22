@@ -17,13 +17,19 @@ def main():
     INPUT_ID = 0
     OUTPUT_ID = 1
     
+    # CRITICAL CONFIG FOR TINY NETWORKS:
+    # 1. dropout_rate=0.0 (Every neuron is vital)
+    # 2. activation='gelu' (Flow allows better gradient flow in small circuits)
+    # 3. weight_init='xavier_uniform' (Higher variance needed for signal propagation in small nets)
     model = RealNet(
         num_neurons=NUM_NEURONS, 
         input_ids=[INPUT_ID], 
         output_ids=[OUTPUT_ID], 
         pulse_mode=True, 
         dropout_rate=0.0,
-        device=DEVICE
+        device=DEVICE,
+        activation='gelu',
+        weight_init='xavier_uniform'
     )
     trainer = RealNetTrainer(model, device=DEVICE)
 
