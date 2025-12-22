@@ -59,7 +59,7 @@ def main():
         num_neurons=NUM_NEURONS,
         input_ids=[INPUT_ID],
         output_ids=[OUTPUT_ID],
-        dropout_rate=0.1,
+        dropout_rate=0.0, # Arithmetic requires precise memory
         device=DEVICE
     )
     

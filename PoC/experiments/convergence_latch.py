@@ -49,7 +49,8 @@ def main():
         num_neurons=NUM_NEURONS,
         input_ids=[INPUT_ID],
         output_ids=[OUTPUT_ID],
-        device=DEVICE
+        device=DEVICE,
+        dropout_rate=0.0 # overfitting to a mental mechanic is desired
     )
     
     trainer = RealNetTrainer(model, device=DEVICE)

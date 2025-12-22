@@ -56,7 +56,7 @@ class RealNet(nn.Module):
             if strategy == 'quiet':
                 nn.init.normal_(self.W, mean=0.0, std=0.02)
             elif strategy == 'classic':
-                self.W.data = torch.randn(self.num_neurons, self.num_neurons, device=self._device) * 0.5
+                nn.init.normal_(self.W)
             elif strategy == 'xavier_uniform':
                 nn.init.xavier_uniform_(self.W)
             elif strategy == 'xavier_normal':
