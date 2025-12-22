@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 
 class RealNet(nn.Module):
-    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='default'):
+    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='quiet'):
         super(RealNet, self).__init__()
         self.num_neurons = num_neurons
         self.input_ids = input_ids
@@ -36,8 +36,7 @@ class RealNet(nn.Module):
         Applies requested weight initialization strategy.
         """
         with torch.no_grad():
-            if strategy == 'default':
-                # Original "Quiet" initialization
+            if strategy == 'quiet':
                 nn.init.normal_(self.W, mean=0.0, std=0.02)
             elif strategy == 'xavier_uniform':
                 nn.init.xavier_uniform_(self.W)
