@@ -4,7 +4,7 @@ import torch.optim as optim
 import numpy as np
 
 class RealNetTrainer:
-    def __init__(self, model, optimizer=None, loss_fn=None, device='cpu'):
+    def __init__(self, model, optimizer=None, loss_fn=None, device='cpu', gradient_decay=0.0):
         """
         Trainer for RealNet models.
         
@@ -12,11 +12,14 @@ class RealNetTrainer:
             model (RealNet): The RealNet model instance.
             optimizer (torch.optim.Optimizer): Optimizer instance. If None, defaults to AdamW.
             loss_fn (callable): Loss function. If None, defaults to MSELoss.
+            loss_fn (callable): Loss function. If None, defaults to MSELoss.
             device (str): Device to run on ('cpu' or 'cuda').
+            gradient_decay (float): Fraction of gradients to keep from previous step (0.0 to 1.0). Default 0.0 (Standard zero_grad).
         """
         self.model = model
         self.device = device
         self.model.to(self.device)
+        self.gradient_decay = gradient_decay
         
         self.optimizer = optimizer if optimizer else optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
         self.loss_fn = loss_fn if loss_fn else nn.MSELoss()
@@ -123,7 +126,20 @@ class RealNetTrainer:
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
             self.scaler.step(self.optimizer)
             self.scaler.update()
-            self.optimizer.zero_grad()
+
+            if self.gradient_decay > 0.0:
+                 # Gradient Persistence (Ghost Gradients)
+                 with torch.no_grad():
+                    for param in self.model.parameters():
+                        if param.grad is not None:
+                            # CRITICAL: If NaN/Inf, reset completely
+                            if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():
+                                param.grad.zero_()
+                            else:
+                                # Keep a fraction of the gradient
+                                param.grad.mul_(self.gradient_decay)
+            else:
+                 self.optimizer.zero_grad()
             if hasattr(self, '_acc_counter'):
                 self._acc_counter = 0
 
