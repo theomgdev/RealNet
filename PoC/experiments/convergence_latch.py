@@ -11,11 +11,11 @@ from realnet import RealNet, RealNetTrainer
 def generate_latch_data(batch_size, seq_len, device):
     """
     Generates data for 'Catch & Hold'.
-    Input: (Batch, Seq, 1). Random pulse at t = trigger_time.
-    Target: (Batch, Seq, 1). 0 before trigger, 1 after trigger (forever).
+    Input: (Batch, Seq, 1). -1.0 usually, 1.0 at trigger.
+    Target: (Batch, Seq, 1). -1.0 before trigger, 1.0 after trigger.
     """
-    inputs = torch.zeros(batch_size, seq_len, 1, device=device)
-    targets = torch.zeros(batch_size, seq_len, 1, device=device)
+    inputs = torch.ones(batch_size, seq_len, 1, device=device) * -1.0
+    targets = torch.ones(batch_size, seq_len, 1, device=device) * -1.0
     
     for i in range(batch_size):
         # Trigger happens somewhere between step 2 and seq_len-5
@@ -25,7 +25,6 @@ def generate_latch_data(batch_size, seq_len, device):
         inputs[i, trigger, 0] = 1.0
         
         # Target becomes 1 AFTER trigger (inclusive)
-        # Once turned ON, it stays ON.
         targets[i, trigger:, 0] = 1.0
         
     return inputs, targets
@@ -38,7 +37,7 @@ def main():
     print(f"Running on {DEVICE}")
 
     # CONFIGURATION
-    NUM_NEURONS = 64
+    NUM_NEURONS = 32
     INPUT_ID = 0
     OUTPUT_ID = 1
     
@@ -54,7 +53,7 @@ def main():
     )
     
     trainer = RealNetTrainer(model, device=DEVICE)
-    trainer.optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    trainer.optimizer = torch.optim.AdamW(model.parameters(), lr=0.01)
     
     print("Training...")
     
@@ -74,7 +73,7 @@ def main():
     
     # Test case: Trigger at t=5
     test_trigger = 5
-    test_input = torch.zeros(1, SEQ_LEN, 1, device=DEVICE)
+    test_input = torch.ones(1, SEQ_LEN, 1, device=DEVICE) * -1.0
     test_input[0, test_trigger, 0] = 1.0
     
     with torch.no_grad():
@@ -87,8 +86,8 @@ def main():
     print(f"Trigger sent at t={test_trigger}")
     for t in range(SEQ_LEN):
         val = preds[0, t, 0].item()
-        status = "OFF" if val < 0.5 else "ON "
-        visual = "🔴" if val < 0.5 else "🟢"
+        status = "OFF" if val < 0.0 else "ON "
+        visual = "🔴" if val < 0.0 else "🟢"
         if t == test_trigger: visual = "⚡ TRIGGER!"
         
         print(f"t={t:02d} | Out: {val:.4f} | {status} {visual}")
