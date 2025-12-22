@@ -7,7 +7,7 @@ from ..utils.data import prepare_input, to_tensor
 from ..utils.pruning import SynapticPruner
 
 class RealNetTrainer:
-    def __init__(self, model, optimizer=None, loss_fn=None, device='cpu', gradient_decay=0.0):
+    def __init__(self, model, optimizer=None, loss_fn=None, device='cpu', gradient_persistence=0.0):
         """
         Trainer for RealNet models.
         
@@ -16,12 +16,12 @@ class RealNetTrainer:
             optimizer (torch.optim.Optimizer): Optimizer instance. If None, defaults to AdamW.
             loss_fn (callable): Loss function. If None, defaults to MSELoss.
             device (str): Device to run on ('cpu' or 'cuda').
-            gradient_decay (float): Fraction of gradients to keep from previous step (0.0 to 1.0). Default 0.0.
+            gradient_persistence (float): Fraction of gradients to keep from previous step (0.0 to 1.0). Default 0.0.
         """
         self.model = model
         self.device = device
         self.model.to(self.device)
-        self.gradient_decay = gradient_decay
+        self.gradient_persistence = gradient_persistence
         
         self.optimizer = optimizer if optimizer else optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
         self.loss_fn = loss_fn if loss_fn else nn.MSELoss()
@@ -89,7 +89,7 @@ class RealNetTrainer:
             self.scaler.step(self.optimizer)
             self.scaler.update()
 
-            if self.gradient_decay > 0.0:
+            if self.gradient_persistence > 0.0:
                  # Gradient Persistence (Ghost Gradients)
                  with torch.no_grad():
                     for param in self.model.parameters():
@@ -99,7 +99,7 @@ class RealNetTrainer:
                                 param.grad.zero_()
                             else:
                                 # Keep a fraction of the gradient
-                                param.grad.mul_(self.gradient_decay)
+                                param.grad.mul_(self.gradient_persistence)
             else:
                  self.optimizer.zero_grad()
                  

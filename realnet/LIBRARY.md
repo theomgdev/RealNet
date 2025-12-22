@@ -81,17 +81,20 @@ The `RealNetTrainer` handles the training loop, gradient accumulation, mixed pre
 ```python
 from realnet import RealNetTrainer
 
+```python
+from realnet import RealNetTrainer
+
 trainer = RealNetTrainer(
     model, 
     optimizer=None,      # Defaults to AdamW
     loss_fn=None,        # Defaults to MSELoss
     device='cuda',
-    gradient_decay=0.0   # Ghost Gradients (Persistence)
+    gradient_persistence=0.0   # Ghost Gradients (Persistence)
 )
 ```
 
 **Parameters:**
-*   `gradient_decay` (float): **Ghost Gradients / Persistence**.
+*   `gradient_persistence` (float): **Ghost Gradients / Persistence**.
     *   `0.0`: Standard behavior (`zero_grad()` after every step).
     *   `> 0.0` (e.g., `0.1`): Keeps a percentage of the previous step's gradient. This creates a "momentum" over time, effectively simulating a larger batch size or longer temporal context. Useful for difficult convergence landscapes.
 
@@ -142,8 +145,8 @@ RealNet allows you to simulate massive batch sizes on limited hardware (e.g., co
     ```
 *   **Benefit:** Allows training large models or using large batch stability without running out of VRAM.
 
-### 3. Ghost Gradients (Gradient Decay)
-By setting `gradient_decay > 0`, you enable a form of **Temporal Momentum**. The network "remembers" the direction of the error from the previous batch.
+### 3. Ghost Gradients (Gradient Persistence)
+By setting `gradient_persistence > 0`, you enable a form of **Temporal Momentum**. The network "remembers" the direction of the error from the previous batch.
 *   **Difference from Accumulation:** Accumulation is exact math (summing). Ghost Gradients is a decaying echo (multiplying by 0.1).
 *   **Use Case:** When the loss curve is extremely jagged or the model gets stuck in local minima.
 *   **Effect:** Smooths out optimization and can force convergence in "Impossible" tasks (like Zero-Hidden XOR).
@@ -161,7 +164,7 @@ RealNet can evolve. By calling `prune_synapses()` during training, the network k
 ```python
 # 2 Inputs, 1 Output. 0 Hidden Layers.
 model = RealNet(3, [0, 1], [2], device='cuda')
-trainer = RealNetTrainer(model, gradient_decay=0.1) # Use Ghost Gradients
+trainer = RealNetTrainer(model, gradient_persistence=0.1) # Use Ghost Gradients
 
 # Data: Truth Table
 X = [[-1, -1], [-1, 1], [1, -1], [1, 1]]
