@@ -51,13 +51,18 @@ Runs the dynamic system.
 *   `steps`: **Thinking Time**. How many times the signal reverberates in the echo chamber.
 *   **Returns**: `(all_states, final_state)`
 
-#### `model.prune_synapses(threshold=0.001)`
-Permanently kills connections (weights) that are below the absolute threshold.
-*   **Darwinian Pruning**: Converts a Dense matrix into a Sparse brain-like structure.
+#### `SynapticPruner.prune(model, threshold=0.001)`
+Permanently kills connections that are below the absolute threshold.
+*   **Location**: `realnet.utils.pruning`
 *   **Returns**: `(pruned_count, total_dead, total_synapses)`
 
-#### `model.make_sparse()` / `model.to_dense()`
-Optimizes memory usage by converting the internal weight matrix to a PyTorch Sparse Tensor. Use this after heavy pruning.
+#### `SparseRealNet.from_dense(model)`
+Creates an optimized Sparse version of the model for inference.
+```python
+from realnet import SparseRealNet
+sparse_model = SparseRealNet.from_dense(model)
+```
+Replaces the old `make_sparse()` method.
 
 ---
 

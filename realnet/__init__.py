@@ -1,4 +1,5 @@
 from .core.network import RealNet
+from .core.sparse import SparseRealNet
 from .training.trainer import RealNetTrainer
 
-__all__ = ['RealNet', 'RealNetTrainer']
+__all__ = ['RealNet', 'SparseRealNet', 'RealNetTrainer']

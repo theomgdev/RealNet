@@ -78,10 +78,15 @@ def main():
         sparsity = (dead_total / total) * 100.0
         
         # ACTIVATE TRUE SPARSITY FOR INFERENCE
-        model.make_sparse()
+        from realnet import SparseRealNet
+        sparse_model = SparseRealNet.from_dense(model)
+        
+        # Swap trainer model to sparse for efficient inference
+        original_model = trainer.model
+        trainer.model = sparse_model
+        trainer.model.eval()
         
         # Test
-        model.eval()
         correct = 0
         total_samples = 0
         with torch.no_grad():
@@ -93,7 +98,8 @@ def main():
                 total_samples += target.size(0)
         
         # SWITCH BACK TO DENSE FOR TRAINING (Optimizer needs dense gradients)
-        model.to_dense()
+        trainer.model = original_model
+        trainer.model.train()
         
         acc = 100.0 * correct / total_samples
         print(f"Epoch {epoch+1}: Loss {avg_loss:.4f} | Acc {acc:.2f}% | Dead Synapses: {sparsity:.2f}% ({dead_total}/{total})")

@@ -29,8 +29,6 @@ class RealNet(nn.Module):
         # PRUNING MASK (Synaptic Life)
         # 1 = Alive, 0 = Dead
         self.register_buffer('mask', torch.ones(num_neurons, num_neurons, device=device))
-        
-        self.is_sparse = False
 
     def compile(self):
         """
@@ -75,20 +73,11 @@ class RealNet(nn.Module):
         outputs = []
 
         # Apply Mask to Weights (Dead synapses transmit nothing)
-        effective_W = self.W * self.mask if not self.is_sparse else self.W_sparse
+        effective_W = self.W * self.mask
 
         for t in range(steps):
-            # 1. Chaotic Transmission
-            if self.is_sparse:
-                # OPTIMIZED SPARSE MULTIPLICATION
-                if not hasattr(self, 'W_t_sparse'):
-                    self.W_t_sparse = effective_W.t().coalesce()
-                
-                signal_T = torch.sparse.mm(self.W_t_sparse, h_t.t())
-                signal = signal_T.t()
-            else:
-                # STANDARD DENSE MULTIPLICATION
-                signal = torch.matmul(h_t, effective_W)
+            # 1. Chaotic Transmission (DENSE)
+            signal = torch.matmul(h_t, effective_W)
             
             # 2. Add Character (Bias)
             signal = signal + self.B
@@ -116,25 +105,6 @@ class RealNet(nn.Module):
 
     def reset_state(self, batch_size=1):
         self.state = torch.zeros(batch_size, self.num_neurons, device=self.device)
-        if not hasattr(self, 'is_sparse'):
-            self.is_sparse = False
-
-    def make_sparse(self):
-        """
-        Converts the masked weights to a Sparse Tensor.
-        """
-        with torch.no_grad():
-            masked_W = self.W * self.mask
-            self.W_sparse = masked_W.to_sparse()
-            self.W_t_sparse = self.W_sparse.t().coalesce()
-            self.is_sparse = True
-    
-    def to_dense(self):
-        self.is_sparse = False
-        if hasattr(self, 'W_sparse'):
-            del self.W_sparse
-        if hasattr(self, 'W_t_sparse'):
-            del self.W_t_sparse
 
     @property
     def device(self):
