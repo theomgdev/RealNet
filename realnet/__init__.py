@@ -1,2 +1,4 @@
-from .model import RealNet
-from .trainer import RealNetTrainer
+from .core.network import RealNet
+from .training.trainer import RealNetTrainer
+
+__all__ = ['RealNet', 'RealNetTrainer']

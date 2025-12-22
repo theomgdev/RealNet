@@ -2,15 +2,16 @@
 
 RealNet is a PyTorch-based library that implements **Zero-Hidden Layer** neural networks using **Temporal Depth**. By treating the neural network as a dynamic system that evolves over time, RealNet achieves deep learning capabilities without stacking spatial layers.
 
-## 核心 (Core)
+## 核心 (Core Modules)
 
-The library consists of two main classes:
-1.  **`RealNet`**: The neural network architecture (a single $N \times N$ matrix).
-2.  **`RealNetTrainer`**: The engine for training, optimizing, and evolving the network.
+The library is modularized into core components:
+1.  **`realnet.core.network`**: Contains the `RealNet` architecture.
+2.  **`realnet.training.trainer`**: Contains `RealNetTrainer`.
+3.  **`realnet.utils`**: Utilities for data (`data.py`) and pruning (`pruning.py`).
 
 ---
 
-## 🧠 RealNet Model (`realnet.model`)
+## 🧠 RealNet Model (`realnet.core.network`)
 
 The `RealNet` class defines the structure and dynamics of the network. It is a single layer where every neuron is connected to every other neuron (including itself).
 
@@ -60,7 +61,7 @@ Optimizes memory usage by converting the internal weight matrix to a PyTorch Spa
 
 ---
 
-## 🏋️ RealNet Trainer (`realnet.trainer`)
+## 🏋️ RealNet Trainer (`realnet.training.trainer`)
 
 The `RealNetTrainer` handles the training loop, gradient accumulation, mixed precision (AMP), and experimental features like Ghost Gradients.
 
