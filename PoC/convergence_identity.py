@@ -23,7 +23,8 @@ def main():
         output_ids=[OUTPUT_ID], 
         pulse_mode=True, 
         dropout_rate=0.0,
-        device=DEVICE
+        device=DEVICE,
+        weight_init='xavier_uniform'
     )
     trainer = RealNetTrainer(model, device=DEVICE)
 

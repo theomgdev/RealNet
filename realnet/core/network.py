@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 
 class RealNet(nn.Module):
-    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu'):
+    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='default'):
         super(RealNet, self).__init__()
         self.num_neurons = num_neurons
         self.input_ids = input_ids
@@ -13,7 +13,8 @@ class RealNet(nn.Module):
         
         # Initialization
         # W: N x N weights. Anyone can talk to anyone.
-        self.W = nn.Parameter(torch.randn(num_neurons, num_neurons, device=device) * 0.02)
+        self.W = nn.Parameter(torch.empty(num_neurons, num_neurons, device=device))
+        self._init_weights(weight_init)
         
         # B: Bias vector.
         self.B = nn.Parameter(torch.zeros(num_neurons, device=device))
@@ -29,6 +30,30 @@ class RealNet(nn.Module):
         # PRUNING MASK (Synaptic Life)
         # 1 = Alive, 0 = Dead
         self.register_buffer('mask', torch.ones(num_neurons, num_neurons, device=device))
+
+    def _init_weights(self, strategy):
+        """
+        Applies requested weight initialization strategy.
+        """
+        with torch.no_grad():
+            if strategy == 'default':
+                # Original "Quiet" initialization
+                nn.init.normal_(self.W, mean=0.0, std=0.02)
+            elif strategy == 'xavier_uniform':
+                nn.init.xavier_uniform_(self.W)
+            elif strategy == 'xavier_normal':
+                nn.init.xavier_normal_(self.W)
+            elif strategy == 'kaiming_uniform':
+                nn.init.kaiming_uniform_(self.W, mode='fan_in', nonlinearity='relu') # GELU is close to ReLU
+            elif strategy == 'kaiming_normal':
+                nn.init.kaiming_normal_(self.W, mode='fan_in', nonlinearity='relu')
+            elif strategy == 'orthogonal':
+                nn.init.orthogonal_(self.W)
+            elif strategy == 'sparse':
+                # Experimental sparse init (connect only 10%)
+                nn.init.sparse_(self.W, sparsity=0.9, std=0.02)
+            else:
+                raise ValueError(f"Unknown weight_init strategy: {strategy}")
 
     def compile(self):
         """

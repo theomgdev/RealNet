@@ -1,15 +1,14 @@
 
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import sys
 import os
 
 # Adjust path to import realnet
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from realnet import RealNet
+from realnet import RealNet, RealNetTrainer
 
-def generate_adder_data(batch_size, seq_len, input_id, delay_1, delay_2, device):
+def generate_adder_data(batch_size, seq_len, delay_1, delay_2, device):
     """
     Generates sequential data for adding two numbers.
     Input:
@@ -17,17 +16,17 @@ def generate_adder_data(batch_size, seq_len, input_id, delay_1, delay_2, device)
         t=delay_2:  Value B
         others:     0
     Target:
-        t=seq_len-1: A + B
+        Scalar: A + B
     """
     
     # 1. Generate random numbers A and B
     # Range -0.5 to 0.5 so sum is between -1 and 1
     val_a = torch.rand(batch_size, 1, device=device) - 0.5
     val_b = torch.rand(batch_size, 1, device=device) - 0.5
-    target_sum = val_a + val_b
+    target_sum = val_a + val_b # (Batch, 1)
     
-    # 2. Construct Input Sequence (Batch, Steps, Neurons)
-    # We don't know N yet, so return (Batch, Steps, 1) and mapped indices
+    # 2. Construct Input Sequence (Batch, Steps, 1)
+    # The new Trainer/prepare_input supports 3D input directly.
     inputs = torch.zeros(batch_size, seq_len, 1, device=device)
     
     # Place pulses
@@ -37,7 +36,7 @@ def generate_adder_data(batch_size, seq_len, input_id, delay_1, delay_2, device)
     return inputs, target_sum
 
 def main():
-    print("RealNet Experiment: The Delayed Adder (Algorithmic Logic)")
+    print("RealNet Experiment: The Delayed Adder (Algorithmic Logic) [REFACTORED]")
     print("Objective: Remember Number A. Wait. Receive Number B. Output A+B.")
     
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -56,7 +55,6 @@ def main():
     EPOCHS = 10000
     
     # Initialize Model
-    # Pulse Mode is irrelevant here because we will feed 3D sequence manually
     model = RealNet(
         num_neurons=NUM_NEURONS,
         input_ids=[INPUT_ID],
@@ -65,62 +63,43 @@ def main():
         device=DEVICE
     )
     
-    optimizer = optim.AdamW(model.parameters(), lr=1e-3)
-    loss_fn = nn.MSELoss()
+    trainer = RealNetTrainer(model, device=DEVICE)
+    trainer.optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
     
     print(f"Structure: Pulse A at t={DELAY_1}. Pulse B at t={DELAY_2}. Target at t={SEQ_LEN-1}.")
     
     # TRAINING
     for epoch in range(EPOCHS):
-        model.train()
+        # Generate Data
+        inputs_seq, targets = generate_adder_data(BATCH_SIZE, SEQ_LEN, DELAY_1, DELAY_2, DEVICE)
         
-        # Data
-        inputs_seq, targets = generate_adder_data(BATCH_SIZE, SEQ_LEN, INPUT_ID, DELAY_1, DELAY_2, DEVICE)
-        
-        # Map to Full Neuron Space
-        # inputs_seq: (Batch, Steps, 1) -> x_input: (Batch, Steps, N)
-        x_input = torch.zeros(BATCH_SIZE, SEQ_LEN, NUM_NEURONS, device=DEVICE)
-        x_input[:, :, INPUT_ID] = inputs_seq[:, :, 0]
-        
-        model.reset_state(BATCH_SIZE)
-        
-        # Forward
-        outputs_stack, final_state = model(x_input, steps=SEQ_LEN)
-        
-        # We only care about the Output ID at the LAST step
-        pred = final_state[:, OUTPUT_ID]
-        
-        loss = loss_fn(pred, targets.squeeze())
-        
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        # Train using Trainer
+        # Trainer will use 'final_state' by default because full_sequence=False
+        loss = trainer.train_batch(inputs_seq, targets, thinking_steps=SEQ_LEN)
         
         if epoch % 100 == 0:
-            print(f"Epoch {epoch}: Loss {loss.item():.6f}")
-
+            print(f"Epoch {epoch}: Loss {loss:.6f}")
+            
     # TEST
     print("\nTesting...")
-    model.eval()
     
     test_a = [-0.3, 0.5, 0.1, -0.4]
     test_b = [0.1, 0.2, -0.1, -0.4]
     
     # Custom Test Batch
     batch_size = len(test_a)
-    x_test = torch.zeros(batch_size, SEQ_LEN, NUM_NEURONS, device=DEVICE)
+    x_test = torch.zeros(batch_size, SEQ_LEN, 1, device=DEVICE)
     for i in range(batch_size):
-        x_test[i, DELAY_1, INPUT_ID] = test_a[i]
-        x_test[i, DELAY_2, INPUT_ID] = test_b[i]
+        x_test[i, DELAY_1, 0] = test_a[i]
+        x_test[i, DELAY_2, 0] = test_b[i]
         
-    model.reset_state(batch_size)
     with torch.no_grad():
-        _, final = model(x_test, steps=SEQ_LEN)
-        preds = final[:, OUTPUT_ID]
+        # Predict using Trainer (returns final state output by default)
+        preds = trainer.predict(x_test, thinking_steps=SEQ_LEN)
         
     for i in range(batch_size):
         tgt = test_a[i] + test_b[i]
-        p = preds[i].item()
+        p = preds[i, 0].item()
         print(f" {test_a[i]} + {test_b[i]} = {tgt:.2f} | RealNet: {p:.4f} (Diff: {abs(tgt-p):.4f})")
     
 if __name__ == "__main__":

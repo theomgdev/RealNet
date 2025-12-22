@@ -36,17 +36,12 @@ def main():
         output_ids=OUTPUT_ID, 
         pulse_mode=True, 
         device=DEVICE,
-        dropout_rate=0.0 
+        dropout_rate=0.0,
+        weight_init='xavier_uniform'
     )
     
-    # CRITICAL FIX: Rescale Weights for Tiny Network
-    # Default init (0.02) is designed for massive inputs (784+). 
-    # For 2 inputs, signal dies immediately. We need larger variance.
-    # Rule of thumb: 1 / sqrt(Inputs) -> 1 / sqrt(2) ~= 0.7
-    with torch.no_grad():
-        model.W.data = torch.randn(NUM_NEURONS, NUM_NEURONS, device=DEVICE) * 0.5
-        # Also reset mask just in case
-        model.mask.fill_(1.0)
+    # Removed manual W init loop, using built-in xavier_uniform instead.
+
 
     trainer = RealNetTrainer(model, device=DEVICE)
     
