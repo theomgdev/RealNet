@@ -85,7 +85,7 @@ def main():
         device=DEVICE,
         dropout_rate=0.0,
         activation='gelu',
-        weight_init='orthogonal'
+        weight_init='quiet'
     )
     
     trainer = RealNetTrainer(model, device=DEVICE, gradient_persistence=0.5) # Increased for deeper memory
