@@ -109,9 +109,11 @@ history = trainer.fit(
 Runs a single custom training step. Useful for custom loops (RL, Generative, etc.).
 *   `thinking_steps`: How long the model "thinks" before loss is calculated.
 *   `gradient_accumulation_steps`: Simulates larger batch sizes.
+*   `full_sequence` (bool): If `True`, calculates loss on the entire sequence output `(Batch, Steps, Out)` instead of just the last step. Essential for Seq2Seq tasks.
 
-#### `trainer.predict(input_features, thinking_steps)`
-Runs inference in evaluation mode (no gradients, no dropout).
+#### `trainer.predict(input_features, thinking_steps, full_sequence=False)`
+Runs inference in evaluation mode.
+*   `full_sequence` (bool): If `True`, returns outputs for all time steps `(Batch, Steps, Out)`.
 
 ---
 

@@ -26,7 +26,7 @@ class RealNetTrainer:
         self.optimizer = optimizer if optimizer else optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
         self.loss_fn = loss_fn if loss_fn else nn.MSELoss()
 
-    def train_batch(self, input_features, target_values, thinking_steps, gradient_accumulation_steps=1):
+    def train_batch(self, input_features, target_values, thinking_steps, gradient_accumulation_steps=1, full_sequence=False):
         """
         Runs a single training step on a batch.
         """
@@ -39,12 +39,7 @@ class RealNetTrainer:
             else:
                 self.scaler = torch.cuda.amp.GradScaler(enabled=(self.device == 'cuda'))
 
-        # 1. Prepare Data (Using Helper)
-        # We need batch size first to init tensor if needed, but prepare_input handles it.
-        # But prepare_input expects (Batch, Features)
-        
-        # Convert inputs to tensor first if needed to get batch size correctly or let helper do it
-        # Actually helper does it.
+        # 1. Prepare Data
         x_input, batch_size = prepare_input(input_features, self.model.input_ids, self.model.num_neurons, self.device)
         
         target_values = to_tensor(target_values, self.device)
@@ -58,11 +53,17 @@ class RealNetTrainer:
              
         with autocast_ctx:
             self.model.reset_state(batch_size)
-            _, final_state = self.model(x_input, steps=thinking_steps)
+            all_states, final_state = self.model(x_input, steps=thinking_steps)
             
             # 3. Extract Outputs & Calculate Loss
             output_indices = self.model.output_ids
-            predicted_outputs = final_state[:, output_indices]
+            
+            if full_sequence:
+                # all_states: (Steps, Batch, Neurons) -> Permute to (Batch, Steps, Neurons)
+                predicted_outputs = all_states.permute(1, 0, 2)[:, :, output_indices]
+                # Note: target_values must also be (Batch, Steps, Output_Size) or compatible
+            else:
+                predicted_outputs = final_state[:, output_indices]
             
             loss = self.loss_fn(predicted_outputs, target_values)
             
@@ -108,7 +109,7 @@ class RealNetTrainer:
         # Return the SCALED loss for logging (un-normalize if accumulated)
         return loss.item() * gradient_accumulation_steps
 
-    def predict(self, input_features, thinking_steps):
+    def predict(self, input_features, thinking_steps, full_sequence=False):
         """
         Runs inference.
         """
@@ -117,10 +118,14 @@ class RealNetTrainer:
             x_input, batch_size = prepare_input(input_features, self.model.input_ids, self.model.num_neurons, self.device)
             
             self.model.reset_state(batch_size)
-            _, final_state = self.model(x_input, steps=thinking_steps)
+            all_states, final_state = self.model(x_input, steps=thinking_steps)
             
             output_indices = self.model.output_ids
-            return final_state[:, output_indices]
+            
+            if full_sequence:
+                 return all_states.permute(1, 0, 2)[:, :, output_indices]
+            else:
+                 return final_state[:, output_indices]
 
     def evaluate(self, input_features, target_values, thinking_steps):
         """

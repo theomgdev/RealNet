@@ -26,6 +26,19 @@ def prepare_input(input_features, model_input_ids, num_neurons, device):
 
     # 3. Map features to input_ids
     if len(model_input_ids) > 0:
+        # Check for Sequential Input (Batch, Steps, Features)
+        if input_features.dim() == 3:
+            # (Batch, Steps, Features) -> (Batch, Steps, Num_Neurons)
+            batch_size, steps, num_features = input_features.shape
+            x_input = torch.zeros(batch_size, steps, num_neurons, device=device)
+            
+            num_assigned = min(num_features, len(model_input_ids))
+            for k in range(num_assigned):
+                # Map Feature k to Neuron input_ids[k] across all time steps
+                x_input[:, :, model_input_ids[k]] = input_features[:, :, k]
+            
+            return x_input, batch_size
+
         # Handle case where input_features might be 1D (Batch,) -> (Batch, 1)
         if input_features.dim() == 1:
             input_features = input_features.unsqueeze(1)
