@@ -85,7 +85,6 @@ def main():
         device=DEVICE,
         dropout_rate=0.0,
         activation='gelu', # Gelu is beter at gating than tanh
-        weight_init='quiet' # We need silence to save data
     )
     
     trainer = RealNetTrainer(model, device=DEVICE, gradient_persistence=0.5) # Increased for deeper memory
