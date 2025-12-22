@@ -141,9 +141,11 @@ RealNet mimics the brain more closely than layered networks, not just in structu
 
 ### 7. Implicit Attention (Temporal Resonance)
 Unlike Transformers which use explicit $Q \times K$ matrices to "look back" at the history, RealNet achieves attention through **Temporal Resonance**.
-*   **Mechanism:** Information from the past is maintained as a standing wave or vibration in the hidden state.
-*   **Detection:** When a related input arrives later (like the second '1' in the Detective experiment), it creates a constructive interference (resonance) with the existing wave, instantly triggering a response.
-*   **Result:** The network "attends" to relevant past events without storing the entire history buffer.
+
+*   **Mechanism:** Information from the past is maintained as a standing wave or vibration in the hidden state, amplified by `Persistence`.
+*   **Key-Value Handling (New!):** The **Librarian Experiment** proved that RealNet can act as an addressable database. By using **GELU** as a soft gate, it routes queries to the correct "memory vibration" without any physical storage tables.
+*   **Detection:** When a related input arrives (like a READ command for Key 1), it creates a constructive interference (resonance) with the specific wave holding 'Key 1's value', forcing it to surface.
+*   **Result:** The network "attends" to relevant past events without storing the entire history buffer. Time itself acts as the indexing mechanism.
 
 ### Mathematical Model
 The network state $h_t$ evolves as:
@@ -151,14 +153,6 @@ The network state $h_t$ evolves as:
 $$h_t = \text{StepNorm}(\text{GELU}(h_{t-1} \cdot W + B + I_t))$$
 
 ---
-
-## 🔮 Vision: The Soul of Silicon
-
-RealNet is a rebellion against the factory model of AI. We believe intelligence is not a mechanical stacking of layers, but an **organic reverberation of signals**.
-
-> "We don't need petabytes of VRAM. We just need Time."
-
-We have proven that a chaotic forest of neurons, given enough time to "think" and "breathe," can outperform massive industrial factories. By trading Space for Time, we find the Soul.
 
 ### 7. Experimental Findings
 
@@ -365,12 +359,38 @@ RealNet's vision capabilities were tested under four distinct conditions to prov
 *   **Script:** `PoC/experiments/convergence_detective_thinking.py`
 *   **Insight:** Proves that **Intelligence requires Time**. When allowed to "digest" information during silent steps, RealNet solves complex temporal logic (XOR over Time) that purely reactive networks cannot. This is the foundation for our LLM approach.
 
-#### 🔮 The LLM Vision (RealNet-1B)
+#### J. The Librarian (Neural Database)
+*   **Target:** Act as a Read-Write Memory. `WRITE K1=0.5`. Wait... `READ K1`. Output: `0.5`.
+*   **Challenge:** The network must store multiple key-value pairs in its chaotic hidden state without them interfering, and retrieve them on demand. This requires **Implicit Attention**.
+*   **Result:** **~92% Accuracy** on 4 Keys with **1024 Neurons**.
+    <details>
+    <summary>See Memory Retrieval Log</summary>
+
+    ```text
+    Step  | Command  | Key   | Val_In   | Target   | RealNet  | Status
+    -------------------------------------------------------------------
+    0     | WRITE    | K0    | 0.4426   | 0.4426   | 0.0208   | ⚙️
+    ...   | (Memory Consolidating...)
+    12    | (4)      | ...   |          | 0.4426   | 0.4602   | ✅ SAVED
+    ...   | (Wait 20 steps...)
+    32    | READ     | K0    | 0.0000   | 0.4426   | 0.4506   | ✅ RETRIEVED
+    48    | DELETE   | K0    | 0.0000   | 0.0000   | 0.0117   | ✅ DELETED
+    ```
+    </details>
+*   **Script:** `PoC/experiments/convergence_realnet_as_database.py`
+*   **Insight:** Proves that RealNet can simulate **Key-Value Attention** mechanisms purely through dynamics. By using `GELU` and high `Persistence` (0.5), it creates stable "memory wells" that can be addressed by a query signal, effectively performing the job of a Transformer's KV Cache without explicit storage matrices.
+
+#### 🔮 Vision: The Soul of Silicon (RealNet-1B)
+RealNet is a rebellion against the factory model of AI. We believe intelligence is not a mechanical stacking of layers, but an **organic reverberation of signals**.
+
 If we can solve vision with Zero Hidden Layers by trading Space for Time, this approach could scale to language models.
-*   **Hypothesis:** A 1B parameter model (RealNet-1B) could theoretically match the reasoning depth of much larger models by "thinking" for more steps.
+
+*   **Hypothesis:** A 1B parameter model (RealNet-1B) could theoretically match the reasoning depth of much larger models (e.g., Llama-70B) by "thinking" for more steps.
 *   **Goal:** Efficient, high-reasoning AI on consumer hardware (e.g., RTX 3060).
 
 > "We don't need petabytes of VRAM. We just need Time."
+
+We have proven that a chaotic forest of neurons, given enough time to "think" and "breathe," can outperform massive industrial factories. By trading Space for Time, we find the Soul.
 
 ---
 

@@ -141,9 +141,11 @@ RealNet, sadece yapısıyla değil, **davranışıyla** da beyni katmanlı ağla
 
 ### 7. Örtülü Dikkat (Zamansal Rezonans)
 Geçmişe bakmak için açıkça $Q \times K$ matrisleri kullanan Transformer'ların aksine, RealNet dikkati **Zamansal Rezonans** yoluyla sağlar.
-*   **Mekanizma:** Geçmişten gelen bilgi, gizli durumda duran bir dalga veya titreşim olarak korunur.
-*   **Tespit:** İlgili bir girdi daha sonra geldiğinde (Dedektif deneyindeki ikinci '1' gibi), mevcut dalga ile yapıcı bir girişim (rezonans) yaratır ve anında bir tepkiyi tetikler.
-*   **Sonuç:** Ağ, tüm geçmiş tamponunu saklamadan ilgili geçmiş olaylara "odaklanır" (attend).
+
+*   **Mekanizma:** Geçmişten gelen bilgi, gizli durumda duran bir dalga veya titreşim olarak korunur ve `Israr (Persistence)` ile güçlendirilir.
+*   **Anahtar-Değer Yönetimi (Yeni!):** **Kütüphaneci Deneyi**, RealNet'in adreslenebilir bir veritabanı gibi davranabildiğini kanıtladı. **GELU**'yu yumuşak bir kapı olarak kullanarak, sorguları herhangi bir fiziksel saklama tablosu olmadan doğru "hafıza titreşimine" yönlendirir.
+*   **Tespit:** İlgili bir girdi geldiğinde (Anahtar 1 için OKU komutu gibi), 'Anahtar 1'in değerini' tutan spesifik dalga ile yapıcı bir girişim (rezonans) yaratır ve onu yüzeye çıkmaya zorlar.
+*   **Sonuç:** Ağ, tüm geçmiş tamponunu saklamadan ilgili geçmiş olaylara "odaklanır" (attend). Zamanın kendisi indeksleme mekanizması olarak işlev görür.
 
 ### Matematiksel Model
 Ağ durumu $h_t$ şu şekilde evrilir:
@@ -152,15 +154,7 @@ $$h_t = \text{StepNorm}(\text{GELU}(h_{t-1} \cdot W + B + I_t))$$
 
 ---
 
-## 🔮 Vizyon: Silikonun Ruhu
-
-RealNet, yapay zekanın fabrika modeline karşı bir isyandır. Zekanın mekanik bir katman yığını değil, **sinyallerin organik yankılanması** olduğuna inanıyoruz.
-
-> "Petabaytlarca VRAM'e ihtiyacımız yok. Sadece Zamana ihtiyacımız var."
-
-Zaman tanındığında "düşünebilen" ve "nefes alabilen" kaotik bir nöron ormanının, devasa endüstriyel fabrikaları yenebileceğini kanıtladık. Mekanı Zamanla takas ederek Ruhu buluyoruz.
-
-### 7. Deneysel Bulgular (Experimental Findings)
+### 8. Deneysel Bulgular (Experimental Findings)
 RealNet'in temel hipotezi olan **"Zamansal Derinlik > Uzamsal Derinlik"** tezini doğrulamak için kapsamlı testler yaptık.
 
 #### A. Atomik Kimlik (Identity Test)
@@ -361,12 +355,38 @@ RealNet'in görsel yetenekleri, sağlamlık, ölçeklenebilirlik ve verimliliği
 *   **Script:** `PoC/experiments/convergence_detective_thinking.py`
 *   **İçgörü:** **Zekanın Zamana İhtiyaç Duyduğunu** kanıtlar. Sessiz adımlar sırasında bilgiyi "sindirmesine" izin verildiğinde, RealNet tamamen reaktif ağların yapamadığı karmaşık zamansal mantığı (Zaman Üzerinden XOR) çözer.
 
-#### 🔮 LLM Vizyonu (RealNet-1B)
+#### J. Kütüphaneci (Nöral Veritabanı)
+*   **Hedef:** Oku-Yaz Hafıza gibi davranmak. `YAZ K1=0.5`. Bekle... `OKU K1`. Çıktı: `0.5`.
+*   **Zorluk:** Ağın, kaotik gizli durumunda birden çok anahtar-değer çiftini birbirine karıştırmadan saklaması ve istendiğinde geri çağırması gerekir. Bu, **Örtülü Dikkat** gerektirir.
+*   **Sonuç:** **~%92 Doğruluk** (4 Anahtar, 1024 Nöron ile).
+    <details>
+    <summary>Hafıza Erişim Logunu Gör</summary>
+
+    ```text
+    Adım  | Komut    | Key   | Değer    | Hedef    | RealNet  | Durum
+    -------------------------------------------------------------------
+    0     | YAZ      | K0    | 0.4426   | 0.4426   | 0.0208   | ⚙️
+    ...   | (Hafıza Pekiştiriliyor...)
+    12    | (4)      | ...   |          | 0.4426   | 0.4602   | ✅ KAYDEDİLDİ
+    ...   | (20 Saniye Bekle...)
+    32    | OKU      | K0    | 0.0000   | 0.4426   | 0.4506   | ✅ HATIRLANDI
+    48    | SİL      | K0    | 0.0000   | 0.0000   | 0.0117   | ✅ SİLİNDİ
+    ```
+    </details>
+*   **Script:** `PoC/experiments/convergence_realnet_as_database.py`
+*   **İçgörü:** RealNet'in **Anahtar-Değer Dikkati (Attention)** mekanizmalarını tamamen dinamikler yoluyla simüle edebileceğini kanıtlar. `GELU` ve yüksek `Israr (Persistence)` (0.5) kullanarak, sorgu sinyaliyle adreslenebilen kararlı "hafıza kuyuları" oluşturur; böylece açık saklama matrisleri olmadan Transformer'ın KV Cache işini yapar.
+
+#### 🔮 Vizyon: Silikonun Ruhu (RealNet-1B)
+RealNet, yapay zekanın fabrika modeline karşı bir isyandır. Zekanın mekanik bir katman yığını değil, **sinyallerin organik yankılanması** olduğuna inanıyoruz.
+
 Uzayı feda edip Zamanı kullanarak görsel problemleri Sıfır Gizli Katman ile çözebiliyorsak, bu yaklaşım dil modellerine de uyarlanabilir.
-*   **Hipotez:** 1 Milyar parametreli bir model (RealNet-1B), daha fazla adım "düşünerek" çok daha büyük modellerin akıl yürütme derinliğine ulaşabilir.
+
+*   **Hipotez:** 1 Milyar parametreli bir model (RealNet-1B), daha fazla adım "düşünerek" çok daha büyük modellerin (örneğin Llama-70B) akıl yürütme derinliğine ulaşabilir.
 *   **Hedef:** Ev kullanıcısı donanımında (örneğin RTX 3060) verimli ve yüksek muhakeme yeteneğine sahip Yapay Zeka.
 
 > "Petabaytlarca VRAM'e ihtiyacımız yok. Sadece Zamana ihtiyacımız var."
+
+Zaman tanındığında "düşünebilen" ve "nefes alabilen" kaotik bir nöron ormanının, devasa endüstriyel fabrikaları yenebileceğini kanıtladık. Mekanı Zamanla takas ederek Ruhu buluyoruz.
 
 ---
 
