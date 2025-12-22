@@ -1,22 +1,21 @@
 
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import sys
 import os
 
 # Adjust path to import realnet
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from realnet import RealNet
+from realnet import RealNet, RealNetTrainer
 
 def generate_latch_data(batch_size, seq_len, device):
     """
     Generates data for 'Catch & Hold'.
-    Input: Random pulse at t = trigger_time.
-    Target: 0 before trigger, 1 after trigger (forever).
+    Input: (Batch, Seq, 1). Random pulse at t = trigger_time.
+    Target: (Batch, Seq, 1). 0 before trigger, 1 after trigger (forever).
     """
     inputs = torch.zeros(batch_size, seq_len, 1, device=device)
-    targets = torch.zeros(batch_size, seq_len, device=device)
+    targets = torch.zeros(batch_size, seq_len, 1, device=device)
     
     for i in range(batch_size):
         # Trigger happens somewhere between step 2 and seq_len-5
@@ -25,14 +24,14 @@ def generate_latch_data(batch_size, seq_len, device):
         # Pulse input at trigger
         inputs[i, trigger, 0] = 1.0
         
-        # Target becomes 1 AFTER trigger (inclusive or exclusive? Let's say inclusive)
+        # Target becomes 1 AFTER trigger (inclusive)
         # Once turned ON, it stays ON.
-        targets[i, trigger:] = 1.0
+        targets[i, trigger:, 0] = 1.0
         
     return inputs, targets
 
 def main():
-    print("RealNet Experiment: Catch & Hold (The Latch)")
+    print("RealNet Experiment: Catch & Hold (The Latch) [REFACTORED]")
     print("Objective: Wait for a pulse using chaos. Once received, hold the state output at 1.0 forever.")
     
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -54,54 +53,40 @@ def main():
         device=DEVICE
     )
     
-    optimizer = optim.AdamW(model.parameters(), lr=1e-3)
-    loss_fn = nn.MSELoss()
+    trainer = RealNetTrainer(model, device=DEVICE)
+    trainer.optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
     
-    # TRAINING
+    print("Training...")
+    
+    # TRAINING LOOP
     for epoch in range(EPOCHS):
-        model.train()
-        
         inputs, targets = generate_latch_data(BATCH_SIZE, SEQ_LEN, DEVICE)
         
-        # Map to Input (Batch, Time, Neurons)
-        x_input = torch.zeros(BATCH_SIZE, SEQ_LEN, NUM_NEURONS, device=DEVICE)
-        x_input[:, :, INPUT_ID] = inputs[:, :, 0]
-        
-        model.reset_state(BATCH_SIZE)
-        
-        # Forward
-        outputs_stack, _ = model(x_input, steps=SEQ_LEN)
-        preds = outputs_stack[:, :, OUTPUT_ID] # (Steps, Batch)
-        
-        # Transpose pred to (Batch, Steps) to match target
-        preds = preds.transpose(0, 1)
-        
-        loss = loss_fn(preds, targets)
-        
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        # inputs: (Batch, Seq, 1) -> RealNet converts to (Batch, Seq, N) via prepare_input
+        # targets: (Batch, Seq, 1)
+        loss = trainer.train_batch(inputs, targets, thinking_steps=SEQ_LEN, full_sequence=True)
         
         if epoch % 100 == 0:
-            print(f"Epoch {epoch}: Loss {loss.item():.6f}")
-
+            print(f"Epoch {epoch}: Loss {loss:.6f}")
+            
     # TEST
-    print("\nTesting Latch Mechanism...")
-    model.eval()
+    print("\nTraining Complete. Testing Latch Mechanism...")
     
     # Test case: Trigger at t=5
     test_trigger = 5
-    test_input = torch.zeros(1, SEQ_LEN, NUM_NEURONS, device=DEVICE)
-    test_input[0, test_trigger, INPUT_ID] = 1.0
+    test_input = torch.zeros(1, SEQ_LEN, 1, device=DEVICE)
+    test_input[0, test_trigger, 0] = 1.0
     
-    model.reset_state(1)
     with torch.no_grad():
-        out_stack, _ = model(test_input, steps=SEQ_LEN)
-        out_seq = out_stack[:, 0, OUTPUT_ID]
+        # Predict Full Sequence
+        # Returns (Batch, Steps, OutputDim)
+        preds = trainer.predict(test_input, thinking_steps=SEQ_LEN, full_sequence=True)
+        # We want (Steps) for printing
+        # preds[0, :, 0] shape is (Steps)
         
     print(f"Trigger sent at t={test_trigger}")
     for t in range(SEQ_LEN):
-        val = out_seq[t].item()
+        val = preds[0, t, 0].item()
         status = "OFF" if val < 0.5 else "ON "
         visual = "🔴" if val < 0.5 else "🟢"
         if t == test_trigger: visual = "⚡ TRIGGER!"
