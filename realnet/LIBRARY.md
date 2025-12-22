@@ -42,10 +42,6 @@ model = RealNet(
 *   `weight_init` (str): Initialization strategy (`'orthogonal'`, `'xavier_uniform'`, `'kaiming_normal'`, etc.). Default is `'orthogonal'`.
 *   `activation` (str): Activation function used in the update step (`'tanh'`, `'relu'`, `'sigmoid'`, `'gelu'`, `'silu'`, etc.). Default is `'tanh'`.
 
-**Initialization Recommendations:**
-*   **Large Networks (>10 Neurons, RNN-like tasks):** Use `weight_init='orthogonal'` and `activation='tanh'`. This provides the best stability for long-term temporal dynamics.
-*   **Tiny Networks (<10 Neurons, Logic Gates):** Use `weight_init='xavier_uniform'` and `activation='gelu'`. Small networks need higher initial variance and better gradient flow to solve logical problems without hidden layers.
-
 ### Key Methods
 
 #### `model.compile()`

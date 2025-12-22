@@ -73,6 +73,17 @@ inputs = torch.randn(100, 1)
 trainer.fit(inputs, inputs, epochs=50)
 ```
 
+#### Initialization Protocols
+
+RealNet adapts to the scale of the problem. We recommend two distinct configurations:
+
+*   **Large Networks (>10 Neurons, RNN-like tasks):** 
+    *   Use `weight_init='orthogonal'` and `activation='tanh'`. 
+    *   This provides the best stability for long-term temporal dynamics and analog signal processing.
+*   **Tiny Networks (<10 Neurons, Logic Gates):** 
+    *   Use `weight_init='xavier_uniform'` and `activation='gelu'`. 
+    *   Small networks need higher initial variance and better gradient flow to solve sharp logical problems without hidden layers.
+
 ---
 
 ## 🧠 Architecture Overview
@@ -127,6 +138,12 @@ RealNet mimics the brain more closely than layered networks, not just in structu
 *   **Willpower (The Latch):** Unlike standard RNNs that fade, RealNet can lock onto a decision and hold it against entropy, displaying "Cognitive Persistence."
 *   **Rhythm (The Stopwatch):** Without any external clock, RealNet experiences time subjectively, allowing it to count, wait, and act at precise moments.
 *   **Patience (The Detective):** It benefits from "Thinking Time." Just as humans need a moment to process complex logic, RealNet solves impossible problems when given a few steps of silence to digest potential solutions.
+
+### 7. Implicit Attention (Temporal Resonance)
+Unlike Transformers which use explicit $Q \times K$ matrices to "look back" at the history, RealNet achieves attention through **Temporal Resonance**.
+*   **Mechanism:** Information from the past is maintained as a standing wave or vibration in the hidden state.
+*   **Detection:** When a related input arrives later (like the second '1' in the Detective experiment), it creates a constructive interference (resonance) with the existing wave, instantly triggering a response.
+*   **Result:** The network "attends" to relevant past events without storing the entire history buffer.
 
 ### Mathematical Model
 The network state $h_t$ evolves as:

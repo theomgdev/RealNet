@@ -73,6 +73,17 @@ inputs = torch.randn(100, 1)
 trainer.fit(inputs, inputs, epochs=50)
 ```
 
+#### Başlatma Protokolleri (Initialization Protocols)
+
+RealNet problemin ölçeğine uyum sağlar. İki farklı konfigürasyon öneriyoruz:
+
+*   **Büyük Ağlar (>10 Nöron, RNN benzeri görevler):**
+    *   `weight_init='orthogonal'` ve `activation='tanh'` kullanın.
+    *   Bu, uzun vadeli zamansal dinamikler ve analog sinyal işleme için en iyi kararlılığı sağlar.
+*   **Küçük Ağlar (<10 Nöron, Mantık Kapıları):**
+    *   `weight_init='xavier_uniform'` ve `activation='gelu'` kullanın.
+    *   Küçük ağlar, gizli katmanlar olmadan keskin mantıksal problemleri çözmek için daha yüksek başlangıç varyansına ve daha iyi gradyan akışına ihtiyaç duyar.
+
 ---
 
 ## 🧠 Mimari Genel Bakış
@@ -127,6 +138,12 @@ RealNet, sadece yapısıyla değil, **davranışıyla** da beyni katmanlı ağla
 *   **İrade (Mühür):** Sönümlenen standart RNN'lerin aksine, RealNet bir karara kilitlenebilir ve onu entropiye karşı koruyabilir; yani "Bilişsel Israr" gösterir.
 *   **Ritim (Kronometre):** Dış bir saat olmadan RealNet zamanı öznel olarak deneyimler; sayabilir, bekleyebilir ve doğru anda harekete geçebilir.
 *   **Sabır (Dedektif):** "Düşünme Zamanı"ndan faydalanır. İnsanların karmaşık mantığı işlemek için bir ana ihtiyacı duyması gibi, RealNet de sessizlik anlarında potansiyel çözümleri "sindirerek" imkansız problemleri çözer.
+
+### 7. Örtülü Dikkat (Zamansal Rezonans)
+Geçmişe bakmak için açıkça $Q \times K$ matrisleri kullanan Transformer'ların aksine, RealNet dikkati **Zamansal Rezonans** yoluyla sağlar.
+*   **Mekanizma:** Geçmişten gelen bilgi, gizli durumda duran bir dalga veya titreşim olarak korunur.
+*   **Tespit:** İlgili bir girdi daha sonra geldiğinde (Dedektif deneyindeki ikinci '1' gibi), mevcut dalga ile yapıcı bir girişim (rezonans) yaratır ve anında bir tepkiyi tetikler.
+*   **Sonuç:** Ağ, tüm geçmiş tamponunu saklamadan ilgili geçmiş olaylara "odaklanır" (attend).
 
 ### Matematiksel Model
 Ağ durumu $h_t$ şu şekilde evrilir:
