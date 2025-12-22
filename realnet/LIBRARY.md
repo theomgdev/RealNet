@@ -115,6 +115,7 @@ Runs a single custom training step. Useful for custom loops (RL, Generative, etc
 *   `thinking_steps`: How long the model "thinks" before loss is calculated.
 *   `gradient_accumulation_steps`: Simulates larger batch sizes.
 *   `full_sequence` (bool): If `True`, calculates loss on the entire sequence output `(Batch, Steps, Out)` instead of just the last step. Essential for Seq2Seq tasks.
+*   `mask` (Tensor, optional): A binary or weighted mask `(Batch, Steps, Out)` to ignore specific steps or outputs during loss calculation. Useful for tasks with "thinking delays" or variable-length sequences.
 
 #### `trainer.predict(input_features, thinking_steps, full_sequence=False)`
 Runs inference in evaluation mode.
