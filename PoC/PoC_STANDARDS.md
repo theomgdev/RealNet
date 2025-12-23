@@ -114,6 +114,8 @@ Use the `prepare_input` utility implicitly via the Trainer.
     *   *Example:* `t=05 | Input: 1 | Output: 0.99 🟢`
 3.  **Comments:** Explain *why* you chose a specific setup.
     *   *Example:* `# GAP=3 allows the model time to digest the previous bit.`
+4.  **File Paths:** Never use hardcoded absolute paths or assume the CWD. Always construct paths relative to the script file.
+    *   *Example:* `DATA_FILE = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'file.txt')`
 
 ---
 

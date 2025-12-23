@@ -77,9 +77,6 @@ The `RealNetTrainer` handles the training loop, gradient accumulation, mixed pre
 ```python
 from realnet import RealNetTrainer
 
-```python
-from realnet import RealNetTrainer
-
 trainer = RealNetTrainer(
     model, 
     optimizer=None,      # Defaults to AdamW
@@ -116,10 +113,47 @@ Runs a single custom training step. Useful for custom loops (RL, Generative, etc
 *   `gradient_accumulation_steps`: Simulates larger batch sizes.
 *   `full_sequence` (bool): If `True`, calculates loss on the entire sequence output `(Batch, Steps, Out)` instead of just the last step. Essential for Seq2Seq tasks.
 *   `mask` (Tensor, optional): A binary or weighted mask `(Batch, Steps, Out)` to ignore specific steps or outputs during loss calculation. Useful for tasks with "thinking delays" or variable-length sequences.
+*   `output_transform` (Callable, optional): A function to transform the predicted outputs before loss calculation. Useful for reshaping logits (e.g., flatten for CrossEntropy) or applying custom activations.
 
 #### `trainer.predict(input_features, thinking_steps, full_sequence=False)`
 Runs inference in evaluation mode.
 *   `full_sequence` (bool): If `True`, returns outputs for all time steps `(Batch, Steps, Out)`.
+
+---
+
+## 💾 RealStore (Checkpoint Utilities)
+
+The `realstore` module provides checkpoint management utilities, including a unique **Weight Transplantation** feature for transferring learned knowledge between models of different sizes.
+
+### Functions
+
+#### `save_checkpoint(model, optimizer, epoch, loss, path, extra_data=None)`
+Saves a training checkpoint to disk.
+
+#### `load_checkpoint(model, optimizer, path, device='cpu', strict=True)`
+Loads a checkpoint. Set `strict=False` to ignore size mismatches (will partially load what fits).
+
+#### `transplant_weights(model, checkpoint_path, device='cpu', verbose=True)`
+🧬 **Weight Transplantation**: Transfers learned weights from a checkpoint to a model, **even if the number of neurons is different**.
+
+*   **Scaling Up**: Start a 512-neuron model with knowledge from a 256-neuron model. The overlapping 256×256 region is copied, the rest stays initialized.
+*   **Scaling Down**: Compress a 1024-neuron model into a 256-neuron model. The most "central" 256×256 weights are preserved.
+*   **Warm Starts**: Any learned weights are better than random. Gradients will find their way faster.
+
+```python
+from realnet import RealNet, transplant_weights
+
+# Create a NEW, larger model
+big_model = RealNet(num_neurons=512, ...)
+
+# Transplant weights from a smaller, trained checkpoint
+transplant_weights(big_model, 'small_model_checkpoint.pth')
+
+# big_model now has a "warm start" - training will converge faster!
+```
+
+#### `get_checkpoint_info(path, device='cpu')`
+Reads checkpoint metadata (epoch, loss, num_neurons) without loading into a model.
 
 ---
 

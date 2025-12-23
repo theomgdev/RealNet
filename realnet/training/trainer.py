@@ -26,7 +26,7 @@ class RealNetTrainer:
         self.optimizer = optimizer if optimizer else optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
         self.loss_fn = loss_fn if loss_fn else nn.MSELoss()
 
-    def train_batch(self, input_features, target_values, thinking_steps, gradient_accumulation_steps=1, full_sequence=False, mask=None):
+    def train_batch(self, input_features, target_values, thinking_steps, gradient_accumulation_steps=1, full_sequence=False, mask=None, output_transform=None):
         """
         Runs a single training step on a batch.
         """
@@ -67,6 +67,10 @@ class RealNetTrainer:
             else:
                 predicted_outputs = final_state[:, output_indices]
             
+            # OPTIONAL TRANSFORM (e.g. for CrossEntropy reshaping)
+            if output_transform:
+                predicted_outputs = output_transform(predicted_outputs)
+
             if mask is not None:
                 # Masked MSE Loss
                 # Apply mask to squared errors
