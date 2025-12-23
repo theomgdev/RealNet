@@ -1,15 +1,17 @@
 import torch
 import torch.nn as nn
+import torch.utils.checkpoint as checkpoint
 import numpy as np
 
 class RealNet(nn.Module):
-    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='orthogonal', activation='tanh'):
+    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='orthogonal', activation='tanh', gradient_checkpointing=False):
         super(RealNet, self).__init__()
         self.num_neurons = num_neurons
         self.input_ids = input_ids
         self.output_ids = output_ids
         self.pulse_mode = pulse_mode
         self.activation_type = activation
+        self.gradient_checkpointing = gradient_checkpointing
         self._device = device # Private variable for property
         
         # Initialization
@@ -73,6 +75,9 @@ class RealNet(nn.Module):
             elif strategy == 'zero':
                 # Zero init - useful for transplantation (new neurons start silent)
                 nn.init.zeros_(self.W)
+            elif strategy == 'one':
+                # One init - useful for transplantation (new neurons act as just a data bridge)
+                nn.init.ones_(self.W)
             else:
                 raise ValueError(f"Unknown weight_init strategy: {strategy}")
 
@@ -121,29 +126,47 @@ class RealNet(nn.Module):
         # Apply Mask to Weights (Dead synapses transmit nothing)
         effective_W = self.W * self.mask
 
-        for t in range(steps):
+        def _single_step(h_t_in, t_idx, x_input_step):
+            """Single timestep computation - can be checkpointed."""
             # 1. Chaotic Transmission (DENSE)
-            signal = torch.matmul(h_t, effective_W)
+            signal = torch.matmul(h_t_in, effective_W)
             
             # 2. Add Character (Bias)
             signal = signal + self.B
             
-            # 3. Add Input (Impulse, Continuous, or Sequence)
-            if x_input is not None:
-                if x_input.ndim == 3:
-                     # Sequential Input: (Batch, Steps, Neurons)
-                     if t < x_input.shape[1]:
-                         signal = signal + x_input[:, t, :]
-                elif self.pulse_mode:
-                    if t == 0:
-                        signal = signal + x_input
-                else:
-                    signal = signal + x_input
-
+            # 3. Add Input
+            if x_input_step is not None:
+                signal = signal + x_input_step
+            
             # 4. Flow Activation (GELU) & StepNorm
             activated = self.act(signal)
             normalized = self.norm(activated)
-            h_t = self.drop(normalized)
+            h_t_out = self.drop(normalized)
+            
+            return h_t_out
+
+        for t in range(steps):
+            # Prepare input for this step
+            x_step = None
+            if x_input is not None:
+                if x_input.ndim == 3:
+                    # Sequential Input: (Batch, Steps, Neurons)
+                    if t < x_input.shape[1]:
+                        x_step = x_input[:, t, :]
+                elif self.pulse_mode:
+                    if t == 0:
+                        x_step = x_input
+                else:
+                    x_step = x_input
+            
+            # Use gradient checkpointing if enabled (saves VRAM, costs recomputation)
+            if self.gradient_checkpointing and self.training:
+                # checkpoint requires tensors, not None - use dummy if needed
+                if x_step is None:
+                    x_step = torch.zeros_like(h_t)
+                h_t = checkpoint.checkpoint(_single_step, h_t, torch.tensor(t), x_step, use_reentrant=False)
+            else:
+                h_t = _single_step(h_t, t, x_step)
             
             outputs.append(h_t)
 

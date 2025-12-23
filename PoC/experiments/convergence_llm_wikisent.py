@@ -16,8 +16,8 @@ torch.set_float32_matmul_precision('high')
 # --- CONFIGURATION ---
 DATA_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'wikisent2.txt'))
 SEQ_LEN = 128
-BATCH_SIZE = 1024
-NUM_NEURONS = 256
+BATCH_SIZE = 512
+NUM_NEURONS = 300
 THINK_GAP = 5 # Number of silence steps between characters
 EPOCHS = 1000 # Infinite training effectively
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -163,7 +163,15 @@ def main():
     print(f"Text Loaded. Length: {len(text):,}")
     
     dataset = TextDataset(text, SEQ_LEN)
-    dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+    dataloader = DataLoader(
+        dataset, 
+        batch_size=BATCH_SIZE, 
+        shuffle=True,
+        num_workers=4,        # Async data loading
+        pin_memory=True,      # Faster GPU transfer
+        prefetch_factor=2,    # Prefetch next batches
+        persistent_workers=True  # Keep workers alive
+    )
     
     print(f"Vocab Size: {dataset.vocab_size}")
     

@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-import numpy as np
 from ..utils.data import prepare_input, to_tensor
 from ..utils.pruning import SynapticPruner
 
