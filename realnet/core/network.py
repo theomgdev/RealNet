@@ -70,6 +70,9 @@ class RealNet(nn.Module):
             elif strategy == 'sparse':
                 # Experimental sparse init (connect only 10%)
                 nn.init.sparse_(self.W, sparsity=0.9, std=0.02)
+            elif strategy == 'zero':
+                # Zero init - useful for transplantation (new neurons start silent)
+                nn.init.zeros_(self.W)
             else:
                 raise ValueError(f"Unknown weight_init strategy: {strategy}")
 

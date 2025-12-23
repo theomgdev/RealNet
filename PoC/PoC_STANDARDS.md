@@ -116,6 +116,8 @@ Use the `prepare_input` utility implicitly via the Trainer.
     *   *Example:* `# GAP=3 allows the model time to digest the previous bit.`
 4.  **File Paths:** Never use hardcoded absolute paths or assume the CWD. Always construct paths relative to the script file.
     *   *Example:* `DATA_FILE = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'file.txt')`
+5.  **Checkpointing:** Always use the library's `save_checkpoint`, `load_checkpoint`, and `transplant_weights` functions from `realnet.utils.realstore`. Do NOT write custom checkpoint code. If the library is missing a feature, extend the library instead.
+    *   *Example:* `from realnet import save_checkpoint, load_checkpoint, transplant_weights`
 
 ---
 
