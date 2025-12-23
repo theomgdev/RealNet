@@ -290,50 +290,6 @@ def main():
         save_checkpoint(model, trainer.optimizer, epoch, avg_loss, CKPT_PATH)
         print(f"💾 Checkpoint Saved: {CKPT_PATH}")
         
-        # 🌱 PROGRESSIVE NEURAL GROWTH
-        if GROW_PER_EPOCH > 0:
-            old_n = model.num_neurons
-            new_n = old_n + GROW_PER_EPOCH
-            
-            # Create new larger model
-            new_input_ids = list(range(dataset.vocab_size))
-            new_output_ids = list(range(dataset.vocab_size, 2 * dataset.vocab_size))
-            
-            new_model = RealNet(
-                num_neurons=new_n,
-                input_ids=new_input_ids,
-                output_ids=new_output_ids,
-                device=DEVICE,
-                dropout_rate=0.0,
-                activation='gelu',
-                weight_init='zero',  # New neurons start silent
-                gradient_checkpointing=True  # Save VRAM
-            )
-            
-            # Manual transplant from old model
-            old_state = model.state_dict()
-            new_state = new_model.state_dict()
-            
-            # Copy overlapping weights
-            new_state['W'][:old_n, :old_n] = old_state['W']
-            new_state['B'][:old_n] = old_state['B']
-            new_state['mask'][:old_n, :old_n] = old_state['mask']
-            new_state['norm.weight'][:old_n] = old_state['norm.weight']
-            new_state['norm.bias'][:old_n] = old_state['norm.bias']
-            
-            new_model.load_state_dict(new_state)
-            
-            print(f"🌱 Grew: {old_n} → {new_n} neurons")
-            
-            # Replace model and trainer
-            model = new_model
-            trainer = RealNetTrainer(model, device=DEVICE, gradient_persistence=0)
-            trainer.optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
-            trainer.loss_fn = criterion
-            
-            # Update input_ids reference for next iteration
-            input_ids = new_input_ids
-        
         epoch += 1
 
 if __name__ == "__main__":
