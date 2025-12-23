@@ -55,7 +55,7 @@ def generate_dilated_data(batch_size, logic_len, gap, device):
     return inputs, targets
 
 def main():
-    print("RealNet Experiment: The Thinking Detective 🕵️‍♂️ [REFACTORED]")
+    print("RealNet Experiment: The Thinking Detective 🕵️‍♂️")
     print("Objective: Watch a stream of bits. BUT... you have time to think between bits.")
     
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'

@@ -30,7 +30,7 @@ def generate_latch_data(batch_size, seq_len, device):
     return inputs, targets
 
 def main():
-    print("RealNet Experiment: Catch & Hold (The Latch) [REFACTORED]")
+    print("RealNet Experiment: Catch & Hold (The Latch)")
     print("Objective: Wait for a pulse using chaos. Once received, hold the state output at 1.0 forever.")
     
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'

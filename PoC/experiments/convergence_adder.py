@@ -36,7 +36,7 @@ def generate_adder_data(batch_size, seq_len, delay_1, delay_2, device):
     return inputs, target_sum
 
 def main():
-    print("RealNet Experiment: The Delayed Adder (Algorithmic Logic) [REFACTORED]")
+    print("RealNet Experiment: The Delayed Adder (Algorithmic Logic)")
     print("Objective: Remember Number A. Wait. Receive Number B. Output A+B.")
     
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'

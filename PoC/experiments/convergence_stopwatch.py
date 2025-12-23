@@ -36,7 +36,7 @@ def generate_stopwatch_data(batch_size, seq_len, device):
     return inputs, targets
 
 def main():
-    print("RealNet Experiment: The Stopwatch (Internal Clock) [REFACTORED]")
+    print("RealNet Experiment: The Stopwatch (Internal Clock)")
     print("Objective: Input tells 'Wait X steps'. Network must wait in silence and fire at exactly t=X.")
     
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'

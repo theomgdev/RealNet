@@ -33,7 +33,7 @@ def generate_sine_data(batch_size, steps, device):
     return frequencies, targets
 
 def main():
-    print("RealNet Experiment: The Harmonic Oscillator (Sine Wave Generator) [REFACTORED]")
+    print("RealNet Experiment: The Harmonic Oscillator (Sine Wave Generator)")
     print("Objective: One continuous input sets the frequency. The network must oscillate at that frequency for N steps.")
     
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
