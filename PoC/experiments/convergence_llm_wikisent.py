@@ -17,7 +17,7 @@ torch.set_float32_matmul_precision('high')
 DATA_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'wikisent2.txt'))
 SEQ_LEN = 128
 BATCH_SIZE = 512
-NUM_NEURONS = 300
+NUM_NEURONS = 540
 THINK_GAP = 5 # Number of silence steps between characters
 EPOCHS = 1000 # Infinite training effectively
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -168,7 +168,7 @@ def main():
         batch_size=BATCH_SIZE, 
         shuffle=True,
         num_workers=4,        # Async data loading
-        pin_memory=True,      # Faster GPU transfer
+        pin_memory=False,      # Faster GPU transfer
         prefetch_factor=2,    # Prefetch next batches
         persistent_workers=True  # Keep workers alive
     )
@@ -190,7 +190,8 @@ def main():
         device=DEVICE,
         dropout_rate=0.0,
         activation='gelu', # Logic/Gating
-        weight_init='quiet'
+        weight_init='quiet',
+        gradient_checkpointing=True  # Save VRAM
     )
     
     # 🚀 COMPILE FOR SPEED (PyTorch 2.0)
@@ -288,6 +289,50 @@ def main():
         # SAVE CHECKPOINT (Using RealStore)
         save_checkpoint(model, trainer.optimizer, epoch, avg_loss, CKPT_PATH)
         print(f"💾 Checkpoint Saved: {CKPT_PATH}")
+        
+        # 🌱 PROGRESSIVE NEURAL GROWTH
+        if GROW_PER_EPOCH > 0:
+            old_n = model.num_neurons
+            new_n = old_n + GROW_PER_EPOCH
+            
+            # Create new larger model
+            new_input_ids = list(range(dataset.vocab_size))
+            new_output_ids = list(range(dataset.vocab_size, 2 * dataset.vocab_size))
+            
+            new_model = RealNet(
+                num_neurons=new_n,
+                input_ids=new_input_ids,
+                output_ids=new_output_ids,
+                device=DEVICE,
+                dropout_rate=0.0,
+                activation='gelu',
+                weight_init='zero',  # New neurons start silent
+                gradient_checkpointing=True  # Save VRAM
+            )
+            
+            # Manual transplant from old model
+            old_state = model.state_dict()
+            new_state = new_model.state_dict()
+            
+            # Copy overlapping weights
+            new_state['W'][:old_n, :old_n] = old_state['W']
+            new_state['B'][:old_n] = old_state['B']
+            new_state['mask'][:old_n, :old_n] = old_state['mask']
+            new_state['norm.weight'][:old_n] = old_state['norm.weight']
+            new_state['norm.bias'][:old_n] = old_state['norm.bias']
+            
+            new_model.load_state_dict(new_state)
+            
+            print(f"🌱 Grew: {old_n} → {new_n} neurons")
+            
+            # Replace model and trainer
+            model = new_model
+            trainer = RealNetTrainer(model, device=DEVICE, gradient_persistence=0)
+            trainer.optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
+            trainer.loss_fn = criterion
+            
+            # Update input_ids reference for next iteration
+            input_ids = new_input_ids
         
         epoch += 1
 
