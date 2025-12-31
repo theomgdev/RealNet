@@ -17,7 +17,7 @@ torch.set_float32_matmul_precision('high')
 DATA_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'wikisent2.txt'))
 SEQ_LEN = 128
 BATCH_SIZE = 512
-NUM_NEURONS = 540
+NUM_NEURONS = 559
 THINK_GAP = 5 # Number of silence steps between characters
 EPOCHS = 1000 # Infinite training effectively
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
