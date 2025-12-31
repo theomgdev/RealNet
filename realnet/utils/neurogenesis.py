@@ -35,9 +35,16 @@ class Neurogenesis:
         old_norm_b_param = model.norm.bias
         old_opt = optimizer
         
-        # 1. Expand Weights (W) - Init new connections to 0 for continuity
+        # 1. Expand Weights (W)
+        # Strategy: Incoming=0 (Forward safe), Outgoing=Noise (Backprop safe)
         new_W = torch.zeros(new_n, new_n, device=device)
         new_W[:old_n, :old_n] = model.W.data
+        
+        # Symmetry Breaking: Initialize outgoing weights to small noise
+        # This ensures gradients can flow back to the new neuron, even if its activation is 0 initially.
+        # If we used 0 for both, the neuron would be 'dead' (grad=0).
+        noise_std = 1e-5
+        new_W[:old_n, old_n:] = torch.randn(old_n, amount, device=device) * noise_std
         
         # 2. Expand Bias (B)
         new_B = torch.zeros(new_n, device=device)

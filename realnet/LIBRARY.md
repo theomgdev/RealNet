@@ -165,7 +165,9 @@ RealNet supports dynamic growth, allowing you to add neurons to a live network d
 Dynamically adds `amount` empty neurons to the model.
 *   **Continuity**: Optimizers are migrated, so momentum and history are preserved.
 *   **State**: The training state is preserved.
-*   **Initialization**: New synaptic connections are initialized to 0 to minimize shock.
+*   **Initialization**: 
+    *   **Incoming Weights**: 0 (Maintains forward pass stability, new neuron starts inactive).
+    *   **Outgoing Weights**: Small random noise (Enables backpropagation / gradient flow).
 
 ```python
 # Add 1 neuron if loss stagnates
