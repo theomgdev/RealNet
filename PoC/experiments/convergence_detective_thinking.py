@@ -81,7 +81,7 @@ def main():
         device=DEVICE
     )
     
-    trainer = RealNetTrainer(model, device=DEVICE)
+    trainer = RealNetTrainer(model, device=DEVICE, synaptic_noise=0.0)
     trainer.optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
     
     print(f"Logic Steps: {LOGIC_LEN} | Thinking Gap: {GAP} | Total Physical Steps: {SEQ_LEN}")

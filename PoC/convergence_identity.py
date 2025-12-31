@@ -31,7 +31,7 @@ def main():
         activation='gelu',
         weight_init='classic'
     )
-    trainer = RealNetTrainer(model, device=DEVICE)
+    trainer = RealNetTrainer(model, device=DEVICE, synaptic_noise=0.0)
 
     # CRITICAL OPTIMIZER: NO WEIGHT DECAY
     # Small networks shouldn't be penalized for magnitude.

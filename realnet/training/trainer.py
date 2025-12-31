@@ -6,7 +6,7 @@ from ..utils.data import prepare_input, to_tensor
 from ..utils.pruning import SynapticPruner
 
 class RealNetTrainer:
-    def __init__(self, model, optimizer=None, loss_fn=None, device='cpu', gradient_persistence=0.0):
+    def __init__(self, model, optimizer=None, loss_fn=None, device='cpu', gradient_persistence=0.0, synaptic_noise=1e-6):
         """
         Trainer for RealNet models.
         
@@ -16,11 +16,13 @@ class RealNetTrainer:
             loss_fn (callable): Loss function. If None, defaults to MSELoss.
             device (str): Device to run on ('cpu' or 'cuda').
             gradient_persistence (float): Fraction of gradients to keep from previous step (0.0 to 1.0). Default 0.0.
+            synaptic_noise (float): Std dev of Gaussian noise added to weights at every step (Thermal Noise). Default 1e-6.
         """
         self.model = model
         self.device = device
         self.model.to(self.device)
         self.gradient_persistence = gradient_persistence
+        self.synaptic_noise = synaptic_noise
         
         self.optimizer = optimizer if optimizer else optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
         self.loss_fn = loss_fn if loss_fn else nn.MSELoss()
@@ -38,7 +40,15 @@ class RealNetTrainer:
             else:
                 self.scaler = torch.cuda.amp.GradScaler(enabled=(self.device == 'cuda'))
 
-        # 1. Prepare Data
+        # 1. Synaptic Noise (Thermal Noise / Langevin Dynamics)
+        if self.synaptic_noise > 0.0:
+            with torch.no_grad():
+                for param in self.model.parameters():
+                    if param.requires_grad:
+                        noise = torch.randn_like(param) * self.synaptic_noise
+                        param.add_(noise)
+
+        # 2. Prepare Data
         x_input, batch_size = prepare_input(input_features, self.model.input_ids, self.model.num_neurons, self.device)
         
         target_values = to_tensor(target_values, self.device)

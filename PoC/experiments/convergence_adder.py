@@ -63,7 +63,7 @@ def main():
         device=DEVICE
     )
     
-    trainer = RealNetTrainer(model, device=DEVICE)
+    trainer = RealNetTrainer(model, device=DEVICE, synaptic_noise=0.0)
     trainer.optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
     
     print(f"Structure: Pulse A at t={DELAY_1}. Pulse B at t={DELAY_2}. Target at t={SEQ_LEN-1}.")

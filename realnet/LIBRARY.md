@@ -90,6 +90,10 @@ trainer = RealNetTrainer(
 *   `gradient_persistence` (float): **Ghost Gradients / Persistence**.
     *   `0.0`: Standard behavior (`zero_grad()` after every step).
     *   `> 0.0` (e.g., `0.1`): Keeps a percentage of the previous step's gradient. This creates a "momentum" over time, effectively simulating a larger batch size or longer temporal context. Useful for difficult convergence landscapes.
+*   `synaptic_noise` (float): **Thermal Noise**.
+    *   Adds Gaussian noise (std dev = `synaptic_noise`) to all weights *before* every training step.
+    *   Simulates biological thermal noise and prevents overfitting (Stochastic Resonance).
+    *   Recommended: `1e-6` to `1e-5`.
 
 ### Key Methods
 

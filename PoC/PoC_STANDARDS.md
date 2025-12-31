@@ -65,6 +65,7 @@ For tasks like XOR, Logic Gates, or minimal circuits.
 
 ```python
 model = RealNet(..., activation='gelu', weight_init='xavier_uniform', dropout_rate=0.0)
+trainer = RealNetTrainer(model, ..., synaptic_noise=0.0) # Disable noise for pure logic
 ```
 
 ### B. Large Networks & Analog Tasks (> 10 Neurons)

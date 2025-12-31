@@ -53,7 +53,7 @@ def main():
         dropout_rate=0.0 # overfitting to a mental mechanic is desired
     )
     
-    trainer = RealNetTrainer(model, device=DEVICE)
+    trainer = RealNetTrainer(model, device=DEVICE, synaptic_noise=0.0)
     trainer.optimizer = torch.optim.AdamW(model.parameters(), lr=0.01)
     
     print("Training...")

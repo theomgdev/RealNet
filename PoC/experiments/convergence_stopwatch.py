@@ -60,7 +60,7 @@ def main():
     )
     
     # Initialize Trainer
-    trainer = RealNetTrainer(model, device=DEVICE)
+    trainer = RealNetTrainer(model, device=DEVICE, synaptic_noise=0.0)
     
     # Use AdamW explicitly or let trainer default. We set lr=1e-3 for faster convergence here.
     trainer.optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)

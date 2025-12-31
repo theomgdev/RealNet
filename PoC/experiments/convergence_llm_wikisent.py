@@ -166,7 +166,7 @@ def initialize_system(vocab_size, num_neurons, device):
         gradient_checkpointing=True  # Save VRAM
     )
     
-    trainer = RealNetTrainer(model, device=device, gradient_persistence=0) # Memory
+    trainer = RealNetTrainer(model, device=device, gradient_persistence=0, synaptic_noise=1e-6) # Memory + Thermal Noise
     trainer.optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
     
     return model, trainer, input_ids, output_ids

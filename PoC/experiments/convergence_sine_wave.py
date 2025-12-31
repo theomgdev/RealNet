@@ -58,7 +58,7 @@ def main():
     )
     
     # Initialize Trainer
-    trainer = RealNetTrainer(model, device=DEVICE)
+    trainer = RealNetTrainer(model, device=DEVICE, synaptic_noise=0.0)
     trainer.optimizer = torch.optim.AdamW(model.parameters(), lr=5e-5, weight_decay=1e-5)
     
     print(f"Model: {NUM_NEURONS} Neurons. Thinking for {STEPS} steps.")
