@@ -201,3 +201,11 @@ class RealNetTrainer:
                 print(f"Epoch {epoch}/{epochs}: Loss {avg_loss:.6f}{pruning_info}")
                 
         return history
+
+    def expand(self, amount=1, verbose=True):
+        """
+        Dynamically adds neurons to the model (Neurogenesis).
+        Ensures optimizer continuity and memory cleanup.
+        """
+        from ..utils.neurogenesis import Neurogenesis
+        self.optimizer = Neurogenesis.expand(self.model, self.optimizer, amount, verbose)

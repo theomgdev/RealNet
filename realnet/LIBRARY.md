@@ -157,6 +157,24 @@ Reads checkpoint metadata (epoch, loss, num_neurons) without loading into a mode
 
 ---
 
+## 🌱 Neurogenesis (Network Expansion)
+
+RealNet supports dynamic growth, allowing you to add neurons to a live network during training. This mimics biological neurogenesis.
+
+### `trainer.expand(amount=1, verbose=True)`
+Dynamically adds `amount` empty neurons to the model.
+*   **Continuity**: Optimizers are migrated, so momentum and history are preserved.
+*   **State**: The training state is preserved.
+*   **Initialization**: New synaptic connections are initialized to 0 to minimize shock.
+
+```python
+# Add 1 neuron if loss stagnates
+if loss > prev_loss:
+    trainer.expand(amount=1)
+```
+
+---
+
 ## 🌟 Advanced Capabilities
 
 ### 1. Space-Time Tradeoff (Thinking Steps)

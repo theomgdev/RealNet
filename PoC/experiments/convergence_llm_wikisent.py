@@ -148,7 +148,32 @@ def generate(model, dataset, start_str="The", length=100):
             
     return generated_text
 
+def initialize_system(vocab_size, num_neurons, device):
+    """
+    Creates the Model and Trainer instances.
+    """
+    input_ids = list(range(vocab_size))
+    output_ids = list(range(vocab_size, 2 * vocab_size))
+    
+    model = RealNet(
+        num_neurons=num_neurons,
+        input_ids=input_ids,
+        output_ids=output_ids,
+        device=device,
+        dropout_rate=0.0,
+        activation='gelu', # Logic/Gating
+        weight_init='quiet',
+        gradient_checkpointing=True  # Save VRAM
+    )
+    
+    trainer = RealNetTrainer(model, device=device, gradient_persistence=0) # Memory
+    trainer.optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
+    
+    return model, trainer, input_ids, output_ids
+
 def main():
+    global NUM_NEURONS # Allow updating global config if needed
+    
     print(f"🚀 RealNet-1B (Prototyping on WikiSent)...")
     print(f"Loading {DATA_FILE}...")
     
@@ -176,30 +201,10 @@ def main():
     print(f"Vocab Size: {dataset.vocab_size}")
     
     # --- MODEL SETUP ---
-    # Input Neurons != Output Neurons to avoid signal collision
-    input_ids = list(range(dataset.vocab_size))
-    output_ids = list(range(dataset.vocab_size, 2 * dataset.vocab_size))
+    model, trainer, input_ids, output_ids = initialize_system(dataset.vocab_size, NUM_NEURONS, DEVICE)
     
     print(f"Input IDs: {input_ids[0]}-{input_ids[-1]}")
     print(f"Output IDs: {output_ids[0]}-{output_ids[-1]}")
-    
-    model = RealNet(
-        num_neurons=NUM_NEURONS,
-        input_ids=input_ids,
-        output_ids=output_ids,
-        device=DEVICE,
-        dropout_rate=0.0,
-        activation='gelu', # Logic/Gating
-        weight_init='quiet',
-        gradient_checkpointing=True  # Save VRAM
-    )
-    
-    # 🚀 COMPILE FOR SPEED (PyTorch 2.0)
-    # Uncomment to enable compilation once stable
-    # model = model.compile()
-    
-    trainer = RealNetTrainer(model, device=DEVICE, gradient_persistence=0) # Memory
-    trainer.optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
     
     # --- CHECKPOINT SETUP (Using RealStore) ---
     CKPT_DIR = os.path.join(os.path.dirname(__file__), 'ckpt')
@@ -208,18 +213,53 @@ def main():
     
     start_epoch = 0
     if os.path.exists(CKPT_PATH):
+        # Pre-check dimensions to handle mismatches interactively
         try:
-            print(f"🔄 Loading Checkpoint from {CKPT_PATH}...")
-            checkpoint = load_checkpoint(model, trainer.optimizer, CKPT_PATH, device=DEVICE, strict=True)
-            start_epoch = checkpoint['epoch'] + 1
-            print(f"✅ Resuming from Epoch {start_epoch}")
-        except RuntimeError as e:
-            # Size mismatch - try transplant
-            print(f"⚠️ Size mismatch detected. Attempting Weight Transplantation...")
-            transplant_weights(model, CKPT_PATH, device=DEVICE)
-            print(f"🧬 Transplant complete. Starting from Epoch 0 with warm weights.")
+            ckpt_peek = torch.load(CKPT_PATH, map_location=DEVICE)
+            if 'model_state_dict' in ckpt_peek and 'W' in ckpt_peek['model_state_dict']:
+                saved_dim = ckpt_peek['model_state_dict']['W'].shape[0]
+                
+                if saved_dim != NUM_NEURONS:
+                    print(f"\n⚠️ ARCHITECTURE MISMATCH DETECTED!")
+                    print(f"   Current Model: {NUM_NEURONS} neurons")
+                    print(f"   Checkpoint:    {saved_dim} neurons")
+                    
+                    print("Select action:")
+                    print("[1] Change Model Size to Match File (Resume Training)")
+                    print("[2] Transplant Weights (Adapt to New Size)")
+                    action = input("Choice [1/2]: ").strip()
+                    
+                    if action == '1':
+                        print(f"🔄 Resizing model to {saved_dim} neurons...")
+                        NUM_NEURONS = saved_dim 
+                        
+                        # CLEAN RE-INIT using helper
+                        model, trainer, _, _ = initialize_system(dataset.vocab_size, NUM_NEURONS, DEVICE)
+                        
+                        # Now load strictly
+                        checkpoint = load_checkpoint(model, trainer.optimizer, CKPT_PATH, device=DEVICE, strict=True)
+                        start_epoch = checkpoint['epoch'] + 1
+                        print(f"✅ Resuming from Epoch {start_epoch}")
+                        
+                    else:
+                        print(f"⚠️ Proceeding with Weight Transplantation...")
+                        transplant_weights(model, CKPT_PATH, device=DEVICE)
+                        print(f"🧬 Transplant complete. Starting from Epoch 0 with warm weights.")
+                        
+                else:
+                    # Dimensions match, standard load
+                    print(f"🔄 Loading Checkpoint from {CKPT_PATH}...")
+                    checkpoint = load_checkpoint(model, trainer.optimizer, CKPT_PATH, device=DEVICE, strict=True)
+                    start_epoch = checkpoint['epoch'] + 1
+                    print(f"✅ Resuming from Epoch {start_epoch}")
+            else:
+                 # Fallback
+                 print(f"🔄 Loading Checkpoint from {CKPT_PATH}...")
+                 checkpoint = load_checkpoint(model, trainer.optimizer, CKPT_PATH, device=DEVICE, strict=True)
+                 start_epoch = checkpoint['epoch'] + 1
+
         except Exception as e:
-            print(f"⚠️ Failed to load checkpoint: {e}. Starting fresh.")
+            print(f"⚠️ Failed to load/inspect checkpoint: {e}. Starting fresh.")
     
     # CrossEntropy with Masking (Thinking Gaps)
     criterion = nn.CrossEntropyLoss(ignore_index=-100)
@@ -242,6 +282,9 @@ def main():
     
     # Infinite Loop
     epoch = start_epoch
+    prev_loss = float('inf')
+    loss_increase_counter = 0
+    
     while True:
         total_loss = 0
         steps = 0
@@ -250,7 +293,7 @@ def main():
         
         for batch_idx, (x, y) in enumerate(dataloader):
             # Dilate Data (Insert Silence)
-            x_emb = one_hot_encode_dilated(x, dataset.vocab_size, NUM_NEURONS, input_ids, THINK_GAP)
+            x_emb = one_hot_encode_dilated(x, dataset.vocab_size, model.num_neurons, input_ids, THINK_GAP)
             y_dilated = prepare_targets_dilated(y, THINK_GAP)
             y_flat = y_dilated.reshape(-1) # Already on DEVICE
             
@@ -268,14 +311,32 @@ def main():
             total_loss += loss
             steps += 1
             
-            if batch_idx % 50 == 0:
+            if batch_idx % 1 == 0:
                 print(f"Epoch {epoch} | Batch {batch_idx} | Loss {loss:.4f}")
                 
-            if batch_idx > 500: # Limit batches per epoch for frequent view
+            if batch_idx > 10: # Limit batches per epoch for frequent view
                 break
                 
         avg_loss = total_loss / steps
         print(f"Epoch {epoch} Completed | Avg Loss: {avg_loss:.4f} | Time: {time.time() - start_time:.1f}s")
+        
+        # --- STAGNATION / GROWTH CHECK ---
+        if avg_loss > prev_loss:
+            loss_increase_counter += 1
+            print(f"⚠️ Loss Increased ({loss_increase_counter}/5)")
+        else:
+            # Optionally reset if we improve? 
+            # User instruction: "her 5 loss artışında" (every 5 increases).
+            # Strict interpretation: Count every increase. 
+            # If we just hit a bump, we count it. 
+            pass 
+        
+        if loss_increase_counter >= 5:
+            trainer.expand(amount=1)
+            NUM_NEURONS = model.num_neurons
+            loss_increase_counter = 0
+            
+        prev_loss = avg_loss
         
         # Generation Check
         print("--- GENERATION ---")
