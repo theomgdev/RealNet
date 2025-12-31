@@ -22,6 +22,10 @@ THINK_GAP = 5 # Number of silence steps between characters
 EPOCHS = 1000 # Infinite training effectively
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+# NEUROGENESIS CONFIG
+MAX_LOSS_INCREASE = 5
+NEUROGENESIS_AMOUNT = 1
+
 # Fixed Vocabulary for Web Data
 import string
 # string.printable includes whitespace (\n, \t, etc.)
@@ -354,7 +358,7 @@ def main():
         # --- STAGNATION / GROWTH CHECK ---
         if avg_loss > prev_loss:
             loss_increase_counter += 1
-            print(f"⚠️ Loss Increased ({loss_increase_counter}/5)")
+            print(f"⚠️ Loss Increased ({loss_increase_counter}/{MAX_LOSS_INCREASE})")
         else:
             # Optionally reset if we improve? 
             # User instruction: "her 5 loss artışında" (every 5 increases).
@@ -362,8 +366,8 @@ def main():
             # If we just hit a bump, we count it. 
             pass 
         
-        if loss_increase_counter >= 5:
-            trainer.expand(amount=1)
+        if loss_increase_counter >= MAX_LOSS_INCREASE:
+            trainer.expand(amount=NEUROGENESIS_AMOUNT)
             NUM_NEURONS = model.num_neurons
             loss_increase_counter = 0
             
