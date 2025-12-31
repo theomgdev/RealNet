@@ -14,41 +14,81 @@ from realnet import RealNet, RealNetTrainer, save_checkpoint, load_checkpoint, t
 torch.set_float32_matmul_precision('high')
 
 # --- CONFIGURATION ---
-DATA_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'wikisent2.txt'))
+# DATA_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'wikisent2.txt'))
 SEQ_LEN = 128
-BATCH_SIZE = 512
-NUM_NEURONS = 590
+BATCH_SIZE = 512 # Reduced batch size for streaming stability if needed, but 512 is fine
+NUM_NEURONS = 603
 THINK_GAP = 5 # Number of silence steps between characters
 EPOCHS = 1000 # Infinite training effectively
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+# Fixed Vocabulary for Web Data
+import string
+# string.printable includes whitespace (\n, \t, etc.)
+# Adding Turkish characters explicitely
+TURKISH_CHARS = "çÇğĞıİöÖşŞüÜ"
+VOCAB = sorted(list(set(string.printable + TURKISH_CHARS))) 
+VOCAB_SIZE = len(VOCAB)
+CHAR_TO_IDX = {ch: i for i, ch in enumerate(VOCAB)}
+IDX_TO_CHAR = {i: ch for i, ch in enumerate(VOCAB)}
+
 # --- DATASET ---
-class TextDataset(Dataset):
-    def __init__(self, text, seq_len):
-        self.text = text
+from datasets import load_dataset
+
+class FineWebIterableDataset(torch.utils.data.IterableDataset):
+    def __init__(self, seq_len):
         self.seq_len = seq_len
-        self.vocab = sorted(list(set(text)))
-        self.vocab_size = len(self.vocab)
-        self.char_to_idx = {ch: i for i, ch in enumerate(self.vocab)}
-        self.idx_to_char = {i: ch for i, ch in enumerate(self.vocab)}
-        self.data_len = len(text) - seq_len
-
-    def __len__(self):
-        # Allow random sampling from the immense text
-        return self.data_len // SEQ_LEN 
-
-    def __getitem__(self, idx):
-        # Random crop for training variety
-        start_idx = np.random.randint(0, self.data_len)
-        chunk = self.text[start_idx : start_idx + self.seq_len + 1]
+        # Streaming load - instant startup
+        print("🌊 Connecting to FineWeb (CC-MAIN-2024-10)...")
+        self.dataset = load_dataset("HuggingFaceFW/fineweb", name="CC-MAIN-2024-10", split="train", streaming=True)
         
-        # Convert to indices
-        indices = [self.char_to_idx[c] for c in chunk]
+    def __iter__(self):
+        iterator = iter(self.dataset)
+        buffer = ""
         
-        # x: 0..N-1, y: 1..N
-        x = torch.tensor(indices[:-1], dtype=torch.long)
-        y = torch.tensor(indices[1:], dtype=torch.long)
-        return x, y
+        while True:
+            # Replenish buffer
+            while len(buffer) < self.seq_len + 1:
+                try:
+                    item = next(iterator)
+                    text = item.get('text', '')
+                    # Simple filter to keep only printable chars or map/ignore others
+                    # For speed, we just skip non-ascii lines or replace chars
+                    # Here we accept all but filter during encode
+                    buffer += text + " "  # Add space between docs
+                except StopIteration:
+                    # Reset if end of stream (unlikely for FW)
+                    iterator = iter(self.dataset)
+
+            # Extract chunk
+            chunk_str = buffer[:self.seq_len + 1]
+            buffer = buffer[self.seq_len + 1:] # Slide window (or stride=1?) 
+            # Stride=SEQ_LEN is better for variety, non-overlapping
+            
+            # Encode
+            indices = []
+            for c in chunk_str:
+                if c in CHAR_TO_IDX:
+                    indices.append(CHAR_TO_IDX[c])
+                else:
+                    # Map unknown/utf8 to '?' (index of ?) or space
+                    indices.append(CHAR_TO_IDX.get('?', 0))
+            
+            if len(indices) == self.seq_len + 1:
+                x = torch.tensor(indices[:-1], dtype=torch.long)
+                y = torch.tensor(indices[1:], dtype=torch.long)
+                yield x, y
+
+    def get_vocab_size(self):
+        return VOCAB_SIZE
+    
+    @property
+    def char_to_idx(self):
+        return CHAR_TO_IDX
+        
+    @property
+    def idx_to_char(self):
+        return IDX_TO_CHAR
 
 def one_hot_encode_dilated(x, vocab_size, num_neurons, input_ids, gap):
     # x: (Batch, Seq)
@@ -107,7 +147,7 @@ def generate(model, dataset, start_str="The", length=100):
     # Otherwise the model rhythm is broken.
     
     x_in = torch.tensor(input_seq, dtype=torch.long, device=DEVICE).unsqueeze(0) # (1, Seq)
-    x_emb = one_hot_encode_dilated(x_in, dataset.vocab_size, model.num_neurons, model.input_ids, THINK_GAP)
+    x_emb = one_hot_encode_dilated(x_in, dataset.get_vocab_size(), model.num_neurons, model.input_ids, THINK_GAP)
     
     with torch.no_grad():
         # Run full context
@@ -174,34 +214,25 @@ def initialize_system(vocab_size, num_neurons, device):
 def main():
     global NUM_NEURONS # Allow updating global config if needed
     
-    print(f"🚀 RealNet-1B (Prototyping on WikiSent)...")
-    print(f"Loading {DATA_FILE}...")
+    print(f"🚀 RealNet-1B (FineWeb Streaming)...")
     
-    # Read text
-    if not os.path.exists(DATA_FILE):
-        print(f"❌ Error: Data file not found at {DATA_FILE}")
-        return
-
-    with open(DATA_FILE, 'r', encoding='utf-8', errors='ignore') as f:
-        text = f.read() 
+    dataset = FineWebIterableDataset(SEQ_LEN)
     
-    print(f"Text Loaded. Length: {len(text):,}")
-    
-    dataset = TextDataset(text, SEQ_LEN)
+    # DataLoader for IterableDataset
+    # Streaming with 1 worker allows background downloading without duplication
     dataloader = DataLoader(
         dataset, 
         batch_size=BATCH_SIZE, 
-        shuffle=True,
-        num_workers=4,        # Async data loading
-        pin_memory=False,      # Faster GPU transfer
-        prefetch_factor=2,    # Prefetch next batches
-        persistent_workers=True  # Keep workers alive
+        num_workers=1,        # 1 Background process for downloading
+        prefetch_factor=4,    # Buffer 4 batches ahead in RAM
+        persistent_workers=True, # Keep connection alive
+        pin_memory=True
     )
     
-    print(f"Vocab Size: {dataset.vocab_size}")
+    print(f"Vocab Size: {dataset.get_vocab_size()}")
     
     # --- MODEL SETUP ---
-    model, trainer, input_ids, output_ids = initialize_system(dataset.vocab_size, NUM_NEURONS, DEVICE)
+    model, trainer, input_ids, output_ids = initialize_system(dataset.get_vocab_size(), NUM_NEURONS, DEVICE)
     
     print(f"Input IDs: {input_ids[0]}-{input_ids[-1]}")
     print(f"Output IDs: {output_ids[0]}-{output_ids[-1]}")
@@ -209,7 +240,7 @@ def main():
     # --- CHECKPOINT SETUP (Using RealStore) ---
     CKPT_DIR = os.path.join(os.path.dirname(__file__), 'ckpt')
     os.makedirs(CKPT_DIR, exist_ok=True)
-    CKPT_PATH = os.path.join(CKPT_DIR, 'llm_wikisent_latest.pth')
+    CKPT_PATH = os.path.join(CKPT_DIR, 'llm_fineweb_latest.pth')
     
     start_epoch = 0
     if os.path.exists(CKPT_PATH):
@@ -234,7 +265,7 @@ def main():
                         NUM_NEURONS = saved_dim 
                         
                         # CLEAN RE-INIT using helper
-                        model, trainer, _, _ = initialize_system(dataset.vocab_size, NUM_NEURONS, DEVICE)
+                        model, trainer, _, _ = initialize_system(dataset.get_vocab_size(), NUM_NEURONS, DEVICE)
                         
                         # Now load strictly
                         checkpoint = load_checkpoint(model, trainer.optimizer, CKPT_PATH, device=DEVICE, strict=True)
@@ -267,7 +298,7 @@ def main():
     
     # OUTPUT TRANSFORM: Flatten dilated output (Batch, Total_Steps, Out) -> (N, Out)
     def flatten_logits(out):
-        return out.reshape(-1, dataset.vocab_size)
+        return out.reshape(-1, dataset.get_vocab_size())
 
     # --- INITIAL GENERATION (Show current state) ---
     print("--- INITIAL GENERATION ---")
@@ -293,7 +324,7 @@ def main():
         
         for batch_idx, (x, y) in enumerate(dataloader):
             # Dilate Data (Insert Silence)
-            x_emb = one_hot_encode_dilated(x, dataset.vocab_size, model.num_neurons, input_ids, THINK_GAP)
+            x_emb = one_hot_encode_dilated(x, dataset.get_vocab_size(), model.num_neurons, input_ids, THINK_GAP)
             y_dilated = prepare_targets_dilated(y, THINK_GAP)
             y_flat = y_dilated.reshape(-1) # Already on DEVICE
             
@@ -314,7 +345,7 @@ def main():
             if batch_idx % 1 == 0:
                 print(f"Epoch {epoch} | Batch {batch_idx} | Loss {loss:.4f}")
                 
-            if batch_idx > 10: # Limit batches per epoch for frequent view
+            if batch_idx > 100: # Limit batches per epoch for frequent view
                 break
                 
         avg_loss = total_loss / steps
