@@ -14,7 +14,6 @@ from realnet import RealNet, RealNetTrainer, save_checkpoint, load_checkpoint, t
 torch.set_float32_matmul_precision('high')
 
 # --- CONFIGURATION ---
-# DATA_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'wikisent2.txt'))
 SEQ_LEN = 128
 BATCH_SIZE = 512 # Reduced batch size for streaming stability if needed, but 512 is fine
 NUM_NEURONS = 603
