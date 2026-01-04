@@ -18,7 +18,6 @@ SEQ_LEN = 128
 BATCH_SIZE = 512 # Reduced batch size for streaming stability if needed, but 512 is fine
 NUM_NEURONS = 1024
 THINK_GAP = 5 # Number of silence steps between characters
-EPOCHS = 1000 # Infinite training effectively
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # NEUROGENESIS CONFIG
