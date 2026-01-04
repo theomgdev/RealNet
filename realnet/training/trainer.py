@@ -27,7 +27,7 @@ class RealNetTrainer:
         self.optimizer = optimizer if optimizer else optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
         self.loss_fn = loss_fn if loss_fn else nn.MSELoss()
 
-    def train_batch(self, input_features, target_values, thinking_steps, gradient_accumulation_steps=1, full_sequence=False, mask=None, output_transform=None):
+    def train_batch(self, input_features, target_values, thinking_steps, gradient_accumulation_steps=1, full_sequence=False, mask=None, output_transform=None, initial_state=None, return_state=False):
         """
         Runs a single training step on a batch.
         """
@@ -63,8 +63,15 @@ class RealNetTrainer:
              autocast_ctx = torch.cuda.amp.autocast(enabled=(self.device == 'cuda'))
              
         with autocast_ctx:
-            self.model.reset_state(batch_size)
-            all_states, final_state = self.model(x_input, steps=thinking_steps)
+            # Use initial_state if provided, otherwise reset
+            if initial_state is not None:
+                current_state_in = initial_state
+            else:
+                self.model.reset_state(batch_size)
+                current_state_in = None # Let model use its internal state or resetting logic if needed, but model.forward checks this.
+                # Actually model.forward(..., current_state=None) triggers reset if needed inside.
+            
+            all_states, final_state = self.model(x_input, steps=thinking_steps, current_state=current_state_in)
             
             # 3. Extract Outputs & Calculate Loss
             output_indices = self.model.output_ids
@@ -126,8 +133,12 @@ class RealNetTrainer:
             if hasattr(self, '_acc_counter'):
                 self._acc_counter = 0
 
-        # Return the SCALED loss for logging (un-normalize if accumulated)
-        return loss.item() * gradient_accumulation_steps
+        # Return the SCALED loss for logging
+        loss_val = loss.item() * gradient_accumulation_steps
+        
+        if return_state:
+            return loss_val, final_state
+        return loss_val
 
     def predict(self, input_features, thinking_steps, full_sequence=False):
         """

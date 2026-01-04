@@ -14,25 +14,23 @@ from realnet import RealNet, RealNetTrainer, save_checkpoint, load_checkpoint, t
 torch.set_float32_matmul_precision('high')
 
 # --- CONFIGURATION ---
-SEQ_LEN = 128
-BATCH_SIZE = 512 # Reduced batch size for streaming stability if needed, but 512 is fine
-NUM_NEURONS = 1024
-THINK_GAP = 5 # Number of silence steps between characters
+TRUNCATED_BPTT_STEPS = 128 # Set to -1 to disable
+GENERATION_LENGTH = 1024
+# Short sequence in full BPTT, long sequence in truncated BPTT.
+SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 4096
+BATCH_SIZE = 128 # Adjusted for larger SEQ_LEN/Memory
+NUM_NEURONS = -1 # Auto-size to Input+Output (Min 512)
+THINK_GAP = 5 # Number of silence steps between bytes
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # NEUROGENESIS CONFIG
 MAX_LOSS_INCREASE = 5
 NEUROGENESIS_AMOUNT = 1
 
-# Fixed Vocabulary for Web Data
-import string
-# string.printable includes whitespace (\n, \t, etc.)
-# Adding Turkish characters explicitely
-TURKISH_CHARS = "çÇğĞıİöÖşŞüÜ"
-VOCAB = sorted(list(set(string.printable + TURKISH_CHARS))) 
-VOCAB_SIZE = len(VOCAB)
-CHAR_TO_IDX = {ch: i for i, ch in enumerate(VOCAB)}
-IDX_TO_CHAR = {i: ch for i, ch in enumerate(VOCAB)}
+# Byte-Level Vocabulary (0-255) to support all languages (Chinese, etc.)
+VOCAB_SIZE = 256
+CHAR_TO_IDX = {i: i for i in range(256)} # Identity map for bytes
+IDX_TO_CHAR = {i: i for i in range(256)}
 
 # --- DATASET ---
 from datasets import load_dataset
@@ -46,35 +44,27 @@ class FineWebIterableDataset(torch.utils.data.IterableDataset):
         
     def __iter__(self):
         iterator = iter(self.dataset)
-        buffer = ""
+        buffer_bytes = b""
         
         while True:
             # Replenish buffer
-            while len(buffer) < self.seq_len + 1:
+            while len(buffer_bytes) < self.seq_len + 1:
                 try:
                     item = next(iterator)
                     text = item.get('text', '')
-                    # Simple filter to keep only printable chars or map/ignore others
-                    # For speed, we just skip non-ascii lines or replace chars
-                    # Here we accept all but filter during encode
-                    buffer += text + " "  # Add space between docs
+                    # Encode to bytes (UTF-8)
+                    new_bytes = text.encode('utf-8', errors='replace') + b" " 
+                    buffer_bytes += new_bytes
                 except StopIteration:
-                    # Reset if end of stream (unlikely for FW)
+                    # Reset if end of stream
                     iterator = iter(self.dataset)
 
             # Extract chunk
-            chunk_str = buffer[:self.seq_len + 1]
-            buffer = buffer[self.seq_len + 1:] # Slide window (or stride=1?) 
-            # Stride=SEQ_LEN is better for variety, non-overlapping
+            chunk_bytes = buffer_bytes[:self.seq_len + 1]
+            buffer_bytes = buffer_bytes[self.seq_len + 1:] 
             
-            # Encode
-            indices = []
-            for c in chunk_str:
-                if c in CHAR_TO_IDX:
-                    indices.append(CHAR_TO_IDX[c])
-                else:
-                    # Map unknown/utf8 to '?' (index of ?) or space
-                    indices.append(CHAR_TO_IDX.get('?', 0))
+            # Encode (Already bytes, just list inputs)
+            indices = list(chunk_bytes)
             
             if len(indices) == self.seq_len + 1:
                 x = torch.tensor(indices[:-1], dtype=torch.long)
@@ -135,60 +125,58 @@ def prepare_targets_dilated(y, gap):
              
     return y_dilated
 
-def generate(model, dataset, start_str="The", length=100):
+def generate(model, dataset, start_str="The", length=None):
+    if length is None:
+        length = GENERATION_LENGTH
+        
     model.eval()
-    input_ids = dataset.char_to_idx
-    idx_to_char = dataset.idx_to_char
     
-    # Init String from text
-    input_seq = [input_ids.get(c, 0) for c in start_str]
+    # Init from text -> bytes
+    input_bytes = start_str.encode('utf-8', errors='replace')
+    input_seq = list(input_bytes)
+    
     current_state = None
     
-    # 1. Warm up state with the prompt (dilated)
-    # We need to feed the prompt exactly as we train: with gaps!
-    # Otherwise the model rhythm is broken.
-    
+    # 1. Warm up state with the prompt
     x_in = torch.tensor(input_seq, dtype=torch.long, device=DEVICE).unsqueeze(0) # (1, Seq)
     x_emb = one_hot_encode_dilated(x_in, dataset.get_vocab_size(), model.num_neurons, model.input_ids, THINK_GAP)
+    
+    generated_bytes = bytearray(input_bytes)
     
     with torch.no_grad():
         # Run full context
         _, current_state = model(x_emb, steps=x_emb.shape[1])
         
-        # 2. Generate new characters
-        last_char_idx = input_seq[-1]
-        generated_text = start_str
+        # 2. Generate new bytes
+        last_byte_idx = input_seq[-1]
         
         for _ in range(length):
-            # A. Prepare Input (Single Char + Gap)
-            # Create a sequence of length (1 input + GAP silence)
+            # A. Prepare Input (Single Byte + Gap)
             total_step_single = 1 + THINK_GAP
             
             # Input Vector at t=0
             x_next_emb = torch.zeros(1, total_step_single, model.num_neurons, device=DEVICE)
-            neuron_idx = last_char_idx + model.input_ids[0]
+            neuron_idx = last_byte_idx + model.input_ids[0]
             x_next_emb[0, 0, neuron_idx] = 1.0
             
-            # B. Run Model for (Gap+1) steps
-            # We want the output at the END of this sequence (at step GAP)
-            # forward returns (all_states, final_state)
-            # all_states shape: (Steps, Batch, Neurons)
-            
+            # B. Run Model
             preds, current_state = model(x_next_emb, steps=total_step_single, current_state=current_state)
             
-            # C. Extract Prediction at the target step (thinking end)
-            # preds shape: (Steps, Batch, Neurons)
-            # Target is at step index `THINK_GAP`
-            logits = preds[THINK_GAP, 0, model.output_ids] # (VocabSize)
+            # C. Extract Prediction
+            logits = preds[THINK_GAP, 0, model.output_ids] # (VocabSize 256)
             
             # D. Sample
             probs = torch.softmax(logits, dim=0)
             next_idx = torch.multinomial(probs, 1).item()
             
-            generated_text += idx_to_char[next_idx]
-            last_char_idx = next_idx
+            generated_bytes.append(next_idx)
+            last_byte_idx = next_idx
             
-    return generated_text
+    # Decode bytes to string
+    try:
+        return generated_bytes.decode('utf-8', errors='replace')
+    except:
+        return str(generated_bytes)
 
 def initialize_system(vocab_size, num_neurons, device):
     """
@@ -217,6 +205,15 @@ def main():
     global NUM_NEURONS # Allow updating global config if needed
     
     print(f"🚀 RealNet-1B (FineWeb Streaming)...")
+    print(f"--- Configuration ---")
+    print(f"SEQ_LEN: {SEQ_LEN}")
+    print(f"BATCH_SIZE: {BATCH_SIZE}")
+    print(f"NUM_NEURONS: {NUM_NEURONS}")
+    print(f"TRUNCATED_BPTT_STEPS: {TRUNCATED_BPTT_STEPS}")
+    print(f"GENERATION_LENGTH: {GENERATION_LENGTH}")
+    print(f"THINK_GAP: {THINK_GAP}")
+    print(f"VOCAB_SIZE: {VOCAB_SIZE}")
+    print(f"---------------------")
     
     dataset = FineWebIterableDataset(SEQ_LEN)
     
@@ -305,7 +302,7 @@ def main():
     # --- INITIAL GENERATION (Show current state) ---
     print("--- INITIAL GENERATION ---")
     try:
-        gen_text = generate(model, dataset, start_str="The meaning of life is ", length=100)
+        gen_text = generate(model, dataset, start_str="The meaning of life is ")
         print(gen_text)
     except Exception as e:
         print(f"Generation Error: {e}")
@@ -331,15 +328,67 @@ def main():
             y_flat = y_dilated.reshape(-1) # Already on DEVICE
             
             # Total steps has increased due to dilation
-            total_steps = SEQ_LEN * (THINK_GAP + 1)
+            total_steps = x_emb.shape[1]
             
-            loss = trainer.train_batch(
-                x_emb, 
-                y_flat, 
-                thinking_steps=total_steps, 
-                full_sequence=True, 
-                output_transform=flatten_logits 
-            )
+            if TRUNCATED_BPTT_STEPS != -1 and TRUNCATED_BPTT_STEPS > 0:
+                # --- TRUNCATED BPTT ---
+                # We need to preserve state across chunks of the diluted sequence
+                # Note: SEQ_LEN is 4096 tokens, Dilation is * 6 (5+1). total_steps ~ 24k
+                # BPTT Steps should probably be in "Network Steps"
+                
+                current_state = None
+                batch_loss = 0
+                steps_count = 0
+                
+                # Chunk size in Network Steps
+                chunk_size = TRUNCATED_BPTT_STEPS 
+                
+                for t_start in range(0, total_steps, chunk_size):
+                    t_end = min(t_start + chunk_size, total_steps)
+                    actual_steps = t_end - t_start
+                    
+                    x_chunk = x_emb[:, t_start:t_end, :] # (Batch, Steps, Neurons)
+                    y_chunk = y_flat[t_start*BATCH_SIZE : t_end*BATCH_SIZE] # y_flat is (Batch*Steps), careful!
+                    # Wait, y_flat = y_dilated.reshape(-1).
+                    # y_dilated is (Batch, TotalSteps).
+                    # Reshape(-1) does Row-Major (Batch 0 complete, then Batch 1...)
+                    # Correct slicing for Trainer expectance:
+                    # Generic Traing uses: loss = (pred - target).mean()
+                    # Predicted outputs (Batch, Steps, Out) -> OutputTransform -> (Batch*Steps, Out)
+                    # Target Values must match (Batch*Steps)
+                    
+                    # Let's slice y_dilated properly first: (Batch, ChunkSteps)
+                    y_chunk_2d = y_dilated[:, t_start:t_end]
+                    y_chunk_flat = y_chunk_2d.reshape(-1)
+                    
+                    # Run Chunk
+                    loss, current_state = trainer.train_batch(
+                        x_chunk, 
+                        y_chunk_flat, 
+                        thinking_steps=actual_steps, 
+                        full_sequence=True, 
+                        output_transform=flatten_logits,
+                        initial_state=current_state,
+                        return_state=True
+                    )
+                    
+                    # Detach State (Truncate Gradient)
+                    current_state = current_state.detach()
+                    
+                    batch_loss += loss
+                    steps_count += 1
+                
+                loss = batch_loss / max(steps_count, 1)
+
+            else:
+                # Standard Full Sequence Training
+                loss = trainer.train_batch(
+                    x_emb, 
+                    y_flat, 
+                    thinking_steps=total_steps, 
+                    full_sequence=True, 
+                    output_transform=flatten_logits 
+                )
             
             total_loss += loss
             steps += 1
@@ -371,10 +420,11 @@ def main():
             
         prev_loss = avg_loss
         
-        # Generation Check
+        # Generation Check (Reduced frequency if too slow, but user asked for param)
         print("--- GENERATION ---")
         try:
-            gen_text = generate(model, dataset, start_str="The meaning of life is ", length=100)
+            # Generate short preview (100) first to not spam console
+            gen_text = generate(model, dataset, start_str="The meaning of life is ")
             print(gen_text)
         except Exception as e:
             print(f"Generation Error: {e}")
