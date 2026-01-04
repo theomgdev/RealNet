@@ -6,6 +6,12 @@ import numpy as np
 class RealNet(nn.Module):
     def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='orthogonal', activation='tanh', gradient_checkpointing=False):
         super(RealNet, self).__init__()
+        
+        # Auto size to input and output
+        if num_neurons == -1:
+            num_neurons = len(input_ids) + len(output_ids)
+            print(f"RealNet: Auto-sized to {num_neurons} neurons (Minimum: Input+Output)")
+            
         self.num_neurons = num_neurons
         self.input_ids = input_ids
         self.output_ids = output_ids
@@ -174,6 +180,13 @@ class RealNet(nn.Module):
 
     def reset_state(self, batch_size=1):
         self.state = torch.zeros(batch_size, self.num_neurons, device=self.device)
+
+    def detach_state(self):
+        """
+        Detaches the internal state from the computational graph.
+        Useful for Truncated BPTT.
+        """
+        self.state = self.state.detach()
 
     @property
     def device(self):
