@@ -24,8 +24,8 @@ THINK_GAP = 5 # Number of silence steps between bytes
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # NEUROGENESIS CONFIG
-MAX_LOSS_INCREASE = 100000
-NEUROGENESIS_AMOUNT = 1
+MAX_LOSS_INCREASE = 1
+NEUROGENESIS_AMOUNT = 10
 
 # Byte-Level Vocabulary (0-255) to support all languages (Chinese, etc.)
 VOCAB_SIZE = 256
