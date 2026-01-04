@@ -14,7 +14,7 @@ from realnet import RealNet, RealNetTrainer, save_checkpoint, load_checkpoint, t
 torch.set_float32_matmul_precision('high')
 
 # --- CONFIGURATION ---
-TRUNCATED_BPTT_STEPS = 128 # Set to -1 to disable
+TRUNCATED_BPTT_STEPS = 512 # Set to -1 to disable
 GENERATION_LENGTH = 1024
 # Short sequence in full BPTT, long sequence in truncated BPTT.
 SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 4096
@@ -24,7 +24,7 @@ THINK_GAP = 5 # Number of silence steps between bytes
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # NEUROGENESIS CONFIG
-MAX_LOSS_INCREASE = 1
+MAX_LOSS_INCREASE = 100000
 NEUROGENESIS_AMOUNT = 1
 
 # Byte-Level Vocabulary (0-255) to support all languages (Chinese, etc.)
@@ -196,8 +196,7 @@ def initialize_system(vocab_size, num_neurons, device):
         gradient_checkpointing=True  # Save VRAM
     )
     
-    trainer = RealNetTrainer(model, device=device, gradient_persistence=0, synaptic_noise=0) # Memory + Thermal Noise
-    trainer.optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
+    trainer = RealNetTrainer(model, device=device, gradient_persistence=0, synaptic_noise=0)
     
     return model, trainer, input_ids, output_ids
 
@@ -240,6 +239,7 @@ def main():
     CKPT_DIR = os.path.join(os.path.dirname(__file__), 'ckpt')
     os.makedirs(CKPT_DIR, exist_ok=True)
     CKPT_PATH = os.path.join(CKPT_DIR, 'llm_fineweb_latest.pth')
+    CKPT_BEST_PATH = os.path.join(CKPT_DIR, 'llm_fineweb_best.pth')
     
     start_epoch = 0
     if os.path.exists(CKPT_PATH):
@@ -313,6 +313,19 @@ def main():
     # Infinite Loop
     epoch = start_epoch
     prev_loss = float('inf')
+    
+    # Init Best Loss
+    best_loss = float('inf')
+    if os.path.exists(CKPT_BEST_PATH):
+        try:
+            # Quick peek to set best_loss baseline
+            best_ckpt = torch.load(CKPT_BEST_PATH, map_location=DEVICE)
+            if 'loss' in best_ckpt:
+                best_loss = best_ckpt['loss']
+                print(f"🏆 Historical Best Loss: {best_loss:.4f}")
+        except Exception as e:
+            print(f"⚠️ Could not read best checkpoint: {e}")
+            
     loss_increase_counter = 0
     
     while True:
@@ -396,7 +409,7 @@ def main():
             if batch_idx % 1 == 0:
                 print(f"Epoch {epoch} | Batch {batch_idx} | Loss {loss:.4f}")
                 
-            if batch_idx > 100: # Limit batches per epoch for frequent view
+            if batch_idx > 10: # Limit batches per epoch for frequent view
                 break
                 
         avg_loss = total_loss / steps
@@ -433,6 +446,12 @@ def main():
         # SAVE CHECKPOINT (Using RealStore)
         save_checkpoint(model, trainer.optimizer, epoch, avg_loss, CKPT_PATH)
         print(f"💾 Checkpoint Saved: {CKPT_PATH}")
+        
+        # SAVE BEST
+        if avg_loss < best_loss:
+            best_loss = avg_loss
+            save_checkpoint(model, trainer.optimizer, epoch, avg_loss, CKPT_BEST_PATH)
+            print(f"🏆 NEW RECORD! Best Checkpoint Saved: {CKPT_BEST_PATH} (Loss: {best_loss:.4f})")
         
         epoch += 1
 
