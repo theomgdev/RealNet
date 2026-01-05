@@ -161,15 +161,24 @@ class Neurogenesis:
                 if new_s:
                     new_opt.state[new_p] = new_s
                 
-        # Transfer state for each parameter (Wrapped in try-except block globally just in case)
-        try:
-            transfer_state(old_W_param, model.W, is_matrix=True)
-            transfer_state(old_B_param, model.B, is_matrix=False)
-            transfer_state(old_norm_w_param, model.norm.weight, is_matrix=False)
-            transfer_state(old_norm_b_param, model.norm.bias, is_matrix=False)
-            print("   ✅ Optimizer State Transferred (Momentum Preserved)")
-        except Exception as e:
-            print(f"   ⚠️ Optimizer State Transfer Failed ({e}). Performing Cold Restart.")
+        # Transfer state for each parameter (Only for standard optimizers)
+        # BNB 8-bit quantization state relies on block-wise quantization maps (qmap/absmax).
+        # These CANNOT be simply resized/padded when parameters grow.
+        # Doing so breaks the quantization alignment, causing massive gradient explosions (Loss > 10.0).
+        # Therefore, we MUST perform a Cold Restart (Skip Transfer) for BNB optimizers.
+        is_bnb = HAS_BNB and isinstance(new_opt, (bnb.optim.Adam8bit, bnb.optim.AdamW8bit))
+        
+        if is_bnb:
+             print("   👉 BNB Optimizer Detected. Skipping State Transfer (Cold Restart) to avoid quantization explosion.")
+        else:
+            try:
+                transfer_state(old_W_param, model.W, is_matrix=True)
+                transfer_state(old_B_param, model.B, is_matrix=False)
+                transfer_state(old_norm_w_param, model.norm.weight, is_matrix=False)
+                transfer_state(old_norm_b_param, model.norm.bias, is_matrix=False)
+                print("   ✅ Optimizer State Transferred (Momentum Preserved)")
+            except Exception as e:
+                print(f"   ⚠️ Optimizer State Transfer Failed ({e}). Performing Cold Restart.")
         
         # 7. CLEANUP MEMORY
         del old_W_param
