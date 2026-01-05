@@ -19,7 +19,7 @@ from realnet import RealNet, RealNetTrainer, save_checkpoint, load_checkpoint, t
 torch.set_float32_matmul_precision('high')
 
 # --- CONFIGURATION ---
-TRUNCATED_BPTT_STEPS = 48 # Set to -1 to disable
+TRUNCATED_BPTT_STEPS = 1024 # Set to -1 to disable
 GENERATION_LENGTH = 1024
 # Short sequence in full BPTT, long sequence in truncated BPTT.
 SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 4096
