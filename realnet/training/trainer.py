@@ -5,12 +5,15 @@ import numpy as np
 from ..utils.data import prepare_input, to_tensor
 from ..utils.pruning import SynapticPruner
 import os
-try:
-    os.environ["BITSANDBYTES_NOWELCOME"] = "1"
-    import bitsandbytes as bnb
-    HAS_BNB = True
-except ImportError:
+if os.environ.get('NO_BNB'):
     HAS_BNB = False
+else:
+    try:
+        os.environ["BITSANDBYTES_NOWELCOME"] = "1"
+        import bitsandbytes as bnb
+        HAS_BNB = True
+    except ImportError:
+        HAS_BNB = False
 
 class RealNetTrainer:
     def __init__(self, model, optimizer=None, loss_fn=None, device='cpu', gradient_persistence=0.0, synaptic_noise=1e-6):

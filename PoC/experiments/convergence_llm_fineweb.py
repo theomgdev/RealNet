@@ -5,6 +5,11 @@ import numpy as np
 import sys
 import os
 import time
+import os
+
+# --- PRE-IMPORT CONFIG ---
+# Remove comment below to disable bitsandbytes 8-bit Optimizer globally (Use Standard AdamW)
+# os.environ["NO_BNB"] = "1" 
 
 # Adjust path to import realnet
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))

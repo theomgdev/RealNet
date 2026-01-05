@@ -1,6 +1,16 @@
 import torch
 import torch.nn as nn
 import gc
+import os
+if os.environ.get('NO_BNB'):
+    HAS_BNB = False
+else:
+    try:
+        os.environ["BITSANDBYTES_NOWELCOME"] = "1"
+        import bitsandbytes as bnb
+        HAS_BNB = True
+    except ImportError:
+        HAS_BNB = False
 
 class Neurogenesis:
     """
@@ -78,49 +88,66 @@ class Neurogenesis:
         # Create new optimizer with same settings
         group = old_opt.param_groups[0]
         
-        new_opt = torch.optim.AdamW(
-            model.parameters(), 
-            lr=group['lr'], 
-            weight_decay=group['weight_decay'], 
-            betas=group['betas'], 
-            eps=group['eps']
-        )
+        # Check if using bitsandbytes
+        is_bnb = HAS_BNB and isinstance(old_opt, (bnb.optim.Adam8bit, bnb.optim.AdamW8bit))
         
-        # Helper to migrate internal optimizer state (exp_avg, exp_avg_sq)
-        def transfer_state(old_p, new_p, is_matrix=False):
-            if old_p in old_opt.state:
-                old_s = old_opt.state[old_p]
-                new_s = {}
-                if 'step' in old_s: 
-                     new_s['step'] = old_s['step']
-                
-                # Exp Avg
-                if 'exp_avg' in old_s:
-                    ea = old_s['exp_avg']
-                    new_ea = torch.zeros_like(new_p.data)
-                    if is_matrix: 
-                        new_ea[:old_n, :old_n] = ea
-                    else: 
-                        new_ea[:old_n] = ea
-                    new_s['exp_avg'] = new_ea
+        if is_bnb:
+            print("   👉 Detected bitsandbytes optimizer. Performing Cold Restart (State Reset) for stability.")
+            new_opt = bnb.optim.AdamW8bit(
+                model.parameters(), 
+                lr=group['lr'], 
+                weight_decay=group['weight_decay'], 
+                betas=group['betas'], 
+                eps=group['eps']
+            )
+            # BNB State transfer is complex (quantized). We skip it and start fresh.
+            # This avoids 'state1' KeyErrors and VRAM bloat.
+            
+        else:
+            # Standard Torch Optimizer
+            new_opt = torch.optim.AdamW(
+                model.parameters(), 
+                lr=group['lr'], 
+                weight_decay=group['weight_decay'], 
+                betas=group['betas'], 
+                eps=group['eps']
+            )
+            
+            # Helper to migrate internal optimizer state (exp_avg, exp_avg_sq)
+            def transfer_state(old_p, new_p, is_matrix=False):
+                if old_p in old_opt.state:
+                    old_s = old_opt.state[old_p]
+                    new_s = {}
+                    if 'step' in old_s: 
+                         new_s['step'] = old_s['step']
                     
-                # Exp Avg Sq
-                if 'exp_avg_sq' in old_s:
-                    eas = old_s['exp_avg_sq']
-                    new_eas = torch.zeros_like(new_p.data)
-                    if is_matrix: 
-                        new_eas[:old_n, :old_n] = eas
-                    else: 
-                        new_eas[:old_n] = eas
-                    new_s['exp_avg_sq'] = new_eas
-                
-                new_opt.state[new_p] = new_s
-                
-        # Transfer state for each parameter
-        transfer_state(old_W_param, model.W, is_matrix=True)
-        transfer_state(old_B_param, model.B, is_matrix=False)
-        transfer_state(old_norm_w_param, model.norm.weight, is_matrix=False)
-        transfer_state(old_norm_b_param, model.norm.bias, is_matrix=False)
+                    # Exp Avg
+                    if 'exp_avg' in old_s:
+                        ea = old_s['exp_avg']
+                        new_ea = torch.zeros_like(new_p.data)
+                        if is_matrix: 
+                            new_ea[:old_n, :old_n] = ea
+                        else: 
+                            new_ea[:old_n] = ea
+                        new_s['exp_avg'] = new_ea
+                        
+                    # Exp Avg Sq
+                    if 'exp_avg_sq' in old_s:
+                        eas = old_s['exp_avg_sq']
+                        new_eas = torch.zeros_like(new_p.data)
+                        if is_matrix: 
+                            new_eas[:old_n, :old_n] = eas
+                        else: 
+                            new_eas[:old_n] = eas
+                        new_s['exp_avg_sq'] = new_eas
+                    
+                    new_opt.state[new_p] = new_s
+                    
+            # Transfer state for each parameter
+            transfer_state(old_W_param, model.W, is_matrix=True)
+            transfer_state(old_B_param, model.B, is_matrix=False)
+            transfer_state(old_norm_w_param, model.norm.weight, is_matrix=False)
+            transfer_state(old_norm_b_param, model.norm.bias, is_matrix=False)
         
         # 7. CLEANUP MEMORY
         del old_W_param
