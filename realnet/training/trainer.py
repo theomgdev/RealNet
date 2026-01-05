@@ -4,7 +4,9 @@ import torch.optim as optim
 import numpy as np
 from ..utils.data import prepare_input, to_tensor
 from ..utils.pruning import SynapticPruner
+import os
 try:
+    os.environ["BITSANDBYTES_NOWELCOME"] = "1"
     import bitsandbytes as bnb
     HAS_BNB = True
 except ImportError:
