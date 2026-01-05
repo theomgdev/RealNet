@@ -162,10 +162,6 @@ class Neurogenesis:
                     new_opt.state[new_p] = new_s
                 
         # Transfer state for each parameter (Only for standard optimizers)
-        # BNB 8-bit quantization state relies on block-wise quantization maps (qmap/absmax).
-        # These CANNOT be simply resized/padded when parameters grow.
-        # Doing so breaks the quantization alignment, causing massive gradient explosions (Loss > 10.0).
-        # Therefore, we MUST perform a Cold Restart (Skip Transfer) for BNB optimizers.
         is_bnb = HAS_BNB and isinstance(new_opt, (bnb.optim.Adam8bit, bnb.optim.AdamW8bit))
         
         if is_bnb:
