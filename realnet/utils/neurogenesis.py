@@ -85,69 +85,88 @@ class Neurogenesis:
         model.norm = new_norm
         
         # 6. OPTIMIZER MIGRATION
-        # Create new optimizer with same settings
+        # Create new optimizer dynamically based on old optimizer type
         group = old_opt.param_groups[0]
+        optimizer_cls = type(old_opt)
         
-        # Check if using bitsandbytes
-        is_bnb = HAS_BNB and isinstance(old_opt, (bnb.optim.Adam8bit, bnb.optim.AdamW8bit))
+        # Helper to safely get arg
+        def get_arg(name, default):
+            return group.get(name, default)
+
+        # Re-instantiate optimizer (Generic)
+        try:
+             new_opt = optimizer_cls(
+                model.parameters(), 
+                lr=get_arg('lr', 0.001), 
+                weight_decay=get_arg('weight_decay', 0), 
+                betas=get_arg('betas', (0.9, 0.999)), 
+                eps=get_arg('eps', 1e-8)
+            )
+        except Exception as e:
+            print(f"⚠️ Optimizer re-init failed: {e}. Falling back to standard AdamW.")
+            new_opt = torch.optim.AdamW(model.parameters(), lr=group['lr'])
+
         
-        if is_bnb:
-            print("   👉 Detected bitsandbytes optimizer. Performing Cold Restart (State Reset) for stability.")
-            new_opt = bnb.optim.AdamW8bit(
-                model.parameters(), 
-                lr=group['lr'], 
-                weight_decay=group['weight_decay'], 
-                betas=group['betas'], 
-                eps=group['eps']
-            )
-            # BNB State transfer is complex (quantized). We skip it and start fresh.
-            # This avoids 'state1' KeyErrors and VRAM bloat.
-            
-        else:
-            # Standard Torch Optimizer
-            new_opt = torch.optim.AdamW(
-                model.parameters(), 
-                lr=group['lr'], 
-                weight_decay=group['weight_decay'], 
-                betas=group['betas'], 
-                eps=group['eps']
-            )
-            
-            # Helper to migrate internal optimizer state (exp_avg, exp_avg_sq)
-            def transfer_state(old_p, new_p, is_matrix=False):
-                if old_p in old_opt.state:
-                    old_s = old_opt.state[old_p]
-                    new_s = {}
-                    if 'step' in old_s: 
-                         new_s['step'] = old_s['step']
-                    
-                    # Exp Avg
-                    if 'exp_avg' in old_s:
-                        ea = old_s['exp_avg']
-                        new_ea = torch.zeros_like(new_p.data)
-                        if is_matrix: 
-                            new_ea[:old_n, :old_n] = ea
-                        else: 
-                            new_ea[:old_n] = ea
-                        new_s['exp_avg'] = new_ea
-                        
-                    # Exp Avg Sq
-                    if 'exp_avg_sq' in old_s:
-                        eas = old_s['exp_avg_sq']
-                        new_eas = torch.zeros_like(new_p.data)
-                        if is_matrix: 
-                            new_eas[:old_n, :old_n] = eas
-                        else: 
-                            new_eas[:old_n] = eas
-                        new_s['exp_avg_sq'] = new_eas
-                    
+        # Helper to migrate internal optimizer state (exp_avg, exp_avg_sq, state1, state2)
+        def transfer_state(old_p, new_p, is_matrix=False):
+            if old_p in old_opt.state:
+                old_s = old_opt.state[old_p]
+                new_s = {}
+                
+                # Copy scalar attributes (step, etc.)
+                for k, v in old_s.items():
+                    if not torch.is_tensor(v):
+                        new_s[k] = v
+                
+                # Keys to look for (Standard + BNB)
+                # exp_avg/exp_avg_sq -> Standard
+                # state1/state2 -> BNB (Quantized 8-bit momentum)
+                target_keys = ['exp_avg', 'exp_avg_sq', 'state1', 'state2']
+                
+                for key in target_keys:
+                    if key in old_s:
+                        try:
+                            tensor = old_s[key]
+                            
+                            # Determine shape mismatch
+                            if tensor.shape == new_p.shape:
+                                # Direct copy
+                                new_s[key] = tensor.clone()
+                            else:
+                                # Resize logic
+                                # Note: For BNB unint8 tensors, we must create uint8 zeros
+                                new_tensor = torch.zeros(new_p.shape, dtype=tensor.dtype, device=device)
+                                
+                                if is_matrix:
+                                    # 2D copy
+                                    min_rows = min(tensor.shape[0], new_p.shape[0])
+                                    min_cols = min(tensor.shape[1], new_p.shape[1])
+                                    new_tensor[:min_rows, :min_cols] = tensor[:min_rows, :min_cols]
+                                else:
+                                    # 1D copy
+                                    min_len = min(tensor.shape[0], new_p.shape[0])
+                                    new_tensor[:min_len] = tensor[:min_len]
+                                    
+                                new_s[key] = new_tensor
+                                
+                        except Exception as e:
+                            # If transfer fails for a specific buffer (e.g. specialized quantization state), skip it.
+                            # Better to lose some momentum than crash.
+                            pass
+                
+                # Assign gathered state to new optimizer
+                if new_s:
                     new_opt.state[new_p] = new_s
-                    
-            # Transfer state for each parameter
+                
+        # Transfer state for each parameter (Wrapped in try-except block globally just in case)
+        try:
             transfer_state(old_W_param, model.W, is_matrix=True)
             transfer_state(old_B_param, model.B, is_matrix=False)
             transfer_state(old_norm_w_param, model.norm.weight, is_matrix=False)
             transfer_state(old_norm_b_param, model.norm.bias, is_matrix=False)
+            print("   ✅ Optimizer State Transferred (Momentum Preserved)")
+        except Exception as e:
+            print(f"   ⚠️ Optimizer State Transfer Failed ({e}). Performing Cold Restart.")
         
         # 7. CLEANUP MEMORY
         del old_W_param
