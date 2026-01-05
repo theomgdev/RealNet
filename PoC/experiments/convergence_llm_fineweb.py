@@ -19,7 +19,7 @@ from realnet import RealNet, RealNetTrainer, save_checkpoint, load_checkpoint, t
 torch.set_float32_matmul_precision('high')
 
 # --- CONFIGURATION ---
-TRUNCATED_BPTT_STEPS = 1024 # Set to -1 to disable
+TRUNCATED_BPTT_STEPS = 48 # Set to -1 to disable
 GENERATION_LENGTH = 1024
 # Short sequence in full BPTT, long sequence in truncated BPTT.
 SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 4096
@@ -34,6 +34,7 @@ NEUROGENESIS_AMOUNT = 10
 
 # Byte-Level Vocabulary (0-255) to support all languages (Chinese, etc.)
 VOCAB_SIZE = 256
+RESET_OPTIMIZER_ON_LOAD = True # Set True to discard optimizer state (Cold Restart)
 CHAR_TO_IDX = {i: i for i in range(256)} # Identity map for bytes
 IDX_TO_CHAR = {i: i for i in range(256)}
 
@@ -272,7 +273,11 @@ def main():
                         model, trainer, _, _ = initialize_system(dataset.get_vocab_size(), NUM_NEURONS, DEVICE)
                         
                         # Now load strictly
-                        checkpoint = load_checkpoint(model, trainer.optimizer, CKPT_PATH, device=DEVICE, strict=True)
+                        opt_arg = None if RESET_OPTIMIZER_ON_LOAD else trainer.optimizer
+                        if RESET_OPTIMIZER_ON_LOAD:
+                            print("⚠️ RESET_OPTIMIZER_ON_LOAD is True. Discarding saved optimizer state.")
+                            
+                        checkpoint = load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True)
                         start_epoch = checkpoint['epoch'] + 1
                         print(f"✅ Resuming from Epoch {start_epoch}")
                         
@@ -283,14 +288,20 @@ def main():
                         
                 else:
                     # Dimensions match, standard load
-                    print(f"🔄 Loading Checkpoint from {CKPT_PATH}...")
-                    checkpoint = load_checkpoint(model, trainer.optimizer, CKPT_PATH, device=DEVICE, strict=True)
+                    opt_arg = None if RESET_OPTIMIZER_ON_LOAD else trainer.optimizer
+                    msg = " (Optimizer Reset)" if RESET_OPTIMIZER_ON_LOAD else ""
+                    print(f"🔄 Loading Checkpoint from {CKPT_PATH}{msg}...")
+                    
+                    checkpoint = load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True)
                     start_epoch = checkpoint['epoch'] + 1
                     print(f"✅ Resuming from Epoch {start_epoch}")
             else:
                  # Fallback
-                 print(f"🔄 Loading Checkpoint from {CKPT_PATH}...")
-                 checkpoint = load_checkpoint(model, trainer.optimizer, CKPT_PATH, device=DEVICE, strict=True)
+                 opt_arg = None if RESET_OPTIMIZER_ON_LOAD else trainer.optimizer
+                 msg = " (Optimizer Reset)" if RESET_OPTIMIZER_ON_LOAD else ""
+                 print(f"🔄 Loading Checkpoint from {CKPT_PATH}{msg}...")
+                 
+                 checkpoint = load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True)
                  start_epoch = checkpoint['epoch'] + 1
 
         except Exception as e:
