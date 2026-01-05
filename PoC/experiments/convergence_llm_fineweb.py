@@ -436,7 +436,11 @@ def main():
             NUM_NEURONS = model.num_neurons
             loss_increase_counter = 0
             
-        prev_loss = avg_loss
+            # Reset prev_loss to tolerate the "Cold Restart" spike (Momentum reset)
+            # This prevents a feedback loop of (Expand -> High Loss -> Expand -> ...)
+            prev_loss = float('inf')
+        else:
+            prev_loss = avg_loss
         
         # Generation Check (Reduced frequency if too slow, but user asked for param)
         print("--- GENERATION ---")
