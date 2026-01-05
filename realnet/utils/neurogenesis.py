@@ -118,41 +118,44 @@ class Neurogenesis:
                     if not torch.is_tensor(v):
                         new_s[k] = v
                 
-                # Keys to look for (Standard + BNB)
-                # exp_avg/exp_avg_sq -> Standard
-                # state1/state2 -> BNB (Quantized 8-bit momentum)
-                target_keys = ['exp_avg', 'exp_avg_sq', 'state1', 'state2']
-                
-                for key in target_keys:
-                    if key in old_s:
-                        try:
-                            tensor = old_s[key]
+                # Iterate over ALL keys in state (including qmap1, absmax1, etc.)
+                for key, val in old_s.items():
+                    if not torch.is_tensor(val):
+                         # Already copied scalars above
+                         continue
+                         
+                    try:
+                        tensor = val
+                        
+                        # LOGIC: Does this state tensor match the parameter shape?
+                        # If yes: It's Momentum/Variance -> Resize it.
+                        # If no: It's likely Metadata (qmap, absmax, step count) -> Copy it directly.
+                        
+                        if tensor.shape == old_p.shape:
+                            # Matches Parameter Shape -> Needs Resizing (Padding)
+                            new_tensor = torch.zeros(new_p.shape, dtype=tensor.dtype, device=device)
                             
-                            # Determine shape mismatch
-                            if tensor.shape == new_p.shape:
-                                # Direct copy
-                                new_s[key] = tensor.clone()
+                            if is_matrix:
+                                # 2D Parameter (W: NxN)
+                                min_rows = min(tensor.shape[0], new_p.shape[0])
+                                min_cols = min(tensor.shape[1], new_p.shape[1])
+                                new_tensor[:min_rows, :min_cols] = tensor[:min_rows, :min_cols]
                             else:
-                                # Resize logic
-                                # Note: For BNB unint8 tensors, we must create uint8 zeros
-                                new_tensor = torch.zeros(new_p.shape, dtype=tensor.dtype, device=device)
+                                # 1D Parameter (B: N)
+                                min_len = min(tensor.shape[0], new_p.shape[0])
+                                new_tensor[:min_len] = tensor[:min_len]
                                 
-                                if is_matrix:
-                                    # 2D copy
-                                    min_rows = min(tensor.shape[0], new_p.shape[0])
-                                    min_cols = min(tensor.shape[1], new_p.shape[1])
-                                    new_tensor[:min_rows, :min_cols] = tensor[:min_rows, :min_cols]
-                                else:
-                                    # 1D copy
-                                    min_len = min(tensor.shape[0], new_p.shape[0])
-                                    new_tensor[:min_len] = tensor[:min_len]
-                                    
-                                new_s[key] = new_tensor
-                                
-                        except Exception as e:
-                            # If transfer fails for a specific buffer (e.g. specialized quantization state), skip it.
-                            # Better to lose some momentum than crash.
-                            pass
+                            new_s[key] = new_tensor
+                            
+                        else:
+                            # Does NOT match parameter shape (Metadata like qmap1)
+                            # Direct Copy
+                            new_s[key] = tensor.clone()
+                            
+                    except Exception as e:
+                        # If specific tensor fails, skip it.
+                        print(f"      Running into issue with key '{key}': {e}. Skipping.")
+                        pass
                 
                 # Assign gathered state to new optimizer
                 if new_s:
