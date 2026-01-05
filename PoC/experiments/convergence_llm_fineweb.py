@@ -34,7 +34,7 @@ NEUROGENESIS_AMOUNT = 10
 
 # Byte-Level Vocabulary (0-255) to support all languages (Chinese, etc.)
 VOCAB_SIZE = 256
-RESET_OPTIMIZER_ON_LOAD = True # Set True to discard optimizer state (Cold Restart)
+RESET_OPTIMIZER_ON_LOAD = False # Set True to discard optimizer state (Cold Restart)
 CHAR_TO_IDX = {i: i for i in range(256)} # Identity map for bytes
 IDX_TO_CHAR = {i: i for i in range(256)}
 
