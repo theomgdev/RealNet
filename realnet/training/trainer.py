@@ -4,6 +4,11 @@ import torch.optim as optim
 import numpy as np
 from ..utils.data import prepare_input, to_tensor
 from ..utils.pruning import SynapticPruner
+try:
+    import bitsandbytes as bnb
+    HAS_BNB = True
+except ImportError:
+    HAS_BNB = False
 
 class RealNetTrainer:
     def __init__(self, model, optimizer=None, loss_fn=None, device='cpu', gradient_persistence=0.0, synaptic_noise=1e-6):
@@ -24,7 +29,16 @@ class RealNetTrainer:
         self.gradient_persistence = gradient_persistence
         self.synaptic_noise = synaptic_noise
         
-        self.optimizer = optimizer if optimizer else optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
+        if optimizer:
+            self.optimizer = optimizer
+        elif HAS_BNB and device == 'cuda':
+             # Use 8-bit AdamW if available and on CUDA (Saves VRAM)
+             # Note: bnb requires CUDA.
+             print("RealNetTrainer: Using bitsandbytes 8-bit AdamW for VRAM efficiency.")
+             self.optimizer = bnb.optim.AdamW8bit(model.parameters(), lr=1e-4, weight_decay=0.01)
+        else:
+             self.optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
+
         self.loss_fn = loss_fn if loss_fn else nn.MSELoss()
 
     def train_batch(self, input_features, target_values, thinking_steps, gradient_accumulation_steps=1, full_sequence=False, mask=None, output_transform=None, initial_state=None, return_state=False):

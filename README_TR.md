@@ -55,8 +55,11 @@ RealNet, modüler bir PyTorch kütüphanesi olarak tasarlanmıştır.
 ### Kurulum
 
 ```bash
-pip install torch torchvision
+pip install -r requirements.txt
 ```
+
+> **CUDA Notu:** `requirements.txt` dosyası CUDA 11.8 uyumlu PyTorch'u kurar. Eğer daha yeni bir kartınız (RTX 4000/5000) varsa, PyTorch'u manuel kurmanız gerekebilir:
+> `pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121`
 
 ### Hızlı Başlangıç
 

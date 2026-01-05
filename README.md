@@ -55,8 +55,11 @@ RealNet is designed as a modular PyTorch library.
 ### Installation
 
 ```bash
-pip install torch torchvision
+pip install -r requirements.txt
 ```
+
+> **Note on CUDA:** The `requirements.txt` points to CUDA 11.8 compatible PyTorch. If you have a newer GPU (RTX 4000/5000), you might need to install PyTorch manually:
+> `pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121`
 
 ### Quick Start
 
