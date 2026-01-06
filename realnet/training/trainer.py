@@ -10,8 +10,23 @@ if os.environ.get('NO_BNB'):
 else:
     try:
         os.environ["BITSANDBYTES_NOWELCOME"] = "1"
-        import bitsandbytes as bnb
-        HAS_BNB = True
+        # Check if user wants verbose logs (VERBOSE_BNB=1)
+        if os.environ.get('VERBOSE_BNB'):
+            import bitsandbytes as bnb
+            HAS_BNB = True
+        else:
+            # Suppress annoying binary_path logs on Windows during import
+            import sys
+            _old_out, _old_err = sys.stdout, sys.stderr
+            _null_out, _null_err = open(os.devnull, 'w'), open(os.devnull, 'w')
+            try:
+                sys.stdout, sys.stderr = _null_out, _null_err
+                import bitsandbytes as bnb
+                HAS_BNB = True
+            finally:
+                sys.stdout, sys.stderr = _old_out, _old_err
+                _null_out.close()
+                _null_err.close()
     except ImportError:
         HAS_BNB = False
 
