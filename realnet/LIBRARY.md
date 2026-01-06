@@ -2,7 +2,7 @@
 
 RealNet is a PyTorch-based library that implements **Zero-Hidden Layer** neural networks using **Temporal Depth**. By treating the neural network as a dynamic system that evolves over time, RealNet achieves deep learning capabilities without stacking spatial layers.
 
-## 核心 (Core Modules)
+## Core Modules
 
 The library is modularized into core components:
 1.  **`realnet.core.network`**: Contains the `RealNet` architecture.
@@ -79,12 +79,19 @@ from realnet import RealNetTrainer
 
 trainer = RealNetTrainer(
     model, 
-    optimizer=None,      # Defaults to AdamW
+    optimizer=None,      # Defaults to AdamW (or 8-bit AdamW if CUDA available)
     loss_fn=None,        # Defaults to MSELoss
     device='cuda',
     gradient_persistence=0.0   # Ghost Gradients (Persistence)
 )
 ```
+
+**Auto-Optimization (bitsandbytes):**
+*   If `optimizer` is `None` AND `device` is `'cuda'`, the trainer will attempt to load `bitsandbytes` and use `AdamW8bit`.
+*   **VRAM Savings:** ~75% reduction in optimizer memory.
+*   **Control Variables (Set before import):**
+    *   `os.environ["NO_BNB"] = "1"`: Disables 8-bit optimizer (Forces standard Torch AdamW).
+    *   `os.environ["VERBOSE_BNB"] = "1"`: Enables verbose loading logs for debugging.
 
 **Parameters:**
 *   `gradient_persistence` (float): **Ghost Gradients / Persistence**.
@@ -178,6 +185,34 @@ Dynamically adds `amount` empty neurons to the model.
 if loss > prev_loss:
     trainer.expand(amount=1)
 ```
+
+---
+
+## 🛠️ Utilities (`realnet.utils`)
+
+### 1. Data Utilities (`realnet.utils.data`)
+
+#### `prepare_input(input_features, model_input_ids, num_neurons, device)`
+Maps raw input features (numpy or tensor) to the full network state tensor.
+*   **Pulse Mode:** Plugs data into `t=0`, leaves rest as 0.
+*   **Stream Mode:** Maps sequence data `(Batch, Steps, Features)` to correct neurons.
+*   **Auto-Device:** Automatically moves data to the model's device.
+
+```python
+x_in, batch_size = prepare_input(X_train, model.input_ids, model.num_neurons, 'cuda')
+```
+
+#### `to_tensor(data, device)`
+Safely converts any list/array/int/float into a PyTorch tensor on the target device.
+
+### 2. Neurogenesis (`realnet.utils.neurogenesis`)
+See **Neurogenesis** section above.
+
+### 3. Pruning (`realnet.utils.pruning`)
+See **Synaptic Pruner** section above.
+
+### 4. RealStore (`realnet.utils.realstore`)
+See **RealStore** section above for High-Level API (`save_checkpoint`, `load_checkpoint`, `transplant_weights`, `get_checkpoint_info`).
 
 ---
 

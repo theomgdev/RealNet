@@ -91,6 +91,45 @@ trainer = RealNetTrainer(..., gradient_persistence=0.5)
 
 ---
 
+## ⚡ Hardware Optimization
+
+### 1. 8-Bit Optimizers (bitsandbytes)
+RealNet V2.0 automatically uses `bitsandbytes` 8-bit AdamW if a CUDA GPU is detected. This reduces VRAM usage by ~75% for optimizer states.
+*   **Default:** Enabled.
+*   **Disable:** Set `os.environ["NO_BNB"] = "1"` before importing `realnet`.
+*   **Debug:** Set `os.environ["VERBOSE_BNB"] = "1"` to see loading logs.
+
+### 2. TensorFloat-32 (TF32)
+Always enable TF32 on Ampere+ GPUs for free speedup.
+```python
+import torch
+torch.set_float32_matmul_precision('high')
+```
+
+### 3. Compilation
+For production or long training runs, compile the model.
+```python
+model.compile() # Uses torch.compile (PyTorch 2.0+)
+```
+
+---
+
+## 🌱 Neurogenesis Protocols
+
+Experiments should handle stagnation intelligently.
+1.  **Metric:** If `loss` has not improved for `N` epochs.
+2.  **Action:** Call `trainer.expand(amount=...)`.
+3.  **Amount:** 
+    *   Small nets: +1
+    *   Large nets: +10 or +1% of size.
+
+```python
+if loss > prev_loss:
+    trainer.expand(amount=10)
+```
+
+---
+
 ## 🔢 Data Standards
 
 ### 1. Bipolar Logic (-1 vs 1)
