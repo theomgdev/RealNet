@@ -23,7 +23,7 @@ TRUNCATED_BPTT_STEPS = 1024 # Set to -1 to disable
 GENERATION_LENGTH = 1024
 # Short sequence in full BPTT, long sequence in truncated BPTT.
 SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 4096
-BATCH_SIZE = 128 # Adjusted for larger SEQ_LEN/Memory
+BATCH_SIZE = 12 # Adjusted for larger SEQ_LEN/Memory
 NUM_NEURONS = -1 # Auto-size to Input+Output (Min 512)
 THINK_GAP = 5 # Number of silence steps between bytes
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -88,20 +88,23 @@ class FineWebIterableDataset(torch.utils.data.IterableDataset):
     def idx_to_char(self):
         return IDX_TO_CHAR
 
-def one_hot_encode_dilated(x, vocab_size, num_neurons, input_ids, gap):
+def one_hot_encode_dilated(x, vocab_size, num_neurons, input_ids, gap, device=None):
     # x: (Batch, Seq)
+    # Optional: device override (e.g. create directly on GPU)
+    target_device = device if device is not None else x.device
+    
     batch_size, seq_len = x.shape
     total_steps = seq_len * (gap + 1)
     
     # Create empty canvas (Batch, Total_Steps, Neurons)
-    one_hot = torch.zeros(batch_size, total_steps, num_neurons, device=DEVICE)
+    one_hot = torch.zeros(batch_size, total_steps, num_neurons, device=target_device)
     
     # Map token indices to input vectors at dilated intervals
     # Input at t=0, t=gap+1, t=2*(gap+1)...
     
     for t in range(seq_len):
         step_idx = t * (gap + 1)
-        token_indices = x[:, t].to(DEVICE) # (Batch)
+        token_indices = x[:, t].to(target_device) # Ensure indices are on target device
 
         # Assuming input_ids are contiguous range start..end
         # We find the neuron index by adding the start_id
@@ -112,13 +115,15 @@ def one_hot_encode_dilated(x, vocab_size, num_neurons, input_ids, gap):
         
     return one_hot
 
-def prepare_targets_dilated(y, gap):
+def prepare_targets_dilated(y, gap, device=None):
     # y: (Batch, Seq)
+    target_device = device if device is not None else y.device
+    
     batch_size, seq_len = y.shape
     total_steps = seq_len * (gap + 1)
     
     # Init with -100 (Ignore Index for CrossEntropy)
-    y_dilated = torch.full((batch_size, total_steps), -100, dtype=torch.long, device=DEVICE)
+    y_dilated = torch.full((batch_size, total_steps), -100, dtype=torch.long, device=target_device)
     
     # Place Targets
     # If GAP=5: Input at 0. Silence 1-5. Target at 5 (end of thinking).
@@ -127,11 +132,23 @@ def prepare_targets_dilated(y, gap):
     for t in range(seq_len):
         target_step = t * (gap + 1) + gap
         if target_step < total_steps:
-             y_dilated[:, target_step] = y[:, t].to(DEVICE)
+             y_dilated[:, target_step] = y[:, t].to(target_device)
              
     return y_dilated
 
-def generate(model, dataset, start_str="The", length=None):
+def generate(model, dataset, start_str="The", length=None, temperature=1.0, top_k=50, top_p=0.9):
+    """
+    Generates text using the model with modern sampling techniques.
+    
+    Args:
+        model: The RealNet model.
+        dataset: The dataset (for vocab info).
+        start_str: The prompt string.
+        length: Length of text to generate (bytes).
+        temperature: Controls randomness (1.0 = normal, <1.0 = conservative, >1.0 = creative).
+        top_k: Filters to the top K most likely tokens.
+        top_p: Nucleus sampling - filters to the smallest set of tokens comprising probability P.
+    """
     if length is None:
         length = GENERATION_LENGTH
         
@@ -144,7 +161,7 @@ def generate(model, dataset, start_str="The", length=None):
     current_state = None
     
     # 1. Warm up state with the prompt
-    x_in = torch.tensor(input_seq, dtype=torch.long, device=DEVICE).unsqueeze(0) # (1, Seq)
+    x_in = torch.tensor(input_seq, dtype=torch.long, device=model.device).unsqueeze(0) # (1, Seq)
     x_emb = one_hot_encode_dilated(x_in, dataset.get_vocab_size(), model.num_neurons, model.input_ids, THINK_GAP)
     
     generated_bytes = bytearray(input_bytes)
@@ -161,7 +178,7 @@ def generate(model, dataset, start_str="The", length=None):
             total_step_single = 1 + THINK_GAP
             
             # Input Vector at t=0
-            x_next_emb = torch.zeros(1, total_step_single, model.num_neurons, device=DEVICE)
+            x_next_emb = torch.zeros(1, total_step_single, model.num_neurons, device=model.device)
             neuron_idx = last_byte_idx + model.input_ids[0]
             x_next_emb[0, 0, neuron_idx] = 1.0
             
@@ -171,8 +188,42 @@ def generate(model, dataset, start_str="The", length=None):
             # C. Extract Prediction
             logits = preds[THINK_GAP, 0, model.output_ids] # (VocabSize 256)
             
+            # --- SAMPLING LOGIC ---
+            
+            # 1. Temperature
+            if temperature > 0:
+                logits = logits / temperature
+            
+            # 2. Top-K Filter
+            if top_k is not None and top_k > 0:
+                # Keep only top_k, mask others with -inf
+                v, _ = torch.topk(logits, min(top_k, len(logits)))
+                pivot = v[-1] # Smallest allowed value
+                logits[logits < pivot] = float('-inf')
+                
+            # 3. Top-P (Nucleus) Filter
+            if top_p is not None and top_p > 0 and top_p < 1.0:
+                sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+                cumulative_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
+                
+                # Remove tokens with cumulative probability above the threshold
+                sorted_indices_to_remove = cumulative_probs > top_p
+                
+                # Shift the indices to the right to keep also the first token above the threshold
+                sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+                sorted_indices_to_remove[..., 0] = 0
+                
+                # Scatter sorted indices to original indices
+                indices_to_remove = sorted_indices_to_remove.scatter(0, sorted_indices, sorted_indices_to_remove)
+                logits[indices_to_remove] = float('-inf')
+            
             # D. Sample
             probs = torch.softmax(logits, dim=0)
+            
+            # Handle potential NaN/Inf if filtering was too aggressive (rare fallback)
+            if torch.isnan(probs).any() or torch.sum(probs) == 0:
+                probs = torch.ones_like(probs) / len(probs)
+                
             next_idx = torch.multinomial(probs, 1).item()
             
             generated_bytes.append(next_idx)
@@ -352,8 +403,8 @@ def main():
         
         for batch_idx, (x, y) in enumerate(dataloader):
             # Dilate Data (Insert Silence)
-            x_emb = one_hot_encode_dilated(x, dataset.get_vocab_size(), model.num_neurons, input_ids, THINK_GAP)
-            y_dilated = prepare_targets_dilated(y, THINK_GAP)
+            x_emb = one_hot_encode_dilated(x, dataset.get_vocab_size(), model.num_neurons, input_ids, THINK_GAP, device=DEVICE)
+            y_dilated = prepare_targets_dilated(y, THINK_GAP, device=DEVICE)
             y_flat = y_dilated.reshape(-1) # Already on DEVICE
             
             # Total steps has increased due to dilation
