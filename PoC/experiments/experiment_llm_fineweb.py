@@ -136,7 +136,7 @@ def prepare_targets_dilated(y, gap, device=None):
              
     return y_dilated
 
-def generate(model, dataset, start_str="The", length=None, temperature=1.0, top_k=50, top_p=0.9):
+def generate(model, dataset, start_str="The", length=None, temperature=1.0, top_k=40, top_p=0.9):
     """
     Generates text using the model with modern sampling techniques.
     
@@ -359,7 +359,7 @@ def main():
             print(f"⚠️ Failed to load/inspect checkpoint: {e}. Starting fresh.")
     
     # CrossEntropy with Masking (Thinking Gaps)
-    criterion = nn.CrossEntropyLoss(ignore_index=-100)
+    criterion = nn.CrossEntropyLoss(ignore_index=-100, label_smoothing=0.005)
     trainer.loss_fn = criterion 
     
     # OUTPUT TRANSFORM: Flatten dilated output (Batch, Total_Steps, Out) -> (N, Out)
@@ -394,6 +394,10 @@ def main():
             print(f"⚠️ Could not read best checkpoint: {e}")
             
     loss_increase_counter = 0
+    
+    # Create Scheduler (Cosine Decay with Warm Restarts)
+    # T_0=25 Steps (~2-3 Epochs). Short cycle to catch local minima quickly.
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(trainer.optimizer, T_0=25, eta_min=1e-6)
     
     while True:
         total_loss = 0
@@ -470,11 +474,15 @@ def main():
                     output_transform=flatten_logits 
                 )
             
+            # Step Scheduler
+            scheduler.step()
+            current_lr = scheduler.get_last_lr()[0]
+            
             total_loss += loss
             steps += 1
             
             if batch_idx % 1 == 0:
-                print(f"Epoch {epoch} | Batch {batch_idx} | Loss {loss:.4f}")
+                print(f"Epoch {epoch} | Batch {batch_idx} | Loss {loss:.4f} | LR {current_lr:.2e}")
                 
             if batch_idx > 10: # Limit batches per epoch for frequent view
                 break
@@ -501,6 +509,11 @@ def main():
             # Reset prev_loss to tolerate the "Cold Restart" spike (Momentum reset)
             # This prevents a feedback loop of (Expand -> High Loss -> Expand -> ...)
             prev_loss = float('inf')
+            
+            # RESET SCHEDULER (New Optimizer -> New Scheduler)
+            print("🔄 Neurogenesis Triggered! Resetting Scheduler.")
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(trainer.optimizer, T_0=25, eta_min=1e-6)
+            
         else:
             prev_loss = avg_loss
         
