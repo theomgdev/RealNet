@@ -23,7 +23,7 @@ TRUNCATED_BPTT_STEPS = 1024 # Set to -1 to disable
 GENERATION_LENGTH = 1024
 # Short sequence in full BPTT, long sequence in truncated BPTT.
 SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 4096
-BATCH_SIZE = 6 # Adjusted for larger SEQ_LEN/Memory
+BATCH_SIZE = 16 # Adjusted for larger SEQ_LEN/Memory
 NUM_NEURONS = -1 # Auto-size to Input+Output (Min 512)
 THINK_GAP = 5 # Number of silence steps between bytes
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -39,8 +39,8 @@ LEARNING_RATE = 1e-4
 
 # --- SCHEDULER CONFIG ---
 USE_SCHEDULER = True
-SCHEDULER_T0 = 25       # Steps before first restart (~2-3 epochs)
-SCHEDULER_ETA_MIN = 1e-7 # Minimum LR before restart
+SCHEDULER_T0 = 1000       # Steps before first restart (~2-3 epochs)
+SCHEDULER_ETA_MIN = 1e-7  # Minimum LR before restart
 
 CHAR_TO_IDX = {i: i for i in range(256)} # Identity map for bytes
 IDX_TO_CHAR = {i: i for i in range(256)}
