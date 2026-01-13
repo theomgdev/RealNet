@@ -53,11 +53,18 @@ class Neurogenesis:
         new_n = old_n + amount
         device = model.device
         
+        # Check for SwiGLU
+        is_swiglu = getattr(model, 'is_swiglu', False)
+        
         # Preserve references to old parameters for state migration
         old_W_param = model.W
         old_B_param = model.B
         old_norm_w_param = model.norm.weight
         old_norm_b_param = model.norm.bias
+        
+        old_W_gate_param = model.W_gate if is_swiglu else None
+        old_B_gate_param = model.B_gate if is_swiglu else None
+        
         old_opt = optimizer
         
         # 1. Expand Weights (W)
@@ -66,15 +73,33 @@ class Neurogenesis:
         new_W[:old_n, :old_n] = model.W.data
         
         # Symmetry Breaking: Initialize outgoing weights to small noise
-        # This ensures gradients can flow back to the new neuron, even if its activation is 0 initially.
-        # If we used 0 for both, the neuron would be 'dead' (grad=0).
         noise_std = 1e-5
         new_W[:old_n, old_n:] = torch.randn(old_n, amount, device=device) * noise_std
         
         # 2. Expand Bias (B)
         new_B = torch.zeros(new_n, device=device)
         new_B[:old_n] = model.B.data
+
+        # --- Expand Gates (if SwiGLU) ---
+        new_W_gate = None
+        new_B_gate = None
+        new_mask_gate = None
         
+        if is_swiglu:
+            # W_gate
+            new_W_gate = torch.zeros(new_n, new_n, device=device)
+            new_W_gate[:old_n, :old_n] = model.W_gate.data
+            new_W_gate[:old_n, old_n:] = torch.randn(old_n, amount, device=device) * noise_std # Noise for outgoing
+            
+            # B_gate
+            new_B_gate = torch.zeros(new_n, device=device)
+            new_B_gate[:old_n] = model.B_gate.data
+            
+            # Mask Gate
+            new_mask_gate = torch.ones(new_n, new_n, device=device)
+            if hasattr(model, 'mask_gate'):
+                 new_mask_gate[:old_n, :old_n] = model.mask_gate
+
         # 3. Expand Mask
         new_mask = torch.ones(new_n, new_n, device=device)
         if hasattr(model, 'mask'):
@@ -98,6 +123,11 @@ class Neurogenesis:
         model.B = nn.Parameter(new_B)
         model.register_buffer('mask', new_mask)
         model.norm = new_norm
+        
+        if is_swiglu:
+            model.W_gate = nn.Parameter(new_W_gate)
+            model.B_gate = nn.Parameter(new_B_gate)
+            model.register_buffer('mask_gate', new_mask_gate)
         
         # 6. OPTIMIZER MIGRATION
         # Create new optimizer dynamically based on old optimizer type
@@ -143,9 +173,6 @@ class Neurogenesis:
                         tensor = val
                         
                         # LOGIC: Does this state tensor match the parameter shape?
-                        # If yes: It's Momentum/Variance -> Resize it.
-                        # If no: It's likely Metadata (qmap, absmax, step count) -> Copy it directly.
-                        
                         if tensor.shape == old_p.shape:
                             # Matches Parameter Shape -> Needs Resizing (Padding)
                             new_tensor = torch.zeros(new_p.shape, dtype=tensor.dtype, device=device)
@@ -168,7 +195,6 @@ class Neurogenesis:
                             new_s[key] = tensor.clone()
                             
                     except Exception as e:
-                        # If specific tensor fails, skip it.
                         print(f"      Running into issue with key '{key}': {e}. Skipping.")
                         pass
                 
@@ -187,6 +213,11 @@ class Neurogenesis:
                 transfer_state(old_B_param, model.B, is_matrix=False)
                 transfer_state(old_norm_w_param, model.norm.weight, is_matrix=False)
                 transfer_state(old_norm_b_param, model.norm.bias, is_matrix=False)
+                
+                if is_swiglu:
+                    transfer_state(old_W_gate_param, model.W_gate, is_matrix=True)
+                    transfer_state(old_B_gate_param, model.B_gate, is_matrix=False)
+                
                 print("   ✅ Optimizer State Transferred (Momentum Preserved)")
             except Exception as e:
                 print(f"   ⚠️ Optimizer State Transfer Failed ({e}). Performing Cold Restart.")
@@ -197,6 +228,10 @@ class Neurogenesis:
         del old_norm_w_param
         del old_norm_b_param
         del old_opt
+        
+        if is_swiglu:
+            del old_W_gate_param
+            del old_B_gate_param
         
         gc.collect()
         if torch.cuda.is_available():

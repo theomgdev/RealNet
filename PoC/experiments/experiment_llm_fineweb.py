@@ -25,6 +25,7 @@ GENERATION_LENGTH = 1024
 SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 4096
 BATCH_SIZE = 16 # Adjusted for larger SEQ_LEN/Memory
 NUM_NEURONS = -1 # Auto-size to Input+Output (Min 512)
+ACTIVATION = 'swiglu' # 'gelu' (Standard) or 'swiglu' (Gated, slower but smarter)
 THINK_GAP = 5 # Number of silence steps between bytes
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -38,8 +39,8 @@ RESET_OPTIMIZER_ON_LOAD = False # Set True to discard optimizer state (Cold Rest
 LEARNING_RATE = 1e-4
 
 # --- SCHEDULER CONFIG ---
-USE_SCHEDULER = True
-SCHEDULER_T0 = 1000       # Steps before first restart (~2-3 epochs)
+USE_SCHEDULER = False
+SCHEDULER_T0 = 100        # Steps before first restart (~2-3 epochs)
 SCHEDULER_ETA_MIN = 1e-7  # Minimum LR before restart
 
 CHAR_TO_IDX = {i: i for i in range(256)} # Identity map for bytes
@@ -242,7 +243,7 @@ def generate(model, dataset, start_str="The", length=None, temperature=0.8, top_
     except:
         return str(generated_bytes)
 
-def initialize_system(vocab_size, num_neurons, device, lr=1e-4):
+def initialize_system(vocab_size, num_neurons, device, lr=1e-4, activation='gelu'):
     """
     Creates the Model and Trainer instances.
     """
@@ -255,7 +256,7 @@ def initialize_system(vocab_size, num_neurons, device, lr=1e-4):
         output_ids=output_ids,
         device=device,
         dropout_rate=0.0,
-        activation='gelu', # Logic/Gating
+        activation=activation, # Logic/Gating
         weight_init='quiet',
         gradient_checkpointing=True  # Save VRAM
     )
@@ -275,6 +276,7 @@ def main():
     print(f"TRUNCATED_BPTT_STEPS: {TRUNCATED_BPTT_STEPS}")
     print(f"GENERATION_LENGTH: {GENERATION_LENGTH}")
     print(f"THINK_GAP: {THINK_GAP}")
+    print(f"ACTIVATION: {ACTIVATION}")
     print(f"VOCAB_SIZE: {VOCAB_SIZE}")
     print(f"DEVICE: {DEVICE}")
     print(f"NEUROGENESIS: MaxLossInc={MAX_LOSS_INCREASE}, Amount={NEUROGENESIS_AMOUNT}")
@@ -297,7 +299,7 @@ def main():
     )
     
     # --- MODEL SETUP ---
-    model, trainer, input_ids, output_ids = initialize_system(dataset.get_vocab_size(), NUM_NEURONS, DEVICE, LEARNING_RATE)
+    model, trainer, input_ids, output_ids = initialize_system(dataset.get_vocab_size(), NUM_NEURONS, DEVICE, LEARNING_RATE, ACTIVATION)
     
     # Update global config with actual model size (if it was auto-sized)
     NUM_NEURONS = model.num_neurons
@@ -308,8 +310,8 @@ def main():
     # --- CHECKPOINT SETUP (Using RealStore) ---
     CKPT_DIR = os.path.join(os.path.dirname(__file__), 'ckpt')
     os.makedirs(CKPT_DIR, exist_ok=True)
-    CKPT_PATH = os.path.join(CKPT_DIR, 'llm_fineweb_latest.pth')
-    CKPT_BEST_PATH = os.path.join(CKPT_DIR, 'llm_fineweb_best.pth')
+    CKPT_PATH = os.path.join(CKPT_DIR, f'llm_fineweb_{ACTIVATION}_latest.pth')
+    CKPT_BEST_PATH = os.path.join(CKPT_DIR, f'llm_fineweb_{ACTIVATION}_best.pth')
     
     start_epoch = 0
     if os.path.exists(CKPT_PATH):
@@ -334,7 +336,7 @@ def main():
                         NUM_NEURONS = saved_dim 
                         
                         # CLEAN RE-INIT using helper
-                        model, trainer, _, _ = initialize_system(dataset.get_vocab_size(), NUM_NEURONS, DEVICE, LEARNING_RATE)
+                        model, trainer, _, _ = initialize_system(dataset.get_vocab_size(), NUM_NEURONS, DEVICE, LEARNING_RATE, ACTIVATION)
                         
                         # Now load strictly
                         opt_arg = None if RESET_OPTIMIZER_ON_LOAD else trainer.optimizer

@@ -32,6 +32,7 @@ class RealNet(nn.Module):
         self.norm = nn.LayerNorm(num_neurons).to(device) # StepNorm
         
         # Activation Function
+        self.is_swiglu = False
         if activation == 'tanh':
             self.act = nn.Tanh()
         elif activation == 'relu':
@@ -44,6 +45,13 @@ class RealNet(nn.Module):
             self.act = nn.GELU()
         elif activation == 'silu':
              self.act = nn.SiLU()
+        elif activation == 'swiglu':
+            self.is_swiglu = True
+            # SwiGLU requires a secondary Gate Matrix
+            self.W_gate = nn.Parameter(torch.empty(num_neurons, num_neurons, device=device))
+            self.B_gate = nn.Parameter(torch.zeros(num_neurons, device=device))
+            self._init_weights_gate(weight_init)
+            self.act = nn.SiLU() # Swish part of SwiGLU
         else:
              raise ValueError(f"Unknown activation function: {activation}")
 
@@ -55,6 +63,8 @@ class RealNet(nn.Module):
         # PRUNING MASK (Synaptic Life)
         # 1 = Alive, 0 = Dead
         self.register_buffer('mask', torch.ones(num_neurons, num_neurons, device=device))
+        if self.is_swiglu:
+             self.register_buffer('mask_gate', torch.ones(num_neurons, num_neurons, device=device))
 
     def _init_weights(self, strategy):
         """
@@ -70,22 +80,48 @@ class RealNet(nn.Module):
             elif strategy == 'xavier_normal':
                 nn.init.xavier_normal_(self.W)
             elif strategy == 'kaiming_uniform':
-                nn.init.kaiming_uniform_(self.W, mode='fan_in', nonlinearity='relu') # GELU is close to ReLU
+                nn.init.kaiming_uniform_(self.W, mode='fan_in', nonlinearity='relu')
             elif strategy == 'kaiming_normal':
                 nn.init.kaiming_normal_(self.W, mode='fan_in', nonlinearity='relu')
             elif strategy == 'orthogonal':
                 nn.init.orthogonal_(self.W)
             elif strategy == 'sparse':
-                # Experimental sparse init (connect only 10%)
                 nn.init.sparse_(self.W, sparsity=0.9, std=0.02)
             elif strategy == 'zero':
-                # Zero init - useful for transplantation (new neurons start silent)
                 nn.init.zeros_(self.W)
             elif strategy == 'one':
-                # One init - useful for transplantation (new neurons act as just a data bridge)
                 nn.init.ones_(self.W)
             else:
                 raise ValueError(f"Unknown weight_init strategy: {strategy}")
+
+    def _init_weights_gate(self, strategy):
+        """
+        Initializes the gate weights W_gate (same strategy).
+        """
+        with torch.no_grad():
+            if strategy == 'quiet':
+                nn.init.normal_(self.W_gate, mean=0.0, std=0.02)
+            elif strategy == 'classic':
+                nn.init.normal_(self.W_gate)
+            elif strategy == 'xavier_uniform':
+                nn.init.xavier_uniform_(self.W_gate)
+            elif strategy == 'xavier_normal':
+                nn.init.xavier_normal_(self.W_gate)
+            elif strategy == 'kaiming_uniform':
+                nn.init.kaiming_uniform_(self.W_gate, mode='fan_in', nonlinearity='relu')
+            elif strategy == 'kaiming_normal':
+                nn.init.kaiming_normal_(self.W_gate, mode='fan_in', nonlinearity='relu')
+            elif strategy == 'orthogonal':
+                nn.init.orthogonal_(self.W_gate)
+            elif strategy == 'sparse':
+                nn.init.sparse_(self.W_gate, sparsity=0.9, std=0.02)
+            elif strategy == 'zero':
+                nn.init.zeros_(self.W_gate)
+            elif strategy == 'one':
+                nn.init.ones_(self.W_gate)
+            else:
+                # Default fallback
+                nn.init.uniform_(self.W_gate, -0.1, 0.1)
 
     def compile(self):
         """
@@ -131,21 +167,43 @@ class RealNet(nn.Module):
 
         # Apply Mask to Weights (Dead synapses transmit nothing)
         effective_W = self.W * self.mask
+        
+        # Prepare Gate Weights for SwiGLU
+        effective_W_gate = None
+        if self.is_swiglu:
+            effective_W_gate = self.W_gate * self.mask_gate
 
         def _single_step(h_t_in, t_idx, x_input_step):
             """Single timestep computation - can be checkpointed."""
             # 1. Chaotic Transmission (DENSE)
-            signal = torch.matmul(h_t_in, effective_W)
+            # Standard Projection (Value Path)
+            signal = torch.matmul(h_t_in, effective_W) + self.B
             
-            # 2. Add Character (Bias)
-            signal = signal + self.B
+            # SwiGLU Split Path
+            if self.is_swiglu:
+                # Gate Projection
+                gate_signal = torch.matmul(h_t_in, effective_W_gate) + self.B_gate
+                if x_input_step is not None:
+                    gate_signal = gate_signal + x_input_step # Inject input to gate too
+                    
+                # Gate Activation (SiLU / Swish)
+                gate_act = self.act(gate_signal)
+                
+                # Value Injection
+                if x_input_step is not None:
+                     signal = signal + x_input_step
+                
+                # Element-wise Gating (No activation on Value path, just Linear * Swish(Gate))
+                # Note: Traditional GLU is Linear * Sigmoid. SwiGLU is Linear * Swish.
+                # Here signal is Linear. gate_act is Swish.
+                activated = signal * gate_act
+            else:
+                # Standard Activation
+                if x_input_step is not None:
+                    signal = signal + x_input_step
+                activated = self.act(signal)
             
-            # 3. Add Input
-            if x_input_step is not None:
-                signal = signal + x_input_step
-            
-            # 4. Flow Activation (GELU) & StepNorm
-            activated = self.act(signal)
+            # StepNorm & Dropout
             normalized = self.norm(activated)
             h_t_out = self.drop(normalized)
             
