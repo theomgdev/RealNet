@@ -35,6 +35,12 @@ NEUROGENESIS_AMOUNT = 10
 # Byte-Level Vocabulary (0-255) to support all languages (Chinese, etc.)
 VOCAB_SIZE = 256
 RESET_OPTIMIZER_ON_LOAD = False # Set True to discard optimizer state (Cold Restart)
+
+# --- SCHEDULER CONFIG ---
+USE_SCHEDULER = True
+SCHEDULER_T0 = 25       # Steps before first restart (~2-3 epochs)
+SCHEDULER_ETA_MIN = 1e-6 # Minimum LR before restart
+
 CHAR_TO_IDX = {i: i for i in range(256)} # Identity map for bytes
 IDX_TO_CHAR = {i: i for i in range(256)}
 
@@ -269,6 +275,10 @@ def main():
     print(f"GENERATION_LENGTH: {GENERATION_LENGTH}")
     print(f"THINK_GAP: {THINK_GAP}")
     print(f"VOCAB_SIZE: {VOCAB_SIZE}")
+    print(f"DEVICE: {DEVICE}")
+    print(f"NEUROGENESIS: MaxLossInc={MAX_LOSS_INCREASE}, Amount={NEUROGENESIS_AMOUNT}")
+    print(f"RESET_OPTIM_ON_LOAD: {RESET_OPTIMIZER_ON_LOAD}")
+    print(f"SCHEDULER: Enabled={USE_SCHEDULER}, T0={SCHEDULER_T0}, MinLR={SCHEDULER_ETA_MIN}")
     print(f"---------------------")
     
     dataset = FineWebIterableDataset(SEQ_LEN)
@@ -394,10 +404,17 @@ def main():
             print(f"⚠️ Could not read best checkpoint: {e}")
             
     loss_increase_counter = 0
-    
-    # Create Scheduler (Cosine Decay with Warm Restarts)
-    # T_0=25 Steps (~2-3 Epochs). Short cycle to catch local minima quickly.
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(trainer.optimizer, T_0=25, eta_min=1e-6)
+
+    # SCHEDULER (Config in Global Constants)
+    scheduler = None
+
+    if USE_SCHEDULER:
+        # Create Scheduler (Cosine Decay with Warm Restarts)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            trainer.optimizer, 
+            T_0=SCHEDULER_T0, 
+            eta_min=SCHEDULER_ETA_MIN
+        )
     
     while True:
         total_loss = 0
@@ -475,8 +492,13 @@ def main():
                 )
             
             # Step Scheduler
-            scheduler.step()
-            current_lr = scheduler.get_last_lr()[0]
+            current_lr = 0.0
+            if USE_SCHEDULER and scheduler:
+                scheduler.step()
+                current_lr = scheduler.get_last_lr()[0]
+            elif trainer.optimizer:
+                # If scheduler is off, just get fixed LR
+                current_lr = trainer.optimizer.param_groups[0]['lr']
             
             total_loss += loss
             steps += 1
@@ -511,8 +533,13 @@ def main():
             prev_loss = float('inf')
             
             # RESET SCHEDULER (New Optimizer -> New Scheduler)
-            print("🔄 Neurogenesis Triggered! Resetting Scheduler.")
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(trainer.optimizer, T_0=25, eta_min=1e-6)
+            if USE_SCHEDULER:
+                print("🔄 Neurogenesis Triggered! Resetting Scheduler.")
+                scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+                    trainer.optimizer, 
+                    T_0=SCHEDULER_T0, 
+                    eta_min=SCHEDULER_ETA_MIN
+                )
             
         else:
             prev_loss = avg_loss
