@@ -377,13 +377,33 @@ def main():
         return out.reshape(-1, dataset.get_vocab_size())
 
     # --- INITIAL GENERATION (Show current state) ---
-    print("--- INITIAL GENERATION ---")
-    try:
-        gen_text = generate(model, dataset, start_str="The meaning of life is ")
-        print(gen_text)
-    except Exception as e:
-        print(f"Generation Error: {e}")
-    print("--------------------------")
+    # --- INITIAL GENERATION (Sampling Tests) ---
+    print("\n--- INITIAL GENERATION TESTS ---")
+    
+    test_prompts = [
+        ("Classic (Old Way)",          0, 0, 1),
+        ("Deterministic (Greedy)",     1e-5, 1,  1.0),
+        ("Standard (Balanced)",        1.0,  40, 0.9),
+        ("Creative (High Temp)",       1.2,  50, 0.95),
+        ("Precise (Low Temp)",         0.7,  20, 0.8),
+    ]
+
+    for name, t, k, p in test_prompts:
+        print(f"\n📝 {name}:")
+        try:
+            gen_text = generate(
+                model, 
+                dataset, 
+                start_str="The meaning of life is", 
+                temperature=t, 
+                top_k=k, 
+                top_p=p
+            )
+            print(gen_text)
+        except Exception as e:
+            print(f"Error: {e}")
+    
+    print("------------------------------\n")
 
     print("Training (Infinite)...")
     
