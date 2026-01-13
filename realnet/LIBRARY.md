@@ -79,10 +79,12 @@ from realnet import RealNetTrainer
 
 trainer = RealNetTrainer(
     model, 
-    optimizer=None,      # Defaults to AdamW (or 8-bit AdamW if CUDA available)
-    loss_fn=None,        # Defaults to MSELoss
+    optimizer=None,      # Optional: Custom Optimizer
+    loss_fn=None,        # Optional: Custom Loss Function (Default: MSELoss)
+    lr=1e-4,             # Initial Learning Rate (Stored in trainer.initial_lr)
     device='cuda',
-    gradient_persistence=0.0   # Ghost Gradients (Persistence)
+    gradient_persistence=0.0,   # Ghost Gradients (Persistence)
+    synaptic_noise=1e-6         # Thermal Noise (Default: 1e-6)
 )
 ```
 
@@ -94,13 +96,14 @@ trainer = RealNetTrainer(
     *   `os.environ["VERBOSE_BNB"] = "1"`: Enables verbose loading logs for debugging.
 
 **Parameters:**
+*   `lr` (float): The initial learning rate. If no optimizer is provided, this LR is used to create one ARt. It is also stored as `trainer.initial_lr` for use in Scheduler warm restarts or resets.
 *   `gradient_persistence` (float): **Ghost Gradients / Persistence**.
     *   `0.0`: Standard behavior (`zero_grad()` after every step).
     *   `> 0.0` (e.g., `0.1`): Keeps a percentage of the previous step's gradient. This creates a "momentum" over time, effectively simulating a larger batch size or longer temporal context. Useful for difficult convergence landscapes.
 *   `synaptic_noise` (float): **Thermal Noise**.
     *   Adds Gaussian noise (std dev = `synaptic_noise`) to all weights *before* every training step.
     *   Simulates biological thermal noise and prevents overfitting (Stochastic Resonance).
-    *   Recommended: `1e-6` to `1e-5`.
+    *   **Default:** `1e-6` (Set to `0.0` for pure logic/math tasks).
 
 ### Key Methods
 

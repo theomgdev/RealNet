@@ -31,33 +31,36 @@ else:
         HAS_BNB = False
 
 class RealNetTrainer:
-    def __init__(self, model, optimizer=None, loss_fn=None, device='cpu', gradient_persistence=0.0, synaptic_noise=1e-6):
+    def __init__(self, model, optimizer=None, loss_fn=None, lr=1e-4, device='cpu', gradient_persistence=0.0, synaptic_noise=1e-6):
         """
-        Trainer for RealNet models.
+        Initializes the trainer.
         
         Args:
-            model (RealNet): The RealNet model instance.
-            optimizer (torch.optim.Optimizer): Optimizer instance. If None, defaults to AdamW.
-            loss_fn (callable): Loss function. If None, defaults to MSELoss.
-            device (str): Device to run on ('cpu' or 'cuda').
-            gradient_persistence (float): Fraction of gradients to keep from previous step (0.0 to 1.0). Default 0.0.
-            synaptic_noise (float): Std dev of Gaussian noise added to weights at every step (Thermal Noise). Default 1e-6.
+            model (nn.Module): The RealNet model to train.
+            optimizer (torch.optim.Optimizer): Custom optimizer (Optional).
+            loss_fn (callable): Custom loss function (Optional).
+            lr (float): Initial learning rate (Default: 1e-4). Used if optimizer is None.
+            device (str): Device to run training on.
+            gradient_persistence (float): How much gradient to keep from previous step (0.0 - 0.9).
+            synaptic_noise (float): Scale of noise added to weights during training (Regularization). Default 1e-6.
         """
         self.model = model
         self.device = device
         self.model.to(self.device)
         self.gradient_persistence = gradient_persistence
         self.synaptic_noise = synaptic_noise
+        self.initial_lr = lr
         
+        # --- OPTIMIZER (8-bit AdamW if available) ---
         if optimizer:
             self.optimizer = optimizer
-        elif HAS_BNB and device == 'cuda':
-             # Use 8-bit AdamW if available and on CUDA (Saves VRAM)
-             # Note: bnb requires CUDA.
+        elif HAS_BNB and device == 'cuda': 
+             # HAS_BNB is strictly False if NO_BNB was set at import time.
              print("RealNetTrainer: Using bitsandbytes 8-bit AdamW for VRAM efficiency.")
-             self.optimizer = bnb.optim.AdamW8bit(model.parameters(), lr=1e-4, weight_decay=0.01)
+             self.optimizer = bnb.optim.AdamW8bit(model.parameters(), lr=lr, weight_decay=0.01)
         else:
-             self.optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
+             print("RealNetTrainer: bitsandbytes not found or CPU mode. Using standard AdamW.")
+             self.optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
 
         self.loss_fn = loss_fn if loss_fn else nn.MSELoss()
 

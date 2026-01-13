@@ -23,7 +23,7 @@ TRUNCATED_BPTT_STEPS = 1024 # Set to -1 to disable
 GENERATION_LENGTH = 1024
 # Short sequence in full BPTT, long sequence in truncated BPTT.
 SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 4096
-BATCH_SIZE = 12 # Adjusted for larger SEQ_LEN/Memory
+BATCH_SIZE = 6 # Adjusted for larger SEQ_LEN/Memory
 NUM_NEURONS = -1 # Auto-size to Input+Output (Min 512)
 THINK_GAP = 5 # Number of silence steps between bytes
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -35,11 +35,12 @@ NEUROGENESIS_AMOUNT = 10
 # Byte-Level Vocabulary (0-255) to support all languages (Chinese, etc.)
 VOCAB_SIZE = 256
 RESET_OPTIMIZER_ON_LOAD = False # Set True to discard optimizer state (Cold Restart)
+LEARNING_RATE = 1e-4
 
 # --- SCHEDULER CONFIG ---
 USE_SCHEDULER = True
 SCHEDULER_T0 = 25       # Steps before first restart (~2-3 epochs)
-SCHEDULER_ETA_MIN = 1e-6 # Minimum LR before restart
+SCHEDULER_ETA_MIN = 1e-7 # Minimum LR before restart
 
 CHAR_TO_IDX = {i: i for i in range(256)} # Identity map for bytes
 IDX_TO_CHAR = {i: i for i in range(256)}
@@ -241,7 +242,7 @@ def generate(model, dataset, start_str="The", length=None, temperature=0.8, top_
     except:
         return str(generated_bytes)
 
-def initialize_system(vocab_size, num_neurons, device):
+def initialize_system(vocab_size, num_neurons, device, lr=1e-4):
     """
     Creates the Model and Trainer instances.
     """
@@ -259,7 +260,7 @@ def initialize_system(vocab_size, num_neurons, device):
         gradient_checkpointing=True  # Save VRAM
     )
     
-    trainer = RealNetTrainer(model, device=device, gradient_persistence=0, synaptic_noise=0)
+    trainer = RealNetTrainer(model, lr=lr, device=device, gradient_persistence=0, synaptic_noise=0)
     
     return model, trainer, input_ids, output_ids
 
@@ -279,6 +280,7 @@ def main():
     print(f"NEUROGENESIS: MaxLossInc={MAX_LOSS_INCREASE}, Amount={NEUROGENESIS_AMOUNT}")
     print(f"RESET_OPTIM_ON_LOAD: {RESET_OPTIMIZER_ON_LOAD}")
     print(f"SCHEDULER: Enabled={USE_SCHEDULER}, T0={SCHEDULER_T0}, MinLR={SCHEDULER_ETA_MIN}")
+    print(f"LEARNING_RATE: {LEARNING_RATE}")
     print(f"---------------------")
     
     dataset = FineWebIterableDataset(SEQ_LEN)
@@ -294,10 +296,11 @@ def main():
         pin_memory=True
     )
     
-    print(f"Vocab Size: {dataset.get_vocab_size()}")
-    
     # --- MODEL SETUP ---
-    model, trainer, input_ids, output_ids = initialize_system(dataset.get_vocab_size(), NUM_NEURONS, DEVICE)
+    model, trainer, input_ids, output_ids = initialize_system(dataset.get_vocab_size(), NUM_NEURONS, DEVICE, LEARNING_RATE)
+    
+    # Update global config with actual model size (if it was auto-sized)
+    NUM_NEURONS = model.num_neurons
     
     print(f"Input IDs: {input_ids[0]}-{input_ids[-1]}")
     print(f"Output IDs: {output_ids[0]}-{output_ids[-1]}")
@@ -331,7 +334,7 @@ def main():
                         NUM_NEURONS = saved_dim 
                         
                         # CLEAN RE-INIT using helper
-                        model, trainer, _, _ = initialize_system(dataset.get_vocab_size(), NUM_NEURONS, DEVICE)
+                        model, trainer, _, _ = initialize_system(dataset.get_vocab_size(), NUM_NEURONS, DEVICE, LEARNING_RATE)
                         
                         # Now load strictly
                         opt_arg = None if RESET_OPTIMIZER_ON_LOAD else trainer.optimizer
@@ -395,6 +398,7 @@ def main():
                 model, 
                 dataset, 
                 start_str="The meaning of life is", 
+                length=256,
                 temperature=t, 
                 top_k=k, 
                 top_p=p
@@ -575,13 +579,13 @@ def main():
         print("------------------")
         
         # SAVE CHECKPOINT (Using RealStore)
-        save_checkpoint(model, trainer.optimizer, epoch, avg_loss, CKPT_PATH)
+        save_checkpoint(model, trainer.optimizer, epoch, avg_loss, CKPT_PATH, extra_data={'initial_lr': trainer.initial_lr})
         print(f"💾 Checkpoint Saved: {CKPT_PATH}")
         
         # SAVE BEST
         if avg_loss < best_loss:
             best_loss = avg_loss
-            save_checkpoint(model, trainer.optimizer, epoch, avg_loss, CKPT_BEST_PATH)
+            save_checkpoint(model, trainer.optimizer, epoch, avg_loss, CKPT_BEST_PATH, extra_data={'initial_lr': trainer.initial_lr})
             print(f"🏆 NEW RECORD! Best Checkpoint Saved: {CKPT_BEST_PATH} (Loss: {best_loss:.4f})")
         
         epoch += 1
