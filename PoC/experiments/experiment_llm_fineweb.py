@@ -142,7 +142,7 @@ def prepare_targets_dilated(y, gap, device=None):
              
     return y_dilated
 
-def generate(model, dataset, start_str="The", length=None, temperature=1.0, top_k=40, top_p=0.9):
+def generate(model, dataset, start_str="The", length=None, temperature=0.8, top_k=40, top_p=0.9):
     """
     Generates text using the model with modern sampling techniques.
     
