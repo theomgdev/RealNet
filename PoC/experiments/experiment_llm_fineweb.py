@@ -25,7 +25,7 @@ GENERATION_LENGTH = 1024
 SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 4096
 BATCH_SIZE = 16 # Adjusted for larger SEQ_LEN/Memory
 NUM_NEURONS = -1 # Auto-size to Input+Output (Min 512)
-ACTIVATION = 'swiglu' # 'gelu' (Standard) or 'swiglu' (Gated, slower but smarter)
+ACTIVATION = 'gelu' # 'gelu' (Standard) or 'swiglu' (Gated, slower but smarter)
 THINK_GAP = 5 # Number of silence steps between bytes
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -39,8 +39,8 @@ RESET_OPTIMIZER_ON_LOAD = False # Set True to discard optimizer state (Cold Rest
 LEARNING_RATE = 1e-4
 
 # --- SCHEDULER CONFIG ---
-USE_SCHEDULER = False
-SCHEDULER_T0 = 100        # Steps before first restart (~2-3 epochs)
+USE_SCHEDULER = True
+SCHEDULER_T0 = 1000        # Steps before first restart (~2-3 epochs)
 SCHEDULER_ETA_MIN = 1e-7  # Minimum LR before restart
 
 CHAR_TO_IDX = {i: i for i in range(256)} # Identity map for bytes
@@ -53,8 +53,8 @@ class FineWebIterableDataset(torch.utils.data.IterableDataset):
     def __init__(self, seq_len):
         self.seq_len = seq_len
         # Streaming load - instant startup
-        print("🌊 Connecting to FineWeb (CC-MAIN-2024-10)...")
-        self.dataset = load_dataset("HuggingFaceFW/fineweb", name="CC-MAIN-2024-10", split="train", streaming=True)
+        print("🌊 Connecting to FineWeb-Edu (CC-MAIN-2024-10)...")
+        self.dataset = load_dataset("HuggingFaceFW/fineweb-edu", name="CC-MAIN-2024-10", split="train", streaming=True)
         
     def __iter__(self):
         iterator = iter(self.dataset)
