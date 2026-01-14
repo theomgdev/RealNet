@@ -24,6 +24,8 @@ GENERATION_LENGTH = 1024
 # Short sequence in full BPTT, long sequence in truncated BPTT.
 SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 4096
 BATCH_SIZE = 16 # Adjusted for larger SEQ_LEN/Memory
+STEPS_PER_EPOCH = 10 # Number of batches per "Epoch" (for logging/saving)
+LOG_INTERVAL = 1 # Print loss every N batches
 NUM_NEURONS = -1 # Auto-size to Input+Output (Min 512)
 ACTIVATION = 'gelu' # 'gelu' (Standard) or 'swiglu' (Gated, slower but smarter)
 THINK_GAP = 5 # Number of silence steps between bytes
@@ -274,6 +276,8 @@ def main():
     print(f"BATCH_SIZE: {BATCH_SIZE}")
     print(f"NUM_NEURONS: {NUM_NEURONS}")
     print(f"TRUNCATED_BPTT_STEPS: {TRUNCATED_BPTT_STEPS}")
+    print(f"STEPS_PER_EPOCH: {STEPS_PER_EPOCH}")
+    print(f"LOG_INTERVAL: {LOG_INTERVAL}")
     print(f"GENERATION_LENGTH: {GENERATION_LENGTH}")
     print(f"THINK_GAP: {THINK_GAP}")
     print(f"ACTIVATION: {ACTIVATION}")
@@ -442,13 +446,22 @@ def main():
             eta_min=SCHEDULER_ETA_MIN
         )
     
+    # Create persistent iterator to prevent data resetting every epoch
+    data_iterator = iter(dataloader)
+
     while True:
         total_loss = 0
         steps = 0
         
         start_time = time.time()
         
-        for batch_idx, (x, y) in enumerate(dataloader):
+        for batch_idx in range(STEPS_PER_EPOCH):
+            try:
+                x, y = next(data_iterator)
+            except StopIteration:
+                print("🔄 Dataset exhausted. Restarting iterator...")
+                data_iterator = iter(dataloader)
+                x, y = next(data_iterator)
             # Dilate Data (Insert Silence)
             x_emb = one_hot_encode_dilated(x, dataset.get_vocab_size(), model.num_neurons, input_ids, THINK_GAP, device=DEVICE)
             y_dilated = prepare_targets_dilated(y, THINK_GAP, device=DEVICE)
@@ -529,11 +542,8 @@ def main():
             total_loss += loss
             steps += 1
             
-            if batch_idx % 1 == 0:
+            if batch_idx % LOG_INTERVAL == 0:
                 print(f"Epoch {epoch} | Batch {batch_idx} | Loss {loss:.4f} | LR {current_lr:.2e}")
-                
-            if batch_idx > 10: # Limit batches per epoch for frequent view
-                break
                 
         avg_loss = total_loss / steps
         print(f"Epoch {epoch} Completed | Avg Loss: {avg_loss:.4f} | Time: {time.time() - start_time:.1f}s")
