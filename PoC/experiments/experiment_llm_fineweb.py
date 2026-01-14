@@ -6,6 +6,7 @@ import sys
 import os
 import time
 import os
+import random
 
 # --- PRE-IMPORT CONFIG ---
 # Remove comment below to disable bitsandbytes 8-bit Optimizer globally (Use Standard AdamW)
@@ -26,6 +27,7 @@ SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 4096
 BATCH_SIZE = 16 # Adjusted for larger SEQ_LEN/Memory
 STEPS_PER_EPOCH = 10 # Number of batches per "Epoch" (for logging/saving)
 LOG_INTERVAL = 1 # Print loss every N batches
+MAX_START_SKIP = 100000 # Randomly skip up to N documents at start
 NUM_NEURONS = -1 # Auto-size to Input+Output (Min 512)
 ACTIVATION = 'gelu' # 'gelu' (Standard) or 'swiglu' (Gated, slower but smarter)
 THINK_GAP = 5 # Number of silence steps between bytes
@@ -59,7 +61,14 @@ class FineWebIterableDataset(torch.utils.data.IterableDataset):
         self.dataset = load_dataset("HuggingFaceFW/fineweb-edu", name="CC-MAIN-2024-10", split="train", streaming=True)
         
     def __iter__(self):
-        iterator = iter(self.dataset)
+        # Random skip to vary the starting point each run
+        skip_n = random.randint(0, MAX_START_SKIP)
+        if skip_n > 0:
+            print(f"🔀 Skipping {skip_n} documents to randomize start...")
+            iterator = iter(self.dataset.skip(skip_n))
+        else:
+            iterator = iter(self.dataset)
+            
         buffer_bytes = b""
         
         while True:
