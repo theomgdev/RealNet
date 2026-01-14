@@ -27,7 +27,7 @@ SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 4096
 BATCH_SIZE = 16 # Adjusted for larger SEQ_LEN/Memory
 STEPS_PER_EPOCH = 10 # Number of batches per "Epoch" (for logging/saving)
 LOG_INTERVAL = 1 # Print loss every N batches
-MAX_START_SKIP = 100000 # Randomly skip up to N documents at start
+MAX_START_SKIP = 1000 # Randomly skip up to N documents at start
 NUM_NEURONS = -1 # Auto-size to Input+Output (Min 512)
 ACTIVATION = 'gelu' # 'gelu' (Standard) or 'swiglu' (Gated, slower but smarter)
 THINK_GAP = 5 # Number of silence steps between bytes
@@ -39,7 +39,7 @@ NEUROGENESIS_AMOUNT = 10
 
 # Byte-Level Vocabulary (0-255) to support all languages (Chinese, etc.)
 VOCAB_SIZE = 256
-RESET_OPTIMIZER_ON_LOAD = False # Set True to discard optimizer state (Cold Restart)
+RESET_OPTIMIZER_ON_LOAD = True # Set True to discard optimizer state (Cold Restart)
 LEARNING_RATE = 1e-4
 
 # --- SCHEDULER CONFIG ---
