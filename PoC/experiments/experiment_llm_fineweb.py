@@ -20,16 +20,16 @@ from realnet import RealNet, RealNetTrainer, save_checkpoint, load_checkpoint, t
 torch.set_float32_matmul_precision('high')
 
 # --- CONFIGURATION ---
-TRUNCATED_BPTT_STEPS = 1024 # Set to -1 to disable
+TRUNCATED_BPTT_STEPS = 16 # Set to -1 to disable
 GENERATION_LENGTH = 1024
 # Short sequence in full BPTT, long sequence in truncated BPTT.
 SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 4096
-BATCH_SIZE = 16 # Adjusted for larger SEQ_LEN/Memory
+BATCH_SIZE = 512 # Adjusted for larger SEQ_LEN/Memory
 STEPS_PER_EPOCH = 10 # Number of batches per "Epoch" (for logging/saving)
 LOG_INTERVAL = 1 # Print loss every N batches
 MAX_START_SKIP = 1000 # Randomly skip up to N documents at start
 NUM_NEURONS = -1 # Auto-size to Input+Output (Min 512)
-ACTIVATION = 'gelu' # 'gelu' (Standard) or 'swiglu' (Gated, slower but smarter)
+ACTIVATION = 'swiglu' # 'gelu' (Standard) or 'swiglu' (Gated, slower but smarter)
 THINK_GAP = 5 # Number of silence steps between bytes
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -54,8 +54,9 @@ IDX_TO_CHAR = {i: i for i in range(256)}
 from datasets import load_dataset
 
 class FineWebIterableDataset(torch.utils.data.IterableDataset):
-    def __init__(self, seq_len):
+    def __init__(self, seq_len, debug=False):
         self.seq_len = seq_len
+        self.debug = debug
         # Streaming load - instant startup
         print("🌊 Connecting to FineWeb-Edu (CC-MAIN-2024-10)...")
         self.dataset = load_dataset("HuggingFaceFW/fineweb-edu", name="CC-MAIN-2024-10", split="train", streaming=True)
@@ -63,9 +64,12 @@ class FineWebIterableDataset(torch.utils.data.IterableDataset):
     def __iter__(self):
         # Random skip to vary the starting point each run
         skip_n = random.randint(0, MAX_START_SKIP)
+        self.current_doc_index = 0
+        
         if skip_n > 0:
             print(f"🔀 Skipping {skip_n} documents to randomize start...")
             iterator = iter(self.dataset.skip(skip_n))
+            self.current_doc_index = skip_n
         else:
             iterator = iter(self.dataset)
             
@@ -76,6 +80,9 @@ class FineWebIterableDataset(torch.utils.data.IterableDataset):
             while len(buffer_bytes) < self.seq_len + 1:
                 try:
                     item = next(iterator)
+                    self.current_doc_index += 1
+                    if self.debug and self.current_doc_index % 1000 == 0:
+                        print(f"📊 Streaming Index: Document #{self.current_doc_index}")
                     text = item.get('text', '')
                     # Encode to bytes (UTF-8)
                     new_bytes = text.encode('utf-8', errors='replace') + b" " 
@@ -83,6 +90,7 @@ class FineWebIterableDataset(torch.utils.data.IterableDataset):
                 except StopIteration:
                     # Reset if end of stream
                     iterator = iter(self.dataset)
+                    self.current_doc_index = 0
 
             # Extract chunk
             chunk_bytes = buffer_bytes[:self.seq_len + 1]
@@ -298,7 +306,7 @@ def main():
     print(f"LEARNING_RATE: {LEARNING_RATE}")
     print(f"---------------------")
     
-    dataset = FineWebIterableDataset(SEQ_LEN)
+    dataset = FineWebIterableDataset(SEQ_LEN, debug=True)
     
     # DataLoader for IterableDataset
     # Streaming with 1 worker allows background downloading without duplication
@@ -579,7 +587,6 @@ def main():
             
             # RESET SCHEDULER (New Optimizer -> New Scheduler)
             if USE_SCHEDULER:
-                print("🔄 Neurogenesis Triggered! Resetting Scheduler.")
                 scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
                     trainer.optimizer, 
                     T_0=SCHEDULER_T0, 
