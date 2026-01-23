@@ -86,7 +86,12 @@ class RealNetTrainer:
                         param.add_(noise)
 
         # 2. Prepare Data
-        x_input, batch_size = prepare_input(input_features, self.model.input_ids, self.model.num_neurons, self.device)
+        # Optimization: If passing indices (Long/Int), bypass prepare_input expansion
+        if isinstance(input_features, torch.Tensor) and input_features.dtype in [torch.long, torch.int, torch.int32, torch.int64]:
+             x_input = input_features.to(self.device)
+             batch_size = x_input.shape[0]
+        else:
+             x_input, batch_size = prepare_input(input_features, self.model.input_ids, self.model.num_neurons, self.device)
         
         target_values = to_tensor(target_values, self.device)
         if mask is not None:

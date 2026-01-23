@@ -158,6 +158,8 @@ class RealNet(nn.Module):
             if self.state.shape[0] != batch_sz:
                 self.reset_state(batch_size=batch_sz)
             current_state = self.state
+        else:
+            batch_sz = current_state.shape[0]
         
         if current_state.device != self.device:
             current_state = current_state.to(self.device)
@@ -213,7 +215,23 @@ class RealNet(nn.Module):
             # Prepare input for this step
             x_step = None
             if x_input is not None:
-                if x_input.ndim == 3:
+                # Handle Index-Based Input (VRAM Efficient)
+                if x_input.dtype in [torch.long, torch.int64, torch.int32]:
+                     if x_input.ndim == 2 and t < x_input.shape[1]:
+                          token_indices = x_input[:, t] # (Batch,)
+                          # Assume -1 is silence/gap
+                          valid_mask = token_indices != -1
+                          
+                          if valid_mask.any():
+                               x_step_dense = torch.zeros(batch_sz, self.num_neurons, device=self.device)
+                               # Map token indices to neuron indices
+                               # Assumes input_ids are contiguous. neuron_idx = token_idx + input_ids[0]
+                               offset = self.input_ids[0]
+                               valid_neurons = token_indices[valid_mask] + offset
+                               x_step_dense[valid_mask, valid_neurons] = 1.0
+                               x_step = x_step_dense
+                               
+                elif x_input.ndim == 3:
                     # Sequential Input: (Batch, Steps, Neurons)
                     if t < x_input.shape[1]:
                         x_step = x_input[:, t, :]

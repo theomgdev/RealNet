@@ -115,32 +115,24 @@ class FineWebIterableDataset(torch.utils.data.IterableDataset):
     def idx_to_char(self):
         return IDX_TO_CHAR
 
-def one_hot_encode_dilated(x, vocab_size, num_neurons, input_ids, gap, device=None):
-    # x: (Batch, Seq)
-    # Optional: device override (e.g. create directly on GPU)
+def prepare_inputs_dilated(x, gap, device=None):
+    # x: (Batch, Seq) indices
+    # Returns: (Batch, TotalSteps) indices with -1 as silence
     target_device = device if device is not None else x.device
     
     batch_size, seq_len = x.shape
     total_steps = seq_len * (gap + 1)
     
-    # Create empty canvas (Batch, Total_Steps, Neurons)
-    one_hot = torch.zeros(batch_size, total_steps, num_neurons, device=target_device)
+    # Init with -1 (Silence)
+    # This tensor is ~1000x smaller than the one-hot version
+    x_dilated = torch.full((batch_size, total_steps), -1, dtype=torch.long, device=target_device)
     
-    # Map token indices to input vectors at dilated intervals
-    # Input at t=0, t=gap+1, t=2*(gap+1)...
-    
+    # Place indices at dilated intervals
     for t in range(seq_len):
         step_idx = t * (gap + 1)
-        token_indices = x[:, t].to(target_device) # Ensure indices are on target device
-
-        # Assuming input_ids are contiguous range start..end
-        # We find the neuron index by adding the start_id
-        neuron_indices = token_indices + input_ids[0]
+        x_dilated[:, step_idx] = x[:, t].to(target_device)
         
-        # one_hot[b, step, neuron] = 1
-        one_hot[torch.arange(batch_size), step_idx, neuron_indices] = 1.0
-        
-    return one_hot
+    return x_dilated
 
 def prepare_targets_dilated(y, gap, device=None):
     # y: (Batch, Seq)
@@ -189,13 +181,13 @@ def generate(model, dataset, start_str="The", length=None, temperature=0.8, top_
     
     # 1. Warm up state with the prompt
     x_in = torch.tensor(input_seq, dtype=torch.long, device=model.device).unsqueeze(0) # (1, Seq)
-    x_emb = one_hot_encode_dilated(x_in, dataset.get_vocab_size(), model.num_neurons, model.input_ids, THINK_GAP)
+    x_dilated = prepare_inputs_dilated(x_in, THINK_GAP, device=model.device)
     
     generated_bytes = bytearray(input_bytes)
     
     with torch.no_grad():
         # Run full context
-        _, current_state = model(x_emb, steps=x_emb.shape[1])
+        _, current_state = model(x_dilated, steps=x_dilated.shape[1])
         
         # 2. Generate new bytes
         last_byte_idx = input_seq[-1]
@@ -205,12 +197,11 @@ def generate(model, dataset, start_str="The", length=None, temperature=0.8, top_
             total_step_single = 1 + THINK_GAP
             
             # Input Vector at t=0
-            x_next_emb = torch.zeros(1, total_step_single, model.num_neurons, device=model.device)
-            neuron_idx = last_byte_idx + model.input_ids[0]
-            x_next_emb[0, 0, neuron_idx] = 1.0
+            x_next = torch.full((1, total_step_single), -1, dtype=torch.long, device=model.device)
+            x_next[0, 0] = last_byte_idx
             
             # B. Run Model
-            preds, current_state = model(x_next_emb, steps=total_step_single, current_state=current_state)
+            preds, current_state = model(x_next, steps=total_step_single, current_state=current_state)
             
             # C. Extract Prediction
             logits = preds[THINK_GAP, 0, model.output_ids] # (VocabSize 256)
@@ -480,12 +471,12 @@ def main():
                 data_iterator = iter(dataloader)
                 x, y = next(data_iterator)
             # Dilate Data (Insert Silence)
-            x_emb = one_hot_encode_dilated(x, dataset.get_vocab_size(), model.num_neurons, input_ids, THINK_GAP, device=DEVICE)
+            x_dilated = prepare_inputs_dilated(x, THINK_GAP, device=DEVICE)
             y_dilated = prepare_targets_dilated(y, THINK_GAP, device=DEVICE)
             y_flat = y_dilated.reshape(-1) # Already on DEVICE
             
             # Total steps has increased due to dilation
-            total_steps = x_emb.shape[1]
+            total_steps = x_dilated.shape[1]
             
             if TRUNCATED_BPTT_STEPS != -1 and TRUNCATED_BPTT_STEPS > 0:
                 # --- TRUNCATED BPTT ---
@@ -504,7 +495,7 @@ def main():
                     t_end = min(t_start + chunk_size, total_steps)
                     actual_steps = t_end - t_start
                     
-                    x_chunk = x_emb[:, t_start:t_end, :] # (Batch, Steps, Neurons)
+                    x_chunk = x_dilated[:, t_start:t_end] # (Batch, Steps) indices
                     y_chunk = y_flat[t_start*BATCH_SIZE : t_end*BATCH_SIZE] # y_flat is (Batch*Steps), careful!
                     # Wait, y_flat = y_dilated.reshape(-1).
                     # y_dilated is (Batch, TotalSteps).
@@ -540,7 +531,7 @@ def main():
             else:
                 # Standard Full Sequence Training
                 loss = trainer.train_batch(
-                    x_emb, 
+                    x_dilated, 
                     y_flat, 
                     thinking_steps=total_steps, 
                     full_sequence=True, 
