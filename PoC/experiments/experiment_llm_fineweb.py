@@ -20,10 +20,10 @@ from realnet import RealNet, RealNetTrainer, save_checkpoint, load_checkpoint, t
 torch.set_float32_matmul_precision('high')
 
 # --- CONFIGURATION ---
-TRUNCATED_BPTT_STEPS = 16 # Set to -1 to disable
+TRUNCATED_BPTT_STEPS = 32 # Set to -1 to disable
 GENERATION_LENGTH = 1024
 # Short sequence in full BPTT, long sequence in truncated BPTT.
-SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 64
+SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 128
 BATCH_SIZE = 512 # Adjusted for larger SEQ_LEN/Memory
 STEPS_PER_EPOCH = 10 # Number of batches per "Epoch" (for logging/saving)
 LOG_INTERVAL = 1 # Print loss every N batches
