@@ -4,7 +4,7 @@ import torch.utils.checkpoint as checkpoint
 import numpy as np
 
 class RealNet(nn.Module):
-    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='orthogonal', activation='tanh', gradient_checkpointing=False):
+    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='orthogonal', gate_init=None, activation='tanh', gradient_checkpointing=False):
         super(RealNet, self).__init__()
         
         # Auto size to input and output
@@ -50,10 +50,14 @@ class RealNet(nn.Module):
             # SwiGLU requires a secondary Gate Matrix
             self.W_gate = nn.Parameter(torch.empty(num_neurons, num_neurons, device=device))
             self.B_gate = nn.Parameter(torch.zeros(num_neurons, device=device))
-            self._init_weights_gate(weight_init)
+            self._init_weights_gate(gate_init if gate_init is not None else weight_init)
             self.act = nn.SiLU() # Swish part of SwiGLU
         else:
              raise ValueError(f"Unknown activation function: {activation}")
+
+        # Inform user if gate_init is provided but not used
+        if gate_init is not None and not self.is_swiglu:
+             print(f"RealNet Info: 'gate_init' parameter ('{gate_init}') is ignored because activation is '{activation}'.")
 
         self.drop = nn.Dropout(p=dropout_rate) # Biological Failure Simulation
 

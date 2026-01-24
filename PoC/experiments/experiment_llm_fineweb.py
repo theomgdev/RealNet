@@ -268,6 +268,7 @@ def initialize_system(vocab_size, num_neurons, device, lr=1e-4, activation='gelu
         dropout_rate=0.0,
         activation=activation, # Logic/Gating
         weight_init='quiet',
+        gate_init='quiet',
         gradient_checkpointing=True  # Save VRAM
     )
     
