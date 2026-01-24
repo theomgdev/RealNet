@@ -34,7 +34,7 @@ THINK_GAP = 5 # Number of silence steps between bytes
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # NEUROGENESIS CONFIG
-MAX_LOSS_INCREASE = 1
+MAX_LOSS_INCREASE = 10
 NEUROGENESIS_AMOUNT = 10
 
 # Byte-Level Vocabulary (0-255) to support all languages (Chinese, etc.)
@@ -267,7 +267,7 @@ def initialize_system(vocab_size, num_neurons, device, lr=1e-4, activation='gelu
         device=device,
         dropout_rate=0.0,
         activation=activation, # Logic/Gating
-        weight_init='quiet',
+        weight_init='orthogonal',
         gate_init='quiet',
         gradient_checkpointing=True  # Save VRAM
     )
