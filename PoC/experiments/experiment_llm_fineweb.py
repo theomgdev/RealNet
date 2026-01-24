@@ -40,12 +40,12 @@ NEUROGENESIS_AMOUNT = 10
 # Byte-Level Vocabulary (0-255) to support all languages (Chinese, etc.)
 VOCAB_SIZE = 256
 RESET_OPTIMIZER_ON_LOAD = False # Set True to discard optimizer state (Cold Restart)
-LEARNING_RATE = 1e-7
+LEARNING_RATE = 1e-4
 
 # --- SCHEDULER CONFIG ---
 USE_SCHEDULER = True
-SCHEDULER_T0 = 1000        # Steps before first restart (~2-3 epochs)
-SCHEDULER_ETA_MIN = 1e-8  # Minimum LR before restart
+SCHEDULER_T0 = 100        # Steps before first restart (~2-3 epochs)
+SCHEDULER_ETA_MIN = 1e-6  # Minimum LR before restart
 
 CHAR_TO_IDX = {i: i for i in range(256)} # Identity map for bytes
 IDX_TO_CHAR = {i: i for i in range(256)}
