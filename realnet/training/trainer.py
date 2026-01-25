@@ -218,12 +218,12 @@ class RealNetTrainer:
         """
         return SynapticPruner.prune(self.model, threshold)
 
-    def regenerate_synapses(self, threshold=0.01):
+    def regenerate_synapses(self, threshold=0.01, percentage=None):
         """
         Triggers synaptic regeneration (Darwinian Revive) on weak connections.
-        Re-initializes weights below threshold instead of pruning them.
+        Re-initializes weights below threshold (or bottom percentage) instead of pruning them.
         """
-        revived, total = self.model.regenerate_weak_weights(threshold)
+        revived, total = self.model.regenerate_weak_weights(threshold, percentage)
         return revived, total
 
     def fit(self, input_features, target_values, epochs, batch_size=32, thinking_steps=10, verbose=True, pruning_threshold=0.0):

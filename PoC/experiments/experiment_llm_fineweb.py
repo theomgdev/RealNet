@@ -31,8 +31,11 @@ MAX_LOSS_INCREASE = 10
 NEUROGENESIS_AMOUNT = 10
 
 # REGENERATION CONFIG (PHOENIX)
+# REGENERATION CONFIG (PHOENIX)
 DARWINIAN_REGENERATION = True
+REGENERATION_MODE = 'percentage' # 'threshold' or 'percentage'
 REGENERATION_THRESHOLD = 0.01
+REGENERATION_PERCENTAGE = 0.01 # Regenerate bottom 1%
 REGENERATION_INTERVAL = 5 # Epochs between regeneration checks
 
 # OPTIMIZER CONFIG
@@ -536,7 +539,12 @@ def main():
         # --- REGENERATION CONTROL (PHOENIX) ---
         if DARWINIAN_REGENERATION and epoch % REGENERATION_INTERVAL == 0:
             print(f"🔥 Phoenix Protocol: Checking for dead synapses...")
-            revived, total = trainer.regenerate_synapses(REGENERATION_THRESHOLD)
+            
+            p_arg = REGENERATION_PERCENTAGE if REGENERATION_MODE == 'percentage' else None
+            t_arg = REGENERATION_THRESHOLD
+
+            revived, total = trainer.regenerate_synapses(threshold=t_arg, percentage=p_arg)
+            
             if revived > 0:
                 print(f"🔥 Reborn: {revived}/{total} ({revived/total:.2%}) synapses regenerated.")
                 prev_loss = float('inf')

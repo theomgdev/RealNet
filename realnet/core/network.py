@@ -107,21 +107,32 @@ class RealNet(nn.Module):
                 # Default fallback for Gates usually
                 nn.init.uniform_(tensor, -0.1, 0.1)
 
-    def regenerate_weak_weights(self, threshold=0.01):
+    def regenerate_weak_weights(self, threshold=0.01, percentage=None):
         """
-        Darwinian Regeneration: Re-initializes weights purely based on magnitude.
-        If abs(W) < threshold, it is considered dead/weak and is re-rolled.
+        Darwinian Regeneration (Phoenix Protocol).
+        Re-initializes weights based on magnitude.
+        
+        Args:
+            threshold (float): Absolute value usage threshold. (Used if percentage is None)
+            percentage (float): If provided (0.0 < p < 1.0), regenerates the bottom p% of weights.
+                                E.g., 0.05 will regenerate the weakest 5% of connections.
         """
         with torch.no_grad():
             # 1. Main Weights
+            
+            # Determine Threshold dynamically if percentage is active
+            current_threshold = threshold
+            if percentage is not None:
+                # Calculate the quantile value (e.g. the value at 10%)
+                # We use abs() because we care about magnitude strength
+                current_threshold = torch.quantile(torch.abs(self.W), percentage).item()
+
             # Create a full fresh tensor
             fresh_W = torch.empty_like(self.W)
             self._apply_init(fresh_W, self.weight_init_strategy)
             
             # Find weak spots
-            # We check raw magnitude, assuming no pruning mask is applied permanently yet,
-            # or we are reviving pruned ones. 
-            weak_mask = torch.abs(self.W) < threshold
+            weak_mask = torch.abs(self.W) < current_threshold
             
             # Transplant fresh cells into weak spots
             count = weak_mask.sum().item()
@@ -131,10 +142,15 @@ class RealNet(nn.Module):
             # 2. Gate Weights (if SwiGLU)
             gate_count = 0
             if self.is_swiglu:
+                # Recalculate dynamic threshold for Gate independently if percentage mode
+                gate_threshold = threshold
+                if percentage is not None:
+                    gate_threshold = torch.quantile(torch.abs(self.W_gate), percentage).item()
+                
                 fresh_gate = torch.empty_like(self.W_gate)
                 self._apply_init(fresh_gate, self.gate_init_strategy)
                 
-                weak_gate_mask = torch.abs(self.W_gate) < threshold
+                weak_gate_mask = torch.abs(self.W_gate) < gate_threshold
                 gate_count = weak_gate_mask.sum().item()
                 
                 if gate_count > 0:

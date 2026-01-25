@@ -174,7 +174,9 @@ RealNet can evolve. By calling `prune_synapses()` during training, the network k
 Instead of just killing weak connections, RealNet can **revive** them.
 *   **Concept**: A weight near 0 is contributing nothing. By randomizing it (Re-init), it gets a second chance to find a useful feature.
 *   **Benefit**: Maximizes parameter efficiency. The network becomes a living organism where cells (synapses) constantly die and are reborn, ensuring 100% of the capacity is always searching for a solution.
-*   **Usage**: Call `trainer.regenerate_synapses(threshold=0.01)` periodically during training.
+*   **Usage**: 
+    *   **Threshold Mode**: `trainer.regenerate_synapses(threshold=0.01)` (Revive if abs(w) < 0.01)
+    *   **Percent Mode**: `trainer.regenerate_synapses(percentage=0.05)` (Revive bottom 5% of weights dynamically)
 
 The `realstore` module provides checkpoint management utilities, including a unique **Weight Transplantation** feature for transferring learned knowledge between models of different sizes.
 
