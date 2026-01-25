@@ -299,7 +299,8 @@ def calculate_optimal_batch_size(device, num_neurons, activation, seq_len, think
         # 2. Estimate Memory Per Sample
         # Heuristic Constants (Empirical for RealNet/RNNs)
         # Bytes per neuron per step (FP16/BF16 Activations + Grads)
-        BYTES_PER_NEURON_STEP = 12 # 2 (val) + 2 (grad) + 8 (overheads/optimizer state per param amortized)
+        # 4 (val+grad) + 4 (overhead) = 8.
+        BYTES_PER_NEURON_STEP = 8 
         
         if activation == 'swiglu':
             BYTES_PER_NEURON_STEP *= 1.5 # Gate overhead
