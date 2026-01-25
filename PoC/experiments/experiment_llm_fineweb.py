@@ -16,7 +16,7 @@ torch.set_float32_matmul_precision('high')
 # --- CONFIGURATION ---
 TRUNCATED_BPTT_STEPS = 32
 GENERATION_LENGTH = 1024
-SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 128
+SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 4096
 BATCH_SIZE = -1
 STEPS_PER_EPOCH = 10 
 LOG_INTERVAL = 1 
@@ -111,8 +111,6 @@ class FineWebIterableDataset(torch.utils.data.IterableDataset):
     @property
     def idx_to_char(self):
         return IDX_TO_CHAR
-
-
 
 def prepare_inputs_dilated(x, gap, device=None):
     """Inserts silence tokens (-1) between input tokens."""
