@@ -8,7 +8,7 @@ import time
 import random
 
 # --- ENVIRONMENT & IMPORTS ---
-# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from realnet import RealNet, RealNetTrainer, save_checkpoint, load_checkpoint, transplant_weights
 
 torch.set_float32_matmul_precision('high')
