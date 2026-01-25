@@ -516,8 +516,6 @@ def main():
                 
         avg_loss = total_loss / steps
         print(f"Epoch {epoch} Completed | Avg Loss: {avg_loss:.4f} | Time: {time.time() - start_time:.1f}s")
-
-
         
         # --- PERIODIC GENERATION ---
         print("--- GENERATION ---")
