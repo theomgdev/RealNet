@@ -5,71 +5,68 @@ import numpy as np
 import sys
 import os
 import time
-import os
 import random
 
-# --- PRE-IMPORT CONFIG ---
-# Remove comment below to disable bitsandbytes 8-bit Optimizer globally (Use Standard AdamW)
-# os.environ["NO_BNB"] = "1" 
-
-# Adjust path to import realnet
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+# --- ENVIRONMENT & IMPORTS ---
+# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from realnet import RealNet, RealNetTrainer, save_checkpoint, load_checkpoint, transplant_weights
 
-# 🚀 ENABLE TF32 (Tensor Cores)
 torch.set_float32_matmul_precision('high')
 
 # --- CONFIGURATION ---
-TRUNCATED_BPTT_STEPS = 32 # Set to -1 to disable
+TRUNCATED_BPTT_STEPS = 32
 GENERATION_LENGTH = 1024
-# Short sequence in full BPTT, long sequence in truncated BPTT.
 SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 128
-BATCH_SIZE = -1 # Adjusted for larger SEQ_LEN/Memory
-STEPS_PER_EPOCH = 10 # Number of batches per "Epoch" (for logging/saving)
-LOG_INTERVAL = 1 # Print loss every N batches
-MAX_START_SKIP = 1000 # Randomly skip up to N documents at start
-NUM_NEURONS = -1 # Auto-size to Input+Output (Min 512)
-ACTIVATION = 'gelu' # 'gelu' (Standard) or 'swiglu' (Gated, slower but smarter)
-THINK_GAP = 5 # Number of silence steps between bytes
+BATCH_SIZE = -1
+STEPS_PER_EPOCH = 10 
+LOG_INTERVAL = 1 
+MAX_START_SKIP = 1000 
+NUM_NEURONS = -1
+ACTIVATION = 'gelu' 
+THINK_GAP = 5 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # NEUROGENESIS CONFIG
 MAX_LOSS_INCREASE = 10
 NEUROGENESIS_AMOUNT = 10
 
-# Byte-Level Vocabulary (0-255) to support all languages (Chinese, etc.)
+# OPTIMIZER CONFIG
 VOCAB_SIZE = 256
-RESET_OPTIMIZER_ON_LOAD = False # Set True to discard optimizer state (Cold Restart)
+RESET_OPTIMIZER_ON_LOAD = False 
 LEARNING_RATE = 1e-4
 
-# --- SCHEDULER CONFIG ---
+# SCHEDULER CONFIG
 USE_SCHEDULER = True
-SCHEDULER_T0 = 100        # Steps before first restart
-SCHEDULER_ETA_MIN = 1e-6  # Minimum LR before restart
+SCHEDULER_T0 = 100
+SCHEDULER_ETA_MIN = 1e-6 
 
-CHAR_TO_IDX = {i: i for i in range(256)} # Identity map for bytes
+CHAR_TO_IDX = {i: i for i in range(256)} 
 IDX_TO_CHAR = {i: i for i in range(256)}
 
 # --- DATASET ---
 from datasets import load_dataset
 
 class FineWebIterableDataset(torch.utils.data.IterableDataset):
-    def __init__(self, seq_len, debug=False):
+    def __init__(self, seq_len, skip_offset=0, debug=False):
         self.seq_len = seq_len
+        self.skip_offset = skip_offset
         self.debug = debug
-        # Streaming load - instant startup
         print("🌊 Connecting to FineWeb-Edu (CC-MAIN-2024-10)...")
         self.dataset = load_dataset("HuggingFaceFW/fineweb-edu", name="CC-MAIN-2024-10", split="train", streaming=True)
         
     def __iter__(self):
-        # Random skip to vary the starting point each run
-        skip_n = random.randint(0, MAX_START_SKIP)
-        self.current_doc_index = 0
+        start_skip = self.skip_offset
         
-        if skip_n > 0:
-            print(f"🔀 Skipping {skip_n} documents to randomize start...")
-            iterator = iter(self.dataset.skip(skip_n))
-            self.current_doc_index = skip_n
+        if start_skip == 0:
+             start_skip = random.randint(0, MAX_START_SKIP)
+             print(f"🔀 Random Start: Skipping {start_skip} documents...")
+        else:
+             print(f"⏩ Resuming from Document #{start_skip}...")
+
+        self.current_doc_index = start_skip
+        
+        if start_skip > 0:
+            iterator = iter(self.dataset.skip(start_skip))
         else:
             iterator = iter(self.dataset)
             
@@ -84,11 +81,9 @@ class FineWebIterableDataset(torch.utils.data.IterableDataset):
                     if self.debug and self.current_doc_index % 1000 == 0:
                         print(f"📊 Streaming Index: Document #{self.current_doc_index}")
                     text = item.get('text', '')
-                    # Encode to bytes (UTF-8)
                     new_bytes = text.encode('utf-8', errors='replace') + b" " 
                     buffer_bytes += new_bytes
                 except StopIteration:
-                    # Reset if end of stream
                     iterator = iter(self.dataset)
                     self.current_doc_index = 0
 
@@ -96,7 +91,6 @@ class FineWebIterableDataset(torch.utils.data.IterableDataset):
             chunk_bytes = buffer_bytes[:self.seq_len + 1]
             buffer_bytes = buffer_bytes[self.seq_len + 1:] 
             
-            # Encode (Already bytes, just list inputs)
             indices = list(chunk_bytes)
             
             if len(indices) == self.seq_len + 1:
@@ -116,18 +110,13 @@ class FineWebIterableDataset(torch.utils.data.IterableDataset):
         return IDX_TO_CHAR
 
 def prepare_inputs_dilated(x, gap, device=None):
-    # x: (Batch, Seq) indices
-    # Returns: (Batch, TotalSteps) indices with -1 as silence
+    """Inserts silence tokens (-1) between input tokens."""
     target_device = device if device is not None else x.device
-    
     batch_size, seq_len = x.shape
     total_steps = seq_len * (gap + 1)
     
-    # Init with -1 (Silence)
-    # This tensor is ~1000x smaller than the one-hot version
     x_dilated = torch.full((batch_size, total_steps), -1, dtype=torch.long, device=target_device)
     
-    # Place indices at dilated intervals
     for t in range(seq_len):
         step_idx = t * (gap + 1)
         x_dilated[:, step_idx] = x[:, t].to(target_device)
@@ -135,18 +124,12 @@ def prepare_inputs_dilated(x, gap, device=None):
     return x_dilated
 
 def prepare_targets_dilated(y, gap, device=None):
-    # y: (Batch, Seq)
+    """Aligns targets to the end of thinking gaps."""
     target_device = device if device is not None else y.device
-    
     batch_size, seq_len = y.shape
     total_steps = seq_len * (gap + 1)
     
-    # Init with -100 (Ignore Index for CrossEntropy)
     y_dilated = torch.full((batch_size, total_steps), -100, dtype=torch.long, device=target_device)
-    
-    # Place Targets
-    # If GAP=5: Input at 0. Silence 1-5. Target at 5 (end of thinking).
-    # Logic: By the time we reach step 5 (before next input at 6), we should know the answer.
     
     for t in range(seq_len):
         target_step = t * (gap + 1) + gap
@@ -156,89 +139,57 @@ def prepare_targets_dilated(y, gap, device=None):
     return y_dilated
 
 def generate(model, dataset, start_str="The", length=None, temperature=0.8, top_k=40, top_p=0.9):
-    """
-    Generates text using the model with modern sampling techniques.
-    
-    Args:
-        model: The RealNet model.
-        dataset: The dataset (for vocab info).
-        start_str: The prompt string.
-        length: Length of text to generate (bytes).
-        temperature: Controls randomness (1.0 = normal, <1.0 = conservative, >1.0 = creative).
-        top_k: Filters to the top K most likely tokens.
-        top_p: Nucleus sampling - filters to the smallest set of tokens comprising probability P.
-    """
     if length is None:
         length = GENERATION_LENGTH
         
     model.eval()
     
-    # Init from text -> bytes
     input_bytes = start_str.encode('utf-8', errors='replace')
     input_seq = list(input_bytes)
     
     current_state = None
     
-    # 1. Warm up state with the prompt
-    x_in = torch.tensor(input_seq, dtype=torch.long, device=model.device).unsqueeze(0) # (1, Seq)
+    # Warm up state
+    x_in = torch.tensor(input_seq, dtype=torch.long, device=model.device).unsqueeze(0)
     x_dilated = prepare_inputs_dilated(x_in, THINK_GAP, device=model.device)
     
     generated_bytes = bytearray(input_bytes)
     
     with torch.no_grad():
-        # Run full context
         _, current_state = model(x_dilated, steps=x_dilated.shape[1])
         
-        # 2. Generate new bytes
         last_byte_idx = input_seq[-1]
         
         for _ in range(length):
-            # A. Prepare Input (Single Byte + Gap)
             total_step_single = 1 + THINK_GAP
             
-            # Input Vector at t=0
             x_next = torch.full((1, total_step_single), -1, dtype=torch.long, device=model.device)
             x_next[0, 0] = last_byte_idx
             
-            # B. Run Model
             preds, current_state = model(x_next, steps=total_step_single, current_state=current_state)
+            logits = preds[THINK_GAP, 0, model.output_ids]
             
-            # C. Extract Prediction
-            logits = preds[THINK_GAP, 0, model.output_ids] # (VocabSize 256)
-            
-            # --- SAMPLING LOGIC ---
-            
-            # 1. Temperature
+            # Sampling logic
             if temperature > 0:
                 logits = logits / temperature
             
-            # 2. Top-K Filter
             if top_k is not None and top_k > 0:
-                # Keep only top_k, mask others with -inf
                 v, _ = torch.topk(logits, min(top_k, len(logits)))
-                pivot = v[-1] # Smallest allowed value
-                logits[logits < pivot] = float('-inf')
+                logits[logits < v[-1]] = float('-inf')
                 
-            # 3. Top-P (Nucleus) Filter
             if top_p is not None and top_p > 0 and top_p < 1.0:
                 sorted_logits, sorted_indices = torch.sort(logits, descending=True)
                 cumulative_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
                 
-                # Remove tokens with cumulative probability above the threshold
                 sorted_indices_to_remove = cumulative_probs > top_p
-                
-                # Shift the indices to the right to keep also the first token above the threshold
                 sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
                 sorted_indices_to_remove[..., 0] = 0
                 
-                # Scatter sorted indices to original indices
                 indices_to_remove = sorted_indices_to_remove.scatter(0, sorted_indices, sorted_indices_to_remove)
                 logits[indices_to_remove] = float('-inf')
             
-            # D. Sample
             probs = torch.softmax(logits, dim=0)
             
-            # Handle potential NaN/Inf if filtering was too aggressive (rare fallback)
             if torch.isnan(probs).any() or torch.sum(probs) == 0:
                 probs = torch.ones_like(probs) / len(probs)
                 
@@ -247,16 +198,12 @@ def generate(model, dataset, start_str="The", length=None, temperature=0.8, top_
             generated_bytes.append(next_idx)
             last_byte_idx = next_idx
             
-    # Decode bytes to string
     try:
         return generated_bytes.decode('utf-8', errors='replace')
     except:
         return str(generated_bytes)
 
 def initialize_system(vocab_size, num_neurons, device, lr=1e-4, activation='gelu'):
-    """
-    Creates the Model and Trainer instances.
-    """
     input_ids = list(range(vocab_size))
     output_ids = list(range(vocab_size, 2 * vocab_size))
     
@@ -266,9 +213,9 @@ def initialize_system(vocab_size, num_neurons, device, lr=1e-4, activation='gelu
         output_ids=output_ids,
         device=device,
         dropout_rate=0.0,
-        activation=activation, # Logic/Gating
+        activation=activation,
         weight_init='orthogonal',
-        gradient_checkpointing=True  # Save VRAM
+        gradient_checkpointing=True
     )
     
     trainer = RealNetTrainer(model, lr=lr, device=device, gradient_persistence=0.5, synaptic_noise=0)
@@ -276,58 +223,37 @@ def initialize_system(vocab_size, num_neurons, device, lr=1e-4, activation='gelu
     return model, trainer, input_ids, output_ids
 
 def calculate_optimal_batch_size(device, num_neurons, activation, seq_len, think_gap, truncated_bptt_steps):
-    """
-    Calculates the optimal batch size based on available VRAM and model complexity.
-    Returns: Optimal batch size (int)
-    """
+    """Calculates optimal batch size based on VRAM capacity."""
     print("\n⚖️  Auto-Tuning Batch Size...")
     
     if device == 'cpu':
-        print("   ⚠️ CUDA not found. Defaulting to 32 for CPU.")
         return 32
         
     if device == 'cuda':
-        # 1. Get VRAM Info
         t = torch.cuda.get_device_properties(0).total_memory
-        # r = torch.cuda.memory_reserved(0) # Unused
         a = torch.cuda.memory_allocated(0)
         free_vram = t - a 
         
         print(f"   VRAM Total: {t / 1e9:.2f} GB")
         print(f"   VRAM Free:  {free_vram / 1e9:.2f} GB (Allocated: {a / 1e9:.2f} GB)")
         
-        # 2. Estimate Memory Per Sample
-        # Heuristic Constants (Empirical for RealNet/RNNs)
-        # Bytes per neuron per step (FP16/BF16 Activations + Grads)
-        # 4 (val+grad) + 8 (overhead) = 12.
+        # Heuristic: Bytes per neuron per step (FP16 Activations + Grads + Overhead)
         BYTES_PER_NEURON_STEP = 12 
         
         if activation == 'swiglu':
-            BYTES_PER_NEURON_STEP *= 1.5 # Gate overhead
+            BYTES_PER_NEURON_STEP *= 1.5 
         
-        # Effective Backprop Length (Memory bottleneck)
-        # If Truncated BPTT is active, the gradient graph is only as deep as the truncation window.
         if truncated_bptt_steps > 0:
             effective_mem_len = truncated_bptt_steps * (think_gap + 1)
         else:
-            total_seq_steps = seq_len * (think_gap + 1)
-            effective_mem_len = total_seq_steps
+            effective_mem_len = seq_len * (think_gap + 1)
             
         mem_per_sample = effective_mem_len * num_neurons * BYTES_PER_NEURON_STEP
-        
-        # Add Safety Buffer 
-        # We target utilizing ~85% of FREE memory to allow for fragmentation and temp buffers.
         safe_vram = free_vram * 0.85 
         
-        if mem_per_sample == 0:
-             calc_batch = 1 # Avoid div by zero safety
-        else:
-             calc_batch = int(safe_vram / mem_per_sample)
-        
-        # Clamp
+        calc_batch = int(safe_vram / mem_per_sample) if mem_per_sample > 0 else 1
         calc_batch = max(1, calc_batch)
         
-        # Round down to nearest 8 for tensor core alignment
         if calc_batch > 8:
             calc_batch = (calc_batch // 8) * 8
             
@@ -335,7 +261,7 @@ def calculate_optimal_batch_size(device, num_neurons, activation, seq_len, think
         print(f"   Optimal Batch Size: {calc_batch}")
         
         return calc_batch
-    return 32 # Fallback
+    return 32
 
 def main():
     global NUM_NEURONS, BATCH_SIZE # Allow updating global config if needed
@@ -359,16 +285,34 @@ def main():
     print(f"LEARNING_RATE: {LEARNING_RATE}")
     print(f"---------------------")
     
-    dataset = FineWebIterableDataset(SEQ_LEN, debug=True)
+    # --- CHECKPOINT PRE-LOAD (For Data Resume) ---
+    CKPT_DIR = os.path.join(os.path.dirname(__file__), 'ckpt')
+    os.makedirs(CKPT_DIR, exist_ok=True)
+    CKPT_PATH = os.path.join(CKPT_DIR, f'llm_fineweb_{ACTIVATION}_latest.pth')
+    CKPT_BEST_PATH = os.path.join(CKPT_DIR, f'llm_fineweb_{ACTIVATION}_best.pth')
+    
+    resume_doc_index = 0
+    start_epoch = 0
+    
+    # --- CHECKPOINT PRE-LOAD (Dataset Resume) ---
+    if os.path.exists(CKPT_PATH):
+        try:
+             peek = torch.load(CKPT_PATH, map_location='cpu')
+             resume_doc_index = peek.get('dataset_step', 0)
+             if resume_doc_index > 0:
+                 print(f"📂 Resuming dataset from index: {resume_doc_index}")
+             
+             start_epoch = peek.get('epoch', -1) + 1
+        except:
+             pass
+
+    dataset = FineWebIterableDataset(SEQ_LEN, skip_offset=resume_doc_index, debug=True)
     
     # --- MODEL SETUP ---
-    # Need model first to know Num Neurons for Batch Size Calculation
     model, trainer, input_ids, output_ids = initialize_system(dataset.get_vocab_size(), NUM_NEURONS, DEVICE, LEARNING_RATE, ACTIVATION)
-    
-    # Update global config with actual model size (if it was auto-sized)
     NUM_NEURONS = model.num_neurons
     
-    # --- AUTO BATCH SIZE CALCULATION ---
+    # --- BATCH SIZE OPTIMIZATION ---
     if BATCH_SIZE == -1:
          BATCH_SIZE = calculate_optimal_batch_size(
              DEVICE, 
@@ -393,13 +337,7 @@ def main():
     print(f"Input IDs: {input_ids[0]}-{input_ids[-1]}")
     print(f"Output IDs: {output_ids[0]}-{output_ids[-1]}")
     
-    # --- CHECKPOINT SETUP (Using RealStore) ---
-    CKPT_DIR = os.path.join(os.path.dirname(__file__), 'ckpt')
-    os.makedirs(CKPT_DIR, exist_ok=True)
-    CKPT_PATH = os.path.join(CKPT_DIR, f'llm_fineweb_{ACTIVATION}_latest.pth')
-    CKPT_BEST_PATH = os.path.join(CKPT_DIR, f'llm_fineweb_{ACTIVATION}_best.pth')
-    
-    start_epoch = 0
+    # --- CHECKPOINT LOADING (Full) ---
     if os.path.exists(CKPT_PATH):
         # Pre-check dimensions to handle mismatches interactively
         try:
@@ -409,55 +347,41 @@ def main():
                 
                 if saved_dim != NUM_NEURONS:
                     print(f"\n⚠️ ARCHITECTURE MISMATCH DETECTED!")
-                    print(f"   Current Model: {NUM_NEURONS} neurons")
-                    print(f"   Checkpoint:    {saved_dim} neurons")
+                    print(f"   Current Model: {NUM_NEURONS}")
+                    print(f"   Checkpoint:    {saved_dim}")
                     
                     print("Select action:")
-                    print("[1] Change Model Size to Match File (Resume Training)")
-                    print("[2] Transplant Weights (Adapt to New Size)")
-                    print("[3] Start from scratch (Ignore Checkpoint)")
+                    print("[1] Resize Model (Resume)")
+                    print("[2] Transplant Weights (Adapt)")
+                    print("[3] Start Fresh")
                     action = input("Choice [1/2/3]: ").strip()
                     
                     if action == '1':
-                        print(f"🔄 Resizing model to {saved_dim} neurons...")
+                        print(f"🔄 Resizing to {saved_dim}...")
                         NUM_NEURONS = saved_dim 
-                        
-                        # CLEAN RE-INIT using helper
                         model, trainer, _, _ = initialize_system(dataset.get_vocab_size(), NUM_NEURONS, DEVICE, LEARNING_RATE, ACTIVATION)
-                        
-                        # Now load strictly
                         opt_arg = None if RESET_OPTIMIZER_ON_LOAD else trainer.optimizer
-                        if RESET_OPTIMIZER_ON_LOAD:
-                            print("⚠️ RESET_OPTIMIZER_ON_LOAD is True. Discarding saved optimizer state.")
-                            
-                        checkpoint = load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True)
-                        start_epoch = checkpoint['epoch'] + 1
+                        load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True)
                         print(f"✅ Resuming from Epoch {start_epoch}")
                         
                     elif action == '2':
-                        print(f"⚠️ Proceeding with Weight Transplantation...")
+                        print(f"⚠️ Transplanting Weights...")
                         transplant_weights(model, CKPT_PATH, device=DEVICE)
-                        print(f"🧬 Transplant complete. Starting from Epoch 0 with warm weights.")
+                        print(f"🧬 Transplant complete.")
                     
                     else:
-                        print("🆕 Starting from scratch (Checkpoint ignored).")
+                        print("🆕 Starting fresh.")
+                        start_epoch = 0 
+                        dataset.skip_offset = 0 
                         
                 else:
-                    # Dimensions match, standard load
                     opt_arg = None if RESET_OPTIMIZER_ON_LOAD else trainer.optimizer
-                    msg = " (Optimizer Reset)" if RESET_OPTIMIZER_ON_LOAD else ""
-                    print(f"🔄 Loading Checkpoint from {CKPT_PATH}{msg}...")
-                    
-                    checkpoint = load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True)
-                    start_epoch = checkpoint['epoch'] + 1
+                    print(f"🔄 Loading Checkpoint from {CKPT_PATH}...")
+                    load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True)
                     print(f"✅ Resuming from Epoch {start_epoch}")
             else:
-                 # Fallback
                  opt_arg = None if RESET_OPTIMIZER_ON_LOAD else trainer.optimizer
-                 msg = " (Optimizer Reset)" if RESET_OPTIMIZER_ON_LOAD else ""
-                 print(f"🔄 Loading Checkpoint from {CKPT_PATH}{msg}...")
-                 
-                 checkpoint = load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True)
+                 load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True)
                  start_epoch = checkpoint['epoch'] + 1
 
         except Exception as e:
@@ -471,123 +395,74 @@ def main():
     def flatten_logits(out):
         return out.reshape(-1, dataset.get_vocab_size())
 
-    # --- INITIAL GENERATION (Show current state) ---
-    # --- INITIAL GENERATION (Sampling Tests) ---
-    print("\n--- INITIAL GENERATION TESTS ---")
-    
-    test_prompts = [
-        ("Classic (Old Way)",          0, 0, 1),
-        ("Deterministic (Greedy)",     1e-5, 1,  1.0),
-        ("Standard (Balanced)",        1.0,  40, 0.9),
-        ("Creative (High Temp)",       1.2,  50, 0.95),
-        ("Precise (Low Temp)",         0.7,  20, 0.8),
-    ]
+    # --- INITIAL TESTS ---
+    print("\n--- GENERATION PREVIEW ---")
+    try:
+        gen_text = generate(model, dataset, start_str="The meaning of life is", length=100)
+        print(f"Sample: {gen_text}\n")
+    except Exception as e:
+        print(f"Error: {e}")
 
-    for name, t, k, p in test_prompts:
-        print(f"\n📝 {name}:")
-        try:
-            gen_text = generate(
-                model, 
-                dataset, 
-                start_str="The meaning of life is", 
-                length=256,
-                temperature=t, 
-                top_k=k, 
-                top_p=p
-            )
-            print(gen_text)
-        except Exception as e:
-            print(f"Error: {e}")
+    print("--- TRAINING LOOP ---")
     
-    print("------------------------------\n")
-
-    print("Training (Infinite)...")
-    
-    # Infinite Loop
     epoch = start_epoch
     prev_loss = float('inf')
-    
-    # Init Best Loss
+    loss_increase_counter = 0
     best_loss = float('inf')
+    
     if os.path.exists(CKPT_BEST_PATH):
         try:
-            # Quick peek to set best_loss baseline
             best_ckpt = torch.load(CKPT_BEST_PATH, map_location=DEVICE)
-            if 'loss' in best_ckpt:
-                best_loss = best_ckpt['loss']
-                print(f"🏆 Historical Best Loss: {best_loss:.4f}")
-        except Exception as e:
-            print(f"⚠️ Could not read best checkpoint: {e}")
-            
-    loss_increase_counter = 0
+            best_loss = best_ckpt.get('loss', float('inf'))
+            print(f"🏆 Historical Best Loss: {best_loss:.4f}")
+        except:
+            pass
 
-    # SCHEDULER (Config in Global Constants)
     scheduler = None
-
     if USE_SCHEDULER:
-        # Create Scheduler (Cosine Decay with Warm Restarts)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
             trainer.optimizer, 
             T_0=SCHEDULER_T0, 
             eta_min=SCHEDULER_ETA_MIN
         )
     
-    # Create persistent iterator to prevent data resetting every epoch
     data_iterator = iter(dataloader)
 
     while True:
         total_loss = 0
         steps = 0
-        
         start_time = time.time()
         
         for batch_idx in range(STEPS_PER_EPOCH):
             try:
                 x, y = next(data_iterator)
+                current_doc = dataset.current_doc_index 
             except StopIteration:
-                print("🔄 Dataset exhausted. Restarting iterator...")
+                print("🔄 Restarting iterator...")
                 data_iterator = iter(dataloader)
                 x, y = next(data_iterator)
-            # Dilate Data (Insert Silence)
+                current_doc = dataset.current_doc_index 
+
+            # Dilate Data
             x_dilated = prepare_inputs_dilated(x, THINK_GAP, device=DEVICE)
             y_dilated = prepare_targets_dilated(y, THINK_GAP, device=DEVICE)
-            y_flat = y_dilated.reshape(-1) # Already on DEVICE
+            y_flat = y_dilated.reshape(-1) 
             
-            # Total steps has increased due to dilation
             total_steps = x_dilated.shape[1]
             
             if TRUNCATED_BPTT_STEPS != -1 and TRUNCATED_BPTT_STEPS > 0:
-                # --- TRUNCATED BPTT ---
-                # We need to preserve state across chunks of the diluted sequence
-                # Note: SEQ_LEN is 4096 tokens, Dilation is * 6 (5+1). total_steps ~ 24k
-                # BPTT Steps should probably be in "Network Steps"
-                
                 current_state = None
                 batch_loss = 0
                 steps_count = 0
-                
-                # Chunk size in Network Steps
                 chunk_size = TRUNCATED_BPTT_STEPS 
                 
                 for t_start in range(0, total_steps, chunk_size):
                     t_end = min(t_start + chunk_size, total_steps)
                     actual_steps = t_end - t_start
                     
-                    x_chunk = x_dilated[:, t_start:t_end] # (Batch, Steps) indices
-                    y_chunk = y_flat[t_start*BATCH_SIZE : t_end*BATCH_SIZE] # y_flat is (Batch*Steps), careful!
-                    # Wait, y_flat = y_dilated.reshape(-1).
-                    # y_dilated is (Batch, TotalSteps).
-                    # Reshape(-1) does Row-Major (Batch 0 complete, then Batch 1...)
-                    # Correct slicing for Trainer expectance:
-                    # Generic Traing uses: loss = (pred - target).mean()
-                    # Predicted outputs (Batch, Steps, Out) -> OutputTransform -> (Batch*Steps, Out)
-                    # Target Values must match (Batch*Steps)
+                    x_chunk = x_dilated[:, t_start:t_end]
+                    y_chunk_flat = y_dilated[:, t_start:t_end].reshape(-1)
                     
-                    # Let's slice y_dilated properly first: (Batch, ChunkSteps)
-                    y_chunk_2d = y_dilated[:, t_start:t_end]
-                    y_chunk_flat = y_chunk_2d.reshape(-1)
-                    
-                    # Run Chunk
                     loss, current_state = trainer.train_batch(
                         x_chunk, 
                         y_chunk_flat, 
@@ -598,16 +473,13 @@ def main():
                         return_state=True
                     )
                     
-                    # Detach State (Truncate Gradient)
                     current_state = current_state.detach()
-                    
                     batch_loss += loss
                     steps_count += 1
                 
                 loss = batch_loss / max(steps_count, 1)
 
             else:
-                # Standard Full Sequence Training
                 loss = trainer.train_batch(
                     x_dilated, 
                     y_flat, 
@@ -616,74 +488,63 @@ def main():
                     output_transform=flatten_logits 
                 )
             
-            # Step Scheduler
+            # Scheduler Step
             current_lr = 0.0
             if USE_SCHEDULER and scheduler:
                 scheduler.step()
                 current_lr = scheduler.get_last_lr()[0]
             elif trainer.optimizer:
-                # If scheduler is off, just get fixed LR
                 current_lr = trainer.optimizer.param_groups[0]['lr']
             
             total_loss += loss
             steps += 1
             
             if batch_idx % LOG_INTERVAL == 0:
-                print(f"Epoch {epoch} | Batch {batch_idx} | Loss {loss:.4f} | LR {current_lr:.2e}")
+                print(f"Epoch {epoch} | Batch {batch_idx} | Doc #{current_doc} | Loss {loss:.4f} | LR {current_lr:.2e}")
                 
         avg_loss = total_loss / steps
         print(f"Epoch {epoch} Completed | Avg Loss: {avg_loss:.4f} | Time: {time.time() - start_time:.1f}s")
         
-        # --- STAGNATION / GROWTH CHECK ---
+        # --- NEUROGENESIS CONTROL ---
         if avg_loss > prev_loss:
             loss_increase_counter += 1
             print(f"⚠️ Loss Increased ({loss_increase_counter}/{MAX_LOSS_INCREASE})")
-        else:
-            # Optionally reset if we improve? 
-            # User instruction: "her 5 loss artışında" (every 5 increases).
-            # Strict interpretation: Count every increase. 
-            # If we just hit a bump, we count it. 
-            pass 
         
         if loss_increase_counter >= MAX_LOSS_INCREASE:
+            print(f"🧬 Expanding Network (Neurogenesis)...")
             trainer.expand(amount=NEUROGENESIS_AMOUNT)
             NUM_NEURONS = model.num_neurons
             loss_increase_counter = 0
-            
-            # Reset prev_loss to tolerate the "Cold Restart" spike (Momentum reset)
-            # This prevents a feedback loop of (Expand -> High Loss -> Expand -> ...)
             prev_loss = float('inf')
             
-            # RESET SCHEDULER (New Optimizer -> New Scheduler)
             if USE_SCHEDULER:
                 scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-                    trainer.optimizer, 
-                    T_0=SCHEDULER_T0, 
-                    eta_min=SCHEDULER_ETA_MIN
-                )
-            
+                    trainer.optimizer, T_0=SCHEDULER_T0, eta_min=SCHEDULER_ETA_MIN)
         else:
             prev_loss = avg_loss
         
-        # Generation Check (Reduced frequency if too slow, but user asked for param)
+        # --- PERIODIC GENERATION ---
         print("--- GENERATION ---")
         try:
-            # Generate short preview (100) first to not spam console
             gen_text = generate(model, dataset, start_str="The meaning of life is ")
             print(gen_text)
         except Exception as e:
             print(f"Generation Error: {e}")
         print("------------------")
         
-        # SAVE CHECKPOINT (Using RealStore)
-        save_checkpoint(model, trainer.optimizer, epoch, avg_loss, CKPT_PATH, extra_data={'initial_lr': trainer.initial_lr})
-        print(f"💾 Checkpoint Saved: {CKPT_PATH}")
+        # --- CHECKPOINT SAVING ---
+        ckpt_extra_data = {
+            'initial_lr': trainer.initial_lr,
+            'dataset_step': dataset.current_doc_index 
+        }
         
-        # SAVE BEST
+        save_checkpoint(model, trainer.optimizer, epoch, avg_loss, CKPT_PATH, extra_data=ckpt_extra_data)
+        print(f"💾 Checkpoint Saved: {CKPT_PATH} (Doc Index: {dataset.current_doc_index})")
+        
         if avg_loss < best_loss:
             best_loss = avg_loss
-            save_checkpoint(model, trainer.optimizer, epoch, avg_loss, CKPT_BEST_PATH, extra_data={'initial_lr': trainer.initial_lr})
-            print(f"🏆 NEW RECORD! Best Checkpoint Saved: {CKPT_BEST_PATH} (Loss: {best_loss:.4f})")
+            save_checkpoint(model, trainer.optimizer, epoch, avg_loss, CKPT_BEST_PATH, extra_data=ckpt_extra_data)
+            print(f"🏆 NEW RECORD! Saved: {CKPT_BEST_PATH} (Loss: {best_loss:.4f})")
         
         epoch += 1
 
