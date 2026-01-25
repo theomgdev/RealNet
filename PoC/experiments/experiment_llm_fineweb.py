@@ -14,9 +14,9 @@ from realnet import RealNet, RealNetTrainer, save_checkpoint, load_checkpoint, t
 torch.set_float32_matmul_precision('high')
 
 # --- CONFIGURATION ---
-TRUNCATED_BPTT_STEPS = 32
+TRUNCATED_BPTT_STEPS = 16
 GENERATION_LENGTH = 1024
-SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 128
+SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 64
 BATCH_SIZE = -1
 STEPS_PER_EPOCH = 10 
 LOG_INTERVAL = 1 
@@ -314,7 +314,7 @@ def main():
         except:
              pass
 
-    dataset = FineWebIterableDataset(SEQ_LEN, skip_offset=resume_doc_index, debug=True)
+    dataset = FineWebIterableDataset(SEQ_LEN, skip_offset=resume_doc_index, debug=False)
     
     # --- MODEL SETUP ---
     model, trainer, input_ids, output_ids = initialize_system(dataset.get_vocab_size(), NUM_NEURONS, DEVICE, LEARNING_RATE, ACTIVATION)
@@ -521,6 +521,7 @@ def main():
             revived, total = trainer.regenerate_synapses(REGENERATION_THRESHOLD)
             if revived > 0:
                 print(f"🔥 Reborn: {revived}/{total} ({revived/total:.2%}) synapses regenerated.")
+                prev_loss = float('inf')
 
         # --- NEUROGENESIS CONTROL ---
         if avg_loss > prev_loss:
