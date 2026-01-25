@@ -27,6 +27,7 @@ THINK_GAP = 5
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # NEUROGENESIS CONFIG
+NEUROGENESIS_ENABLED = False
 MAX_LOSS_INCREASE = 10
 NEUROGENESIS_AMOUNT = 10
 
@@ -546,22 +547,23 @@ def main():
             print(f"🏆 NEW RECORD! Saved: {CKPT_BEST_PATH} (Loss: {best_loss:.4f})")
         
         # --- NEUROGENESIS CONTROL ---
-        if avg_loss > prev_loss:
-            loss_increase_counter += 1
-            print(f"⚠️ Loss Increased ({loss_increase_counter}/{MAX_LOSS_INCREASE})")
-        
-        if loss_increase_counter >= MAX_LOSS_INCREASE:
-            print(f"🧬 Expanding Network (Neurogenesis)...")
-            trainer.expand(amount=NEUROGENESIS_AMOUNT)
-            NUM_NEURONS = model.num_neurons
-            loss_increase_counter = 0
-            prev_loss = float('inf')
+        if NEUROGENESIS_ENABLED:
+            if avg_loss > prev_loss:
+                loss_increase_counter += 1
+                print(f"⚠️ Loss Increased ({loss_increase_counter}/{MAX_LOSS_INCREASE})")
             
-            if USE_SCHEDULER:
-                scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-                    trainer.optimizer, T_0=SCHEDULER_T0, eta_min=SCHEDULER_ETA_MIN)
-        else:
-            prev_loss = avg_loss
+            if loss_increase_counter >= MAX_LOSS_INCREASE:
+                print(f"🧬 Expanding Network (Neurogenesis)...")
+                trainer.expand(amount=NEUROGENESIS_AMOUNT)
+                NUM_NEURONS = model.num_neurons
+                loss_increase_counter = 0
+                prev_loss = float('inf')
+                
+                if USE_SCHEDULER:
+                    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+                        trainer.optimizer, T_0=SCHEDULER_T0, eta_min=SCHEDULER_ETA_MIN)
+            else:
+                prev_loss = avg_loss
 
         # --- REGENERATION CONTROL (PHOENIX) ---
         if DARWINIAN_REGENERATION and epoch % REGENERATION_INTERVAL == 0:
