@@ -12,7 +12,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from realnet import RealNet, RealNetTrainer, save_checkpoint, load_checkpoint, transplant_weights
 
 torch.set_float32_matmul_precision('high')
- 
+
 # --- CONFIGURATION ---
 TRUNCATED_BPTT_STEPS = 32
 GENERATION_LENGTH = 1024
@@ -29,6 +29,11 @@ DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 # NEUROGENESIS CONFIG
 MAX_LOSS_INCREASE = 10
 NEUROGENESIS_AMOUNT = 10
+
+# REGENERATION CONFIG (PHOENIX)
+DARWINIAN_REGENERATION = True
+REGENERATION_THRESHOLD = 0.01
+REGENERATION_INTERVAL = 5 # Epochs between regeneration checks
 
 # OPTIMIZER CONFIG
 VOCAB_SIZE = 256
@@ -510,6 +515,13 @@ def main():
         avg_loss = total_loss / steps
         print(f"Epoch {epoch} Completed | Avg Loss: {avg_loss:.4f} | Time: {time.time() - start_time:.1f}s")
         
+        # --- REGENERATION CONTROL (PHOENIX) ---
+        if DARWINIAN_REGENERATION and epoch % REGENERATION_INTERVAL == 0:
+            print(f"🔥 Phoenix Protocol: Checking for dead synapses...")
+            revived, total = trainer.regenerate_synapses(REGENERATION_THRESHOLD)
+            if revived > 0:
+                print(f"🔥 Reborn: {revived}/{total} ({revived/total:.2%}) synapses regenerated.")
+
         # --- NEUROGENESIS CONTROL ---
         if avg_loss > prev_loss:
             loss_increase_counter += 1

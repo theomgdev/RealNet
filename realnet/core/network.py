@@ -19,6 +19,8 @@ class RealNet(nn.Module):
         self.activation_type = activation
         self.gradient_checkpointing = gradient_checkpointing
         self._device = device # Private variable for property
+        self.weight_init_strategy = weight_init
+        self.gate_init_strategy = gate_init
         
         # Initialization
         # W: N x N weights. Anyone can talk to anyone.
@@ -71,61 +73,77 @@ class RealNet(nn.Module):
              self.register_buffer('mask_gate', torch.ones(num_neurons, num_neurons, device=device))
 
     def _init_weights(self, strategy):
-        """
-        Applies requested weight initialization strategy.
-        """
-        with torch.no_grad():
-            if strategy == 'quiet':
-                nn.init.normal_(self.W, mean=0.0, std=0.02)
-            elif strategy == 'classic':
-                nn.init.normal_(self.W)
-            elif strategy == 'xavier_uniform':
-                nn.init.xavier_uniform_(self.W)
-            elif strategy == 'xavier_normal':
-                nn.init.xavier_normal_(self.W)
-            elif strategy == 'kaiming_uniform':
-                nn.init.kaiming_uniform_(self.W, mode='fan_in', nonlinearity='relu')
-            elif strategy == 'kaiming_normal':
-                nn.init.kaiming_normal_(self.W, mode='fan_in', nonlinearity='relu')
-            elif strategy == 'orthogonal':
-                nn.init.orthogonal_(self.W)
-            elif strategy == 'sparse':
-                nn.init.sparse_(self.W, sparsity=0.9, std=0.02)
-            elif strategy == 'zero':
-                nn.init.zeros_(self.W)
-            elif strategy == 'one':
-                nn.init.ones_(self.W)
-            else:
-                raise ValueError(f"Unknown weight_init strategy: {strategy}")
+        self._apply_init(self.W, strategy)
 
     def _init_weights_gate(self, strategy):
+        self._apply_init(self.W_gate, strategy)
+        
+    def _apply_init(self, tensor, strategy):
         """
-        Initializes the gate weights W_gate (same strategy).
+        Applies requested weight initialization strategy to a specific tensor.
         """
         with torch.no_grad():
             if strategy == 'quiet':
-                nn.init.normal_(self.W_gate, mean=0.0, std=0.02)
+                nn.init.normal_(tensor, mean=0.0, std=0.02)
             elif strategy == 'classic':
-                nn.init.normal_(self.W_gate)
+                nn.init.normal_(tensor)
             elif strategy == 'xavier_uniform':
-                nn.init.xavier_uniform_(self.W_gate)
+                nn.init.xavier_uniform_(tensor)
             elif strategy == 'xavier_normal':
-                nn.init.xavier_normal_(self.W_gate)
+                nn.init.xavier_normal_(tensor)
             elif strategy == 'kaiming_uniform':
-                nn.init.kaiming_uniform_(self.W_gate, mode='fan_in', nonlinearity='relu')
+                nn.init.kaiming_uniform_(tensor, mode='fan_in', nonlinearity='relu')
             elif strategy == 'kaiming_normal':
-                nn.init.kaiming_normal_(self.W_gate, mode='fan_in', nonlinearity='relu')
+                nn.init.kaiming_normal_(tensor, mode='fan_in', nonlinearity='relu')
             elif strategy == 'orthogonal':
-                nn.init.orthogonal_(self.W_gate)
+                nn.init.orthogonal_(tensor)
             elif strategy == 'sparse':
-                nn.init.sparse_(self.W_gate, sparsity=0.9, std=0.02)
+                nn.init.sparse_(tensor, sparsity=0.9, std=0.02)
             elif strategy == 'zero':
-                nn.init.zeros_(self.W_gate)
+                nn.init.zeros_(tensor)
             elif strategy == 'one':
-                nn.init.ones_(self.W_gate)
+                nn.init.ones_(tensor)
             else:
-                # Default fallback
-                nn.init.uniform_(self.W_gate, -0.1, 0.1)
+                # Default fallback for Gates usually
+                nn.init.uniform_(tensor, -0.1, 0.1)
+
+    def regenerate_weak_weights(self, threshold=0.01):
+        """
+        Darwinian Regeneration: Re-initializes weights purely based on magnitude.
+        If abs(W) < threshold, it is considered dead/weak and is re-rolled.
+        """
+        with torch.no_grad():
+            # 1. Main Weights
+            # Create a full fresh tensor
+            fresh_W = torch.empty_like(self.W)
+            self._apply_init(fresh_W, self.weight_init_strategy)
+            
+            # Find weak spots
+            # We check raw magnitude, assuming no pruning mask is applied permanently yet,
+            # or we are reviving pruned ones. 
+            weak_mask = torch.abs(self.W) < threshold
+            
+            # Transplant fresh cells into weak spots
+            count = weak_mask.sum().item()
+            if count > 0:
+                self.W.data[weak_mask] = fresh_W[weak_mask]
+            
+            # 2. Gate Weights (if SwiGLU)
+            gate_count = 0
+            if self.is_swiglu:
+                fresh_gate = torch.empty_like(self.W_gate)
+                self._apply_init(fresh_gate, self.gate_init_strategy)
+                
+                weak_gate_mask = torch.abs(self.W_gate) < threshold
+                gate_count = weak_gate_mask.sum().item()
+                
+                if gate_count > 0:
+                    self.W_gate.data[weak_gate_mask] = fresh_gate[weak_gate_mask]
+            
+            total_revived = count + gate_count
+            total_params = self.W.numel() + (self.W_gate.numel() if self.is_swiglu else 0)
+            
+            return total_revived, total_params
 
     def compile(self):
         """

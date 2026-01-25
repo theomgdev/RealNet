@@ -230,7 +230,26 @@ RealNet's vision capabilities were tested under four distinct conditions to prov
 *   **Script:** `PoC/experiments/convergence_mnist_alive.py`
 *   **Insight:** RealNet is organic. It grows and trims itself, optimizing energy efficiency while maintaining high intelligence.
 
-**3. The Tiny Challenge (Extreme Constraints)**
+**3. The Phoenix Experiment (Continuous Regeneration)**
+*   **Hypothesis:** Can we reach 100% parameter efficiency by **reviving** dead synapses (random re-initialization) instead of just killing them?
+*   **Result:** **95.2% Accuracy**.
+*   **Observations:**
+    *   Epoch 1: **22%** of the network was deemed "useless" and reborn.
+    *   Epoch 50: Rebirth rate dropped to **0.26%**.
+    *   Accuracy climbed from 50% to **95.2%** during this continuous surgery.
+    <details>
+    <summary>See Regeneration Log</summary>
+
+    ```text
+    Epoch 1: Acc 50.90% | Revived: 22.05% (Mass Extinction)
+    Epoch 5: Acc 87.50% | Revived: 1.13% (Stabilization)
+    Epoch 50: Acc 95.20% | Revived: 0.26% (Metabolic Balance)
+    ```
+    </details>
+*   **Script:** `PoC/experiments/convergence_mnist_revive.py`
+*   **Insight:** Unlike standard pruning which shrinks capacity, RealNet can maintain full capacity by constantly recycling weak connections. This allows for **Continuous Learning** (like in FineWeb) without saturation. "Bug became a Feature."
+
+**4. The Tiny Challenge (Extreme Constraints)**
 *   **Target:** 7x7 Downscaled MNIST. (Less than an icon).
 *   **Architecture:** **59 Neurons** total (~3.5k Parameters).
 *   **Result:** **~89.3% Accuracy**.

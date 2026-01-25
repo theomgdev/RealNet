@@ -229,7 +229,26 @@ RealNet'in görsel yetenekleri, sağlamlık, ölçeklenebilirlik ve verimliliği
 *   **Script:** `PoC/experiments/convergence_mnist_alive.py`
 *   **İçgörü:** RealNet organiktir. Kendini büyütür ve budar, yüksek zekayı korurken enerji verimliliğini optimize eder.
 
-**3. Tiny Challenge (Aşırı Kısıtlamalar)**
+**3. Anka Kuşu Deneyi (Sürekli Rejenerasyon)**
+*   **Hipotez:** Ölü sinapsları sadece öldürmek yerine **yeniden canlandırarak** (rastgele yeniden başlatma) %100 parametre verimliliğine ulaşabilir miyiz?
+*   **Sonuç:** **%95.2 Doğruluk**.
+*   **Gözlemler:**
+    *   Epoch 1: Ağın **%22'si** "işe yaramaz" kabul edildi ve yeniden doğdu.
+    *   Epoch 50: Yeniden doğuş oranı **%0.26'ya** düştü.
+    *   Doğruluk, bu sürekli cerrahi operasyon sırasında %50'den **%95.2'ye** tırmandı.
+    <details>
+    <summary>Rejenerasyon Logunu Gör</summary>
+
+    ```text
+    Epoch 1: Acc 50.90% | Revived: 22.05% (Kitlesel Yok Oluş)
+    Epoch 5: Acc 87.50% | Revived: 1.13% (Stabilizasyon)
+    Epoch 50: Acc 95.20% | Revived: 0.26% (Metabolik Denge)
+    ```
+    </details>
+*   **Script:** `PoC/experiments/convergence_mnist_revive.py`
+*   **İçgörü:** Kapasiteyi küçülten standart budamanın aksine, RealNet zayıf bağlantıları sürekli geri dönüştürerek tam kapasiteyi koruyabilir. Bu, doygunluk olmadan **Sürekli Öğrenmeyi** (FineWeb'deki gibi) mümkün kılar. "Hata, Özellik Oldu (Bug became a Feature)."
+
+**4. Tiny Challenge (Aşırı Kısıtlamalar)**
 *   **Hedef:** 7x7 Küçültülmüş MNIST. (Bir ikondan bile küçük).
 *   **Mimari:** **59 Nöron** toplam (~3.5k Parametre).
 *   **Sonuç:** **~%89.3 Doğruluk**.

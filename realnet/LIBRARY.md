@@ -133,9 +133,48 @@ Runs a single custom training step. Useful for custom loops (RL, Generative, etc
 Runs inference in evaluation mode.
 *   `full_sequence` (bool): If `True`, returns outputs for all time steps `(Batch, Steps, Out)`.
 
+#### `trainer.regenerate_synapses(threshold=0.01)`
+Triggers **Darwinian Regeneration**. Instead of pruning weak weights, this method **re-initializes** them.
+*   **Logic**: If $|W| < threshold$, the synapse is considered "dead/useless". It is wiped and assigned a new random value using the model's original initialization strategy (e.g., Xavier/Orthogonal).
+*   **Purpose**: Allows the network to escape local minima and constantly explore new pathways. Transforms "dead" capacity into "fresh" capacity.
+*   **Returns**: `(revived_count, total_synapses)`
+
 ---
 
-## 💾 RealStore (Checkpoint Utilities)
+## 🌟 Advanced Capabilities
+
+### 1. Space-Time Tradeoff (Thinking Steps)
+RealNet replaces layers with time. 
+*   **Standard NN**: 10 Layers = Fixed Depth.
+*   **RealNet**: You can choose `thinking_steps=5`, `10`, or `100` at runtime.
+    *   **Low Steps**: Fast, shallow reasoning.
+    *   **High Steps**: Slow, deep reasoning (equivalent to dozens of layers).
+
+### 2. Gradient Accumulation (Virtual Batch Size)
+RealNet allows you to simulate massive batch sizes on limited hardware (e.g., consumer GPUs).
+*   **How it works:** Instead of updating weights after every batch, it accumulates gradients for `N` steps and then performs a single update.
+*   **Usage:**
+    ```python
+    # Simulates a batch size of 32 * 4 = 128
+    trainer.train_batch(x, y, thinking_steps=10, gradient_accumulation_steps=4)
+    ```
+*   **Benefit:** Allows training large models or using large batch stability without running out of VRAM.
+
+### 3. Ghost Gradients (Gradient Persistence)
+By setting `gradient_persistence > 0`, you enable a form of **Temporal Momentum**. The network "remembers" the direction of the error from the previous batch.
+*   **Difference from Accumulation:** Accumulation is exact math (summing). Ghost Gradients is a decaying echo (multiplying by 0.1).
+*   **Use Case:** When the loss curve is extremely jagged or the model gets stuck in local minima.
+*   **Effect:** Smooths out optimization and can force convergence in "Impossible" tasks (like Zero-Hidden XOR).
+
+### 4. Darwinian Evolution (Pruning)
+RealNet can evolve. By calling `prune_synapses()` during training, the network kills off useless connections.
+*   **Result**: You can end up with a model that has 95% dead connections (High Sparsity) but maintains 99% accuracy. This mimics the human brain's development (synaptic pruning).
+
+### 5. Darwinian Regeneration (The Phoenix Effect)
+Instead of just killing weak connections, RealNet can **revive** them.
+*   **Concept**: A weight near 0 is contributing nothing. By randomizing it (Re-init), it gets a second chance to find a useful feature.
+*   **Benefit**: Maximizes parameter efficiency. The network becomes a living organism where cells (synapses) constantly die and are reborn, ensuring 100% of the capacity is always searching for a solution.
+*   **Usage**: Call `trainer.regenerate_synapses(threshold=0.01)` periodically during training.
 
 The `realstore` module provides checkpoint management utilities, including a unique **Weight Transplantation** feature for transferring learned knowledge between models of different sizes.
 
