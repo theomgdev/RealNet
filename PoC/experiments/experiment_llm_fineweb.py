@@ -290,7 +290,7 @@ def main():
     print(f"ACTIVATION: {ACTIVATION}")
     print(f"VOCAB_SIZE: {VOCAB_SIZE}")
     print(f"DEVICE: {DEVICE}")
-    print(f"NEUROGENESIS: MaxLossInc={MAX_LOSS_INCREASE}, Amount={NEUROGENESIS_AMOUNT}")
+    print(f"NEUROGENESIS: Enabled={NEUROGENESIS_ENABLED}, MaxLossInc={MAX_LOSS_INCREASE}, Amount={NEUROGENESIS_AMOUNT}")
     if DARWINIAN_REGENERATION:
         regen_val = f"{REGENERATION_PERCENTAGE:.1%}" if REGENERATION_MODE == 'percentage' else f"{REGENERATION_THRESHOLD}"
         print(f"PHOENIX (Regeneration): Mode={REGENERATION_MODE}, Val={regen_val}, Interval={REGENERATION_INTERVAL}")
