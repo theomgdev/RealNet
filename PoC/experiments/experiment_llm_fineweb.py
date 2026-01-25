@@ -35,7 +35,7 @@ DARWINIAN_REGENERATION = True
 REGENERATION_MODE = 'percentage' # 'threshold' or 'percentage'
 REGENERATION_THRESHOLD = 0.01
 REGENERATION_PERCENTAGE = 0.01 # Regenerate bottom 1%
-REGENERATION_INTERVAL = 10 # Epochs between regeneration checks
+REGENERATION_INTERVAL = 5 # Epochs between regeneration checks
 
 # OPTIMIZER CONFIG
 VOCAB_SIZE = 256
