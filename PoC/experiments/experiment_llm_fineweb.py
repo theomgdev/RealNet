@@ -24,7 +24,7 @@ TRUNCATED_BPTT_STEPS = 32 # Set to -1 to disable
 GENERATION_LENGTH = 1024
 # Short sequence in full BPTT, long sequence in truncated BPTT.
 SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 128
-BATCH_SIZE = 512 # Adjusted for larger SEQ_LEN/Memory
+BATCH_SIZE = -1 # Adjusted for larger SEQ_LEN/Memory
 STEPS_PER_EPOCH = 10 # Number of batches per "Epoch" (for logging/saving)
 LOG_INTERVAL = 1 # Print loss every N batches
 MAX_START_SKIP = 1000 # Randomly skip up to N documents at start
@@ -276,13 +276,74 @@ def initialize_system(vocab_size, num_neurons, device, lr=1e-4, activation='gelu
     
     return model, trainer, input_ids, output_ids
 
+def calculate_optimal_batch_size(device, num_neurons, activation, seq_len, think_gap, truncated_bptt_steps):
+    """
+    Calculates the optimal batch size based on available VRAM and model complexity.
+    Returns: Optimal batch size (int)
+    """
+    print("\n⚖️  Auto-Tuning Batch Size...")
+    
+    if device == 'cpu':
+        print("   ⚠️ CUDA not found. Defaulting to 32 for CPU.")
+        return 32
+        
+    if device == 'cuda':
+        # 1. Get VRAM Info
+        t = torch.cuda.get_device_properties(0).total_memory
+        # r = torch.cuda.memory_reserved(0) # Unused
+        a = torch.cuda.memory_allocated(0)
+        free_vram = t - a 
+        
+        print(f"   VRAM Total: {t / 1e9:.2f} GB")
+        print(f"   VRAM Free:  {free_vram / 1e9:.2f} GB (Allocated: {a / 1e9:.2f} GB)")
+        
+        # 2. Estimate Memory Per Sample
+        # Heuristic Constants (Empirical for RealNet/RNNs)
+        # Bytes per neuron per step (FP16/BF16 Activations + Grads)
+        BYTES_PER_NEURON_STEP = 12 # 2 (val) + 2 (grad) + 8 (overheads/optimizer state per param amortized)
+        
+        if activation == 'swiglu':
+            BYTES_PER_NEURON_STEP *= 1.5 # Gate overhead
+        
+        # Effective Backprop Length (Memory bottleneck)
+        # If Truncated BPTT is active, the gradient graph is only as deep as the truncation window.
+        if truncated_bptt_steps > 0:
+            effective_mem_len = truncated_bptt_steps * (think_gap + 1)
+        else:
+            total_seq_steps = seq_len * (think_gap + 1)
+            effective_mem_len = total_seq_steps
+            
+        mem_per_sample = effective_mem_len * num_neurons * BYTES_PER_NEURON_STEP
+        
+        # Add Safety Buffer 
+        # We target utilizing ~85% of FREE memory to allow for fragmentation and temp buffers.
+        safe_vram = free_vram * 0.85 
+        
+        if mem_per_sample == 0:
+             calc_batch = 1 # Avoid div by zero safety
+        else:
+             calc_batch = int(safe_vram / mem_per_sample)
+        
+        # Clamp
+        calc_batch = max(1, calc_batch)
+        
+        # Round down to nearest 8 for tensor core alignment
+        if calc_batch > 8:
+            calc_batch = (calc_batch // 8) * 8
+            
+        print(f"   Est. Memory/Sample: {mem_per_sample / 1e6:.2f} MB")
+        print(f"   Optimal Batch Size: {calc_batch}")
+        
+        return calc_batch
+    return 32 # Fallback
+
 def main():
-    global NUM_NEURONS # Allow updating global config if needed
+    global NUM_NEURONS, BATCH_SIZE # Allow updating global config if needed
     
     print(f"🚀 RealNet-1B (FineWeb Streaming)...")
     print(f"--- Configuration ---")
     print(f"SEQ_LEN: {SEQ_LEN}")
-    print(f"BATCH_SIZE: {BATCH_SIZE}")
+    print(f"BATCH_SIZE: {BATCH_SIZE} (Will Auto-Tune if -1)")
     print(f"NUM_NEURONS: {NUM_NEURONS}")
     print(f"TRUNCATED_BPTT_STEPS: {TRUNCATED_BPTT_STEPS}")
     print(f"STEPS_PER_EPOCH: {STEPS_PER_EPOCH}")
@@ -300,6 +361,24 @@ def main():
     
     dataset = FineWebIterableDataset(SEQ_LEN, debug=True)
     
+    # --- MODEL SETUP ---
+    # Need model first to know Num Neurons for Batch Size Calculation
+    model, trainer, input_ids, output_ids = initialize_system(dataset.get_vocab_size(), NUM_NEURONS, DEVICE, LEARNING_RATE, ACTIVATION)
+    
+    # Update global config with actual model size (if it was auto-sized)
+    NUM_NEURONS = model.num_neurons
+    
+    # --- AUTO BATCH SIZE CALCULATION ---
+    if BATCH_SIZE == -1:
+         BATCH_SIZE = calculate_optimal_batch_size(
+             DEVICE, 
+             NUM_NEURONS, 
+             ACTIVATION, 
+             SEQ_LEN, 
+             THINK_GAP, 
+             TRUNCATED_BPTT_STEPS
+         )
+
     # DataLoader for IterableDataset
     # Streaming with 1 worker allows background downloading without duplication
     dataloader = DataLoader(
@@ -310,12 +389,6 @@ def main():
         persistent_workers=True, # Keep connection alive
         pin_memory=True
     )
-    
-    # --- MODEL SETUP ---
-    model, trainer, input_ids, output_ids = initialize_system(dataset.get_vocab_size(), NUM_NEURONS, DEVICE, LEARNING_RATE, ACTIVATION)
-    
-    # Update global config with actual model size (if it was auto-sized)
-    NUM_NEURONS = model.num_neurons
     
     print(f"Input IDs: {input_ids[0]}-{input_ids[-1]}")
     print(f"Output IDs: {output_ids[0]}-{output_ids[-1]}")
