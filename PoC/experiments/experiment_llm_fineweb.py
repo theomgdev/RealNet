@@ -441,13 +441,13 @@ def main():
         for batch_idx in range(STEPS_PER_EPOCH):
             try:
                 x, y, current_doc_tensor = next(data_iterator)
-                current_doc = current_doc_tensor.item()
+                current_doc = current_doc_tensor[-1].item()
                 dataset.current_doc_index = current_doc
             except StopIteration:
                 print("🔄 Restarting iterator...")
                 data_iterator = iter(dataloader)
                 x, y, current_doc_tensor = next(data_iterator)
-                current_doc = current_doc_tensor.item()
+                current_doc = current_doc_tensor[-1].item()
                 dataset.current_doc_index = current_doc
 
             # Dilate Data
