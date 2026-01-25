@@ -12,7 +12,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from realnet import RealNet, RealNetTrainer, save_checkpoint, load_checkpoint, transplant_weights
 
 torch.set_float32_matmul_precision('high')
-
+ 
 # --- CONFIGURATION ---
 TRUNCATED_BPTT_STEPS = 32
 GENERATION_LENGTH = 1024
