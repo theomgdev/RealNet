@@ -44,7 +44,7 @@ LEARNING_RATE = 1e-4
 
 # --- SCHEDULER CONFIG ---
 USE_SCHEDULER = True
-SCHEDULER_T0 = 100        # Steps before first restart (~2-3 epochs)
+SCHEDULER_T0 = 100        # Steps before first restart
 SCHEDULER_ETA_MIN = 1e-6  # Minimum LR before restart
 
 CHAR_TO_IDX = {i: i for i in range(256)} # Identity map for bytes
@@ -299,8 +299,8 @@ def calculate_optimal_batch_size(device, num_neurons, activation, seq_len, think
         # 2. Estimate Memory Per Sample
         # Heuristic Constants (Empirical for RealNet/RNNs)
         # Bytes per neuron per step (FP16/BF16 Activations + Grads)
-        # 4 (val+grad) + 4 (overhead) = 8.
-        BYTES_PER_NEURON_STEP = 8 
+        # 4 (val+grad) + 8 (overhead) = 12.
+        BYTES_PER_NEURON_STEP = 12 
         
         if activation == 'swiglu':
             BYTES_PER_NEURON_STEP *= 1.5 # Gate overhead
