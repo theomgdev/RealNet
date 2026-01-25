@@ -514,14 +514,6 @@ def main():
                 
         avg_loss = total_loss / steps
         print(f"Epoch {epoch} Completed | Avg Loss: {avg_loss:.4f} | Time: {time.time() - start_time:.1f}s")
-        
-        # --- REGENERATION CONTROL (PHOENIX) ---
-        if DARWINIAN_REGENERATION and epoch % REGENERATION_INTERVAL == 0:
-            print(f"🔥 Phoenix Protocol: Checking for dead synapses...")
-            revived, total = trainer.regenerate_synapses(REGENERATION_THRESHOLD)
-            if revived > 0:
-                print(f"🔥 Reborn: {revived}/{total} ({revived/total:.2%}) synapses regenerated.")
-                prev_loss = float('inf')
 
         # --- NEUROGENESIS CONTROL ---
         if avg_loss > prev_loss:
@@ -540,6 +532,14 @@ def main():
                     trainer.optimizer, T_0=SCHEDULER_T0, eta_min=SCHEDULER_ETA_MIN)
         else:
             prev_loss = avg_loss
+
+        # --- REGENERATION CONTROL (PHOENIX) ---
+        if DARWINIAN_REGENERATION and epoch % REGENERATION_INTERVAL == 0:
+            print(f"🔥 Phoenix Protocol: Checking for dead synapses...")
+            revived, total = trainer.regenerate_synapses(REGENERATION_THRESHOLD)
+            if revived > 0:
+                print(f"🔥 Reborn: {revived}/{total} ({revived/total:.2%}) synapses regenerated.")
+                prev_loss = float('inf')
         
         # --- PERIODIC GENERATION ---
         print("--- GENERATION ---")
