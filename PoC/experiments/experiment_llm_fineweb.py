@@ -14,9 +14,9 @@ from realnet import RealNet, RealNetTrainer, save_checkpoint, load_checkpoint, t
 torch.set_float32_matmul_precision('high')
 
 # --- CONFIGURATION ---
-TRUNCATED_BPTT_STEPS = 16
+TRUNCATED_BPTT_STEPS = 64
 GENERATION_LENGTH = 1024
-SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 64
+SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 4096
 BATCH_SIZE = -1
 STEPS_PER_EPOCH = 10 
 LOG_INTERVAL = 1 
@@ -27,7 +27,7 @@ THINK_GAP = 5
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # NEUROGENESIS CONFIG
-MAX_LOSS_INCREASE = 10
+MAX_LOSS_INCREASE = 100
 NEUROGENESIS_AMOUNT = 10
 
 # REGENERATION CONFIG (PHOENIX)
@@ -35,7 +35,7 @@ DARWINIAN_REGENERATION = True
 REGENERATION_MODE = 'percentage' # 'threshold' or 'percentage'
 REGENERATION_THRESHOLD = 0.01
 REGENERATION_PERCENTAGE = 0.01 # Regenerate bottom 1%
-REGENERATION_INTERVAL = 5 # Epochs between regeneration checks
+REGENERATION_INTERVAL = 10 # Epochs between regeneration checks
 
 # OPTIMIZER CONFIG
 VOCAB_SIZE = 256
@@ -517,6 +517,31 @@ def main():
         avg_loss = total_loss / steps
         print(f"Epoch {epoch} Completed | Avg Loss: {avg_loss:.4f} | Time: {time.time() - start_time:.1f}s")
 
+
+        
+        # --- PERIODIC GENERATION ---
+        print("--- GENERATION ---")
+        try:
+            gen_text = generate(model, dataset, start_str="The meaning of life is ")
+            print(gen_text)
+        except Exception as e:
+            print(f"Generation Error: {e}")
+        print("------------------")
+        
+        # --- CHECKPOINT SAVING ---
+        ckpt_extra_data = {
+            'initial_lr': trainer.initial_lr,
+            'dataset_step': dataset.current_doc_index 
+        }
+        
+        save_checkpoint(model, trainer.optimizer, epoch, avg_loss, CKPT_PATH, extra_data=ckpt_extra_data)
+        print(f"💾 Checkpoint Saved: {CKPT_PATH} (Doc Index: {dataset.current_doc_index})")
+        
+        if avg_loss < best_loss:
+            best_loss = avg_loss
+            save_checkpoint(model, trainer.optimizer, epoch, avg_loss, CKPT_BEST_PATH, extra_data=ckpt_extra_data)
+            print(f"🏆 NEW RECORD! Saved: {CKPT_BEST_PATH} (Loss: {best_loss:.4f})")
+        
         # --- NEUROGENESIS CONTROL ---
         if avg_loss > prev_loss:
             loss_increase_counter += 1
@@ -547,30 +572,7 @@ def main():
             if revived > 0:
                 print(f"🔥 Reborn: {revived}/{total} ({revived/total:.2%}) synapses regenerated.")
                 prev_loss = float('inf')
-        
-        # --- PERIODIC GENERATION ---
-        print("--- GENERATION ---")
-        try:
-            gen_text = generate(model, dataset, start_str="The meaning of life is ")
-            print(gen_text)
-        except Exception as e:
-            print(f"Generation Error: {e}")
-        print("------------------")
-        
-        # --- CHECKPOINT SAVING ---
-        ckpt_extra_data = {
-            'initial_lr': trainer.initial_lr,
-            'dataset_step': dataset.current_doc_index 
-        }
-        
-        save_checkpoint(model, trainer.optimizer, epoch, avg_loss, CKPT_PATH, extra_data=ckpt_extra_data)
-        print(f"💾 Checkpoint Saved: {CKPT_PATH} (Doc Index: {dataset.current_doc_index})")
-        
-        if avg_loss < best_loss:
-            best_loss = avg_loss
-            save_checkpoint(model, trainer.optimizer, epoch, avg_loss, CKPT_BEST_PATH, extra_data=ckpt_extra_data)
-            print(f"🏆 NEW RECORD! Saved: {CKPT_BEST_PATH} (Loss: {best_loss:.4f})")
-        
+
         epoch += 1
 
 if __name__ == "__main__":
