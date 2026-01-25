@@ -29,7 +29,7 @@ STEPS_PER_EPOCH = 10 # Number of batches per "Epoch" (for logging/saving)
 LOG_INTERVAL = 1 # Print loss every N batches
 MAX_START_SKIP = 1000 # Randomly skip up to N documents at start
 NUM_NEURONS = -1 # Auto-size to Input+Output (Min 512)
-ACTIVATION = 'swiglu' # 'gelu' (Standard) or 'swiglu' (Gated, slower but smarter)
+ACTIVATION = 'gelu' # 'gelu' (Standard) or 'swiglu' (Gated, slower but smarter)
 THINK_GAP = 5 # Number of silence steps between bytes
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
