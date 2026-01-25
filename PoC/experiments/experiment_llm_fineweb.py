@@ -16,7 +16,7 @@ torch.set_float32_matmul_precision('high')
 # --- CONFIGURATION ---
 TRUNCATED_BPTT_STEPS = 32
 GENERATION_LENGTH = 1024
-SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 128
+SEQ_LEN = 256 if TRUNCATED_BPTT_STEPS == -1 else 4096
 BATCH_SIZE = -1
 STEPS_PER_EPOCH = 10 
 LOG_INTERVAL = 1 
@@ -51,6 +51,7 @@ class FineWebIterableDataset(torch.utils.data.IterableDataset):
         self.seq_len = seq_len
         self.skip_offset = skip_offset
         self.debug = debug
+        self.current_doc_index = skip_offset # Initialize to avoid AttributeError in main
         print("🌊 Connecting to FineWeb-Edu (CC-MAIN-2024-10)...")
         self.dataset = load_dataset("HuggingFaceFW/fineweb-edu", name="CC-MAIN-2024-10", split="train", streaming=True)
         
@@ -63,7 +64,8 @@ class FineWebIterableDataset(torch.utils.data.IterableDataset):
         else:
              print(f"⏩ Resuming from Document #{start_skip}...")
 
-        self.current_doc_index = start_skip
+        # Worker-local index tracking
+        local_doc_index = start_skip
         
         if start_skip > 0:
             iterator = iter(self.dataset.skip(start_skip))
@@ -77,15 +79,15 @@ class FineWebIterableDataset(torch.utils.data.IterableDataset):
             while len(buffer_bytes) < self.seq_len + 1:
                 try:
                     item = next(iterator)
-                    self.current_doc_index += 1
-                    if self.debug and self.current_doc_index % 1000 == 0:
-                        print(f"📊 Streaming Index: Document #{self.current_doc_index}")
+                    local_doc_index += 1
+                    if self.debug and local_doc_index % 1000 == 0:
+                        print(f"📊 Streaming Index: Document #{local_doc_index}")
                     text = item.get('text', '')
                     new_bytes = text.encode('utf-8', errors='replace') + b" " 
                     buffer_bytes += new_bytes
                 except StopIteration:
                     iterator = iter(self.dataset)
-                    self.current_doc_index = 0
+                    local_doc_index = 0
 
             # Extract chunk
             chunk_bytes = buffer_bytes[:self.seq_len + 1]
@@ -96,7 +98,8 @@ class FineWebIterableDataset(torch.utils.data.IterableDataset):
             if len(indices) == self.seq_len + 1:
                 x = torch.tensor(indices[:-1], dtype=torch.long)
                 y = torch.tensor(indices[1:], dtype=torch.long)
-                yield x, y
+                # Yield index too so main process knows where we are
+                yield x, y, local_doc_index
 
     def get_vocab_size(self):
         return VOCAB_SIZE
@@ -108,6 +111,8 @@ class FineWebIterableDataset(torch.utils.data.IterableDataset):
     @property
     def idx_to_char(self):
         return IDX_TO_CHAR
+
+
 
 def prepare_inputs_dilated(x, gap, device=None):
     """Inserts silence tokens (-1) between input tokens."""
@@ -435,13 +440,15 @@ def main():
         
         for batch_idx in range(STEPS_PER_EPOCH):
             try:
-                x, y = next(data_iterator)
-                current_doc = dataset.current_doc_index 
+                x, y, current_doc_tensor = next(data_iterator)
+                current_doc = current_doc_tensor.item()
+                dataset.current_doc_index = current_doc
             except StopIteration:
                 print("🔄 Restarting iterator...")
                 data_iterator = iter(dataloader)
-                x, y = next(data_iterator)
-                current_doc = dataset.current_doc_index 
+                x, y, current_doc_tensor = next(data_iterator)
+                current_doc = current_doc_tensor.item()
+                dataset.current_doc_index = current_doc
 
             # Dilate Data
             x_dilated = prepare_inputs_dilated(x, THINK_GAP, device=DEVICE)
