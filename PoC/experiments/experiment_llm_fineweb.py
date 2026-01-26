@@ -37,7 +37,7 @@ DARWINIAN_REGENERATION = True
 REGENERATION_MODE = 'percentage' # 'threshold' or 'percentage'
 REGENERATION_THRESHOLD = 0.01
 REGENERATION_PERCENTAGE = 0.01 # Regenerate bottom 1%
-REGENERATION_INTERVAL = 5 # Epochs between regeneration checks
+REGENERATION_INTERVAL = 10 # Epochs between regeneration checks
 
 # OPTIMIZER CONFIG
 VOCAB_SIZE = 256
@@ -521,10 +521,14 @@ def main():
             steps += 1
             
             if batch_idx % LOG_INTERVAL == 0:
-                print(f"Epoch {epoch} | Batch {batch_idx} | Doc #{current_doc} | Loss {loss:.4f} | LR {current_lr:.2e}")
+                loss_val = loss.item() if isinstance(loss, torch.Tensor) else loss
+                ppl = np.exp(loss_val)
+                print(f"Epoch {epoch} | Batch {batch_idx} | Doc #{current_doc} | Loss {loss:.4f} | PPL {ppl:.2f} | LR {current_lr:.2e}")
                 
         avg_loss = total_loss / steps
-        print(f"Epoch {epoch} Completed | Avg Loss: {avg_loss:.4f} | Time: {time.time() - start_time:.1f}s")
+        avg_loss_val = avg_loss.item() if isinstance(avg_loss, torch.Tensor) else avg_loss
+        avg_ppl = np.exp(avg_loss_val)
+        print(f"Epoch {epoch} Completed | Avg Loss: {avg_loss:.4f} | Avg PPL {avg_ppl:.2f} | Time: {time.time() - start_time:.1f}s")
         
         # --- PERIODIC GENERATION ---
         print("--- GENERATION ---")
