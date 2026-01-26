@@ -21,6 +21,7 @@ BATCH_SIZE = -1
 STEPS_PER_EPOCH = 10 
 LOG_INTERVAL = 1 
 MAX_START_SKIP = 1000
+RESET_DATA_ITER = True
 NUM_NEURONS = -1
 ACTIVATION = 'gelu' 
 THINK_GAP = 5 
@@ -66,7 +67,7 @@ class FineWebIterableDataset(torch.utils.data.IterableDataset):
     def __iter__(self):
         start_skip = self.skip_offset
         
-        if start_skip == 0:
+        if start_skip == 0 or RESET_DATA_ITER:
              start_skip = random.randint(0, MAX_START_SKIP)
              print(f"🔀 Random Start: Skipping {start_skip} documents...")
         else:
@@ -285,6 +286,8 @@ def main():
     print(f"TRUNCATED_BPTT_STEPS: {TRUNCATED_BPTT_STEPS}")
     print(f"STEPS_PER_EPOCH: {STEPS_PER_EPOCH}")
     print(f"LOG_INTERVAL: {LOG_INTERVAL}")
+    print(f"MAX_START_SKIP: {MAX_START_SKIP}")
+    print(f"RESET_DATA_ITER: {RESET_DATA_ITER}")
     print(f"GENERATION_LENGTH: {GENERATION_LENGTH}")
     print(f"THINK_GAP: {THINK_GAP}")
     print(f"ACTIVATION: {ACTIVATION}")
