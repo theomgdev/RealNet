@@ -35,6 +35,11 @@ class RealNet(nn.Module):
         # Initialized to 1.0 (Neutral).
         self.input_scale = nn.Parameter(torch.ones(len(input_ids), device=device))
 
+        # Output Scale: Learnable magnitude for each output token.
+        # Allows the network to learn which output tokens should be stronger or weaker (logit bias).
+        # Initialized to 1.0 (Neutral).
+        self.output_scale = nn.Parameter(torch.ones(len(output_ids), device=device))
+
         # Architecturally defined components
         self.norm = nn.LayerNorm(num_neurons).to(device) # StepNorm
         
@@ -303,6 +308,39 @@ class RealNet(nn.Module):
             outputs.append(h_t)
 
         return torch.stack(outputs), h_t
+
+    def read_outputs(self, states):
+        """
+        Extracts and scales the output neurons from the state.
+        
+        Args:
+            states (torch.Tensor): The state tensor to read from. 
+                                   Can be (Batch, Neurons) or (Steps, Batch, Neurons).
+        
+        Returns:
+            torch.Tensor: The scaled output values.
+        """
+        # 1. Identify Output Neurons
+        # We need to handle different dimensions carefully
+        
+        # Case A: Sequential Output (Steps, Batch, Neurons) -> (Batch, Steps, Outputs)
+        if states.ndim == 3:
+            # Permute to (Batch, Steps, Neurons) first
+            states_permuted = states.permute(1, 0, 2)
+            # Slice Logic: (Batch, Steps, Output_Indices)
+            raw_outputs = states_permuted[:, :, self.output_ids]
+            
+            # Apply Scale: (Batch, Steps, Outputs) * (Outputs,)
+            # Broadcasting handles the last dimension automatically
+            return raw_outputs * self.output_scale
+            
+        # Case B: Single Step Output (Batch, Neurons) -> (Batch, Outputs)
+        elif states.ndim == 2:
+            raw_outputs = states[:, self.output_ids]
+            return raw_outputs * self.output_scale
+            
+        else:
+            raise ValueError(f"RealNet.read_outputs: Unexpected state shape {states.shape}")
 
     def reset_state(self, batch_size=1):
         self.state = torch.zeros(batch_size, self.num_neurons, device=self.device)

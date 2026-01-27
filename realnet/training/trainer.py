@@ -119,11 +119,13 @@ class RealNetTrainer:
             output_indices = self.model.output_ids
             
             if full_sequence:
-                # all_states: (Steps, Batch, Neurons) -> Permute to (Batch, Steps, Neurons)
-                predicted_outputs = all_states.permute(1, 0, 2)[:, :, output_indices]
+                # all_states: (Steps, Batch, Neurons)
+                # read_outputs handles permutation and scaling
+                predicted_outputs = self.model.read_outputs(all_states)
                 # Note: target_values must also be (Batch, Steps, Output_Size) or compatible
             else:
-                predicted_outputs = final_state[:, output_indices]
+                # read_outputs handles scaling
+                predicted_outputs = self.model.read_outputs(final_state)
             
             # OPTIONAL TRANSFORM (e.g. for CrossEntropy reshaping)
             if output_transform:
@@ -196,9 +198,9 @@ class RealNetTrainer:
             output_indices = self.model.output_ids
             
             if full_sequence:
-                 return all_states.permute(1, 0, 2)[:, :, output_indices]
+                 return self.model.read_outputs(all_states)
             else:
-                 return final_state[:, output_indices]
+                 return self.model.read_outputs(final_state)
 
     def evaluate(self, input_features, target_values, thinking_steps):
         """

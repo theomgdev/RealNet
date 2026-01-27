@@ -32,6 +32,8 @@ class SparseRealNet(RealNet):
         # Explicitly register scale if not caught by state dict (it should be, but safety first)
         if not hasattr(self, 'input_scale'):
              self.input_scale = nn.Parameter(dense_model.input_scale.clone())
+        if not hasattr(self, 'output_scale'):
+             self.output_scale = nn.Parameter(dense_model.output_scale.clone())
         
         # Convert W to Sparse immediately
         self._sparsify_weights()
