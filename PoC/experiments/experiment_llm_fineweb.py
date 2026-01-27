@@ -33,7 +33,7 @@ MAX_LOSS_INCREASE = 10
 NEUROGENESIS_AMOUNT = 10
 
 # REGENERATION CONFIG (PHOENIX)
-DARWINIAN_REGENERATION = False
+DARWINIAN_REGENERATION = True
 REGENERATION_MODE = 'percentage' # 'threshold' or 'percentage'
 REGENERATION_THRESHOLD = 0.01
 REGENERATION_PERCENTAGE = 0.001
@@ -230,7 +230,7 @@ def initialize_system(vocab_size, num_neurons, device, lr=1e-4, activation='gelu
         gradient_checkpointing=True
     )
     
-    trainer = RealNetTrainer(model, lr=lr, device=device, gradient_persistence=0.0, synaptic_noise=0)
+    trainer = RealNetTrainer(model, lr=lr, device=device, gradient_persistence=0.5, synaptic_noise=0)
     
     return model, trainer, input_ids, output_ids
 

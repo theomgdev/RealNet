@@ -26,14 +26,8 @@ class SparseRealNet(RealNet):
             activation=getattr(dense_model, 'activation_type', 'gelu') # Default to GELU if legacy model
         )
         
-        # Copy State Dictionary (weights, biases, mask, INPUT SCALE, etc.)
+        # Copy State Dictionary (weights, biases, mask, etc.)
         self.load_state_dict(dense_model.state_dict())
-        
-        # Explicitly register scale if not caught by state dict (it should be, but safety first)
-        if not hasattr(self, 'input_scale'):
-             self.input_scale = nn.Parameter(dense_model.input_scale.clone())
-        if not hasattr(self, 'output_scale'):
-             self.output_scale = nn.Parameter(dense_model.output_scale.clone())
         
         # Convert W to Sparse immediately
         self._sparsify_weights()
@@ -84,36 +78,8 @@ class SparseRealNet(RealNet):
             # 3. Add Input
             if x_input is not None:
                 if x_input.ndim == 3:
-                     # Sparse Sequential Input is rare, usually Dense input 3D
                      if t < x_input.shape[1]:
                          signal = signal + x_input[:, t, :]
-                
-                elif x_input.ndim == 2 and x_input.dtype in [torch.long, torch.int64, torch.int32]:
-                     # Index-Based Input (Efficient) - Copying RealNet Logic
-                     token_indices = x_input[:, t]
-                     # Assume -1 is silence/gap, but sparse matrix needs explicit handling
-                     # We can't easily rely on -1 logic here without a dense buffer
-                     # Let's assume valid indices >= 0
-                     valid_mask = token_indices >= 0
-                     
-                     if valid_mask.any():
-                         active_tokens = token_indices[valid_mask]
-                         
-                         # Retrieve Scale
-                         current_scales = self.input_scale[active_tokens]
-                         
-                         # Create a zero tensor, fill it, add it.
-                         x_step_dense = torch.zeros_like(signal)
-                         
-                         # Map token indices to neuron indices
-                         offset = self.input_ids[0]
-                         valid_neurons = active_tokens + offset
-                         
-                         # Inject Scaled Input
-                         x_step_dense[valid_mask, valid_neurons] = current_scales
-                         
-                         signal = signal + x_step_dense
-                         
                 elif self.pulse_mode:
                     if t == 0:
                         signal = signal + x_input
