@@ -62,6 +62,9 @@ class Neurogenesis:
         old_norm_w_param = model.norm.weight
         old_norm_b_param = model.norm.bias
         
+        # Capture Input Scale (Vocab based, size doesn't change with neurogenesis)
+        old_input_scale = model.input_scale
+        
         old_W_gate_param = model.W_gate if is_swiglu else None
         old_B_gate_param = model.B_gate if is_swiglu else None
         
@@ -123,6 +126,9 @@ class Neurogenesis:
         model.B = nn.Parameter(new_B)
         model.register_buffer('mask', new_mask)
         model.norm = new_norm
+        
+        # Restore Input Scale (Direct Copy, size is vocab_size)
+        model.input_scale = nn.Parameter(old_input_scale.data.clone())
         
         if is_swiglu:
             model.W_gate = nn.Parameter(new_W_gate)
@@ -213,6 +219,7 @@ class Neurogenesis:
                 transfer_state(old_B_param, model.B, is_matrix=False)
                 transfer_state(old_norm_w_param, model.norm.weight, is_matrix=False)
                 transfer_state(old_norm_b_param, model.norm.bias, is_matrix=False)
+                transfer_state(old_input_scale, model.input_scale, is_matrix=False)
                 
                 if is_swiglu:
                     transfer_state(old_W_gate_param, model.W_gate, is_matrix=True)
@@ -227,6 +234,7 @@ class Neurogenesis:
         del old_B_param
         del old_norm_w_param
         del old_norm_b_param
+        del old_input_scale
         del old_opt
         
         if is_swiglu:
