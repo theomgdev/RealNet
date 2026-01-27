@@ -30,11 +30,6 @@ class RealNet(nn.Module):
         # B: Bias vector.
         self.B = nn.Parameter(torch.zeros(num_neurons, device=device))
 
-        # Input Scale: Learnable magnitude for each token.
-        # Allows the network to learn which tokens should impact the state more strongly.
-        # Initialized to 1.0 (Neutral).
-        self.input_scale = nn.Parameter(torch.ones(len(input_ids), device=device))
-
         # Architecturally defined components
         self.norm = nn.LayerNorm(num_neurons).to(device) # StepNorm
         
@@ -270,15 +265,8 @@ class RealNet(nn.Module):
                                # Map token indices to neuron indices
                                # Assumes input_ids are contiguous. neuron_idx = token_idx + input_ids[0]
                                offset = self.input_ids[0]
-                               active_tokens = token_indices[valid_mask]
-                               valid_neurons = active_tokens + offset
-                               
-                               # Scaled Input Injection
-                               # Retrieve learnable scale factors for the active tokens.
-                               current_scales = self.input_scale[active_tokens]
-                               
-                               # Inject the scaled value instead of a fixed 1.0
-                               x_step_dense[valid_mask, valid_neurons] = current_scales
+                               valid_neurons = token_indices[valid_mask] + offset
+                               x_step_dense[valid_mask, valid_neurons] = 1.0
                                x_step = x_step_dense
                                
                 elif x_input.ndim == 3:
