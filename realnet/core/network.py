@@ -21,8 +21,8 @@ class RealNet(nn.Module):
         self.register_buffer('output_pos', torch.tensor(output_ids, dtype=torch.long, device=device))
         
         # Scaling Parameters (Input/Output)
-        self.input_scale = nn.Parameter(torch.full((len(input_ids),), 0.5, device=device))
-        self.output_scale = nn.Parameter(torch.full((len(output_ids),), 0.5, device=device))
+        self.input_scale = nn.Parameter(torch.full((len(input_ids),), 1.0, device=device))
+        self.output_scale = nn.Parameter(torch.full((len(output_ids),), 1.0, device=device))
         
         self.pulse_mode = pulse_mode
         self.activation_type = activation
