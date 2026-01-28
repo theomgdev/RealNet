@@ -238,6 +238,12 @@ class Neurogenesis:
                 print("   ✅ Optimizer State Transferred (Momentum Preserved)")
             except Exception as e:
                 print(f"   ⚠️ Optimizer State Transfer Failed ({e}). Performing Cold Restart.")
+
+        # --- SPARSE MODEL SUPPORT ---
+        # If this is a SparseRealNet, we must update the Cached Sparse Matrices
+        # because we just replaced the dense W and W_gate parameters.
+        if hasattr(model, '_sparsify_weights'):
+             model._sparsify_weights()
         
         # 7. CLEANUP MEMORY
         del old_W_param

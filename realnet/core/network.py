@@ -356,7 +356,7 @@ class RealNet(nn.Module):
                 outputs.append(h_t)
 
         # Apply Output Scaling to the collected outputs
-        stacked_outputs = torch.stack(outputs)
+        stacked_outputs = torch.stack(outputs, dim=1)
         # Apply scale to output neurons only
         # stacked_outputs: (Batch, Steps, Neurons)
         # output_scale: (Out_Neurons)

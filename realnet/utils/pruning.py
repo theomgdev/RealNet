@@ -34,9 +34,26 @@ class SynapticPruner:
             # Enforce death on the actual weights too
             model.W.data = model.W.data * model.mask
             
-            dead_count = (model.mask == 0.0).sum().item()
-            total_count = model.mask.numel()
             pruned_count = weak_links.sum().item()
+            total_count = model.mask.numel()
+            dead_count = (model.mask == 0.0).sum().item()
+
+            # --- SWIGLU GATE PRUNING ---
+            # Gates also need to evolve/die
+            if getattr(model, 'is_swiglu', False) and hasattr(model, 'mask_gate'):
+                 weak_gate_links = (torch.abs(model.W_gate) < threshold) & (model.mask_gate == 1.0)
+                 model.mask_gate[weak_gate_links] = 0.0
+                 model.W_gate.data = model.W_gate.data * model.mask_gate
+                 
+                 pruned_gate = weak_gate_links.sum().item()
+                 pruned_count += pruned_gate
+                 total_count += model.mask_gate.numel()
+                 dead_count += (model.mask_gate == 0.0).sum().item()
+
+            # --- SPARSE MODEL SUPPORT ---
+            # If this is a SparseRealNet, we must update the Cached Sparse Matrices
+            if hasattr(model, '_sparsify_weights'):
+                 model._sparsify_weights()
             
             return pruned_count, dead_count, total_count
 

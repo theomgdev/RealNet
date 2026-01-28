@@ -81,15 +81,19 @@ class SparseRealNet(RealNet):
 
         # Calculate Thinking Ratio (Native Temporal Stretching)
         ratio = 1
+        max_outputs = steps
+
         if x_input is not None:
              if x_input.dtype in [torch.long, torch.int64, torch.int32] and x_input.ndim == 2:
                   # Index-based Sequential
                   if x_input.shape[1] > 0:
                        ratio = max(1, steps // x_input.shape[1])
+                       max_outputs = x_input.shape[1]
              elif x_input.ndim == 3 and not self.pulse_mode:
                   # Dense Sequential
                   if x_input.shape[1] > 0:
                        ratio = max(1, steps // x_input.shape[1])
+                       max_outputs = x_input.shape[1]
 
         for t in range(steps):
              # Prepare Input Step
@@ -126,8 +130,7 @@ class SparseRealNet(RealNet):
             # Apply Input Scaling for Dense Inputs
             if x_step is not None and x_input.ndim != 2:
                  # Clone and Scale
-                 if x_step.is_leaf: # Optimization: check leaf
-                      x_step = x_step.clone()
+                 x_step = x_step.clone()
                  x_step[:, self.input_pos] = x_step[:, self.input_pos] * self.input_scale
 
             # 1. Chaotic Transmission (SPARSE)
@@ -168,14 +171,27 @@ class SparseRealNet(RealNet):
             h_t = self.norm(h_t_combined)
             
             # Smart Output Collection
-            if (t + 1) % ratio == 0:
+            if (t + 1) % ratio == 0 and len(outputs) < max_outputs:
                 outputs.append(h_t)
 
         # Apply Output Scaling
-        stacked_outputs = torch.stack(outputs)
+        stacked_outputs = torch.stack(outputs, dim=1)
         stacked_outputs[:, :, self.output_pos] = stacked_outputs[:, :, self.output_pos] * self.output_scale
 
         return stacked_outputs, h_t
+
+    def regenerate_weak_weights(self, threshold=0.01, percentage=None):
+        """
+        Overrides RealNet regeneration to update sparse matrices after modification.
+        """
+        # 1. Update Dense Weights
+        revived, total = super(SparseRealNet, self).regenerate_weak_weights(threshold, percentage)
+        
+        # 2. Update Sparse Matrices
+        if revived > 0:
+             self._sparsify_weights()
+             
+        return revived, total
 
     @classmethod
     def from_dense(cls, model):

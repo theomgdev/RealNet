@@ -119,8 +119,8 @@ class RealNetTrainer:
             output_indices = self.model.output_ids
             
             if full_sequence:
-                # all_states: (Steps, Batch, Neurons) -> Permute to (Batch, Steps, Neurons)
-                predicted_outputs = all_states.permute(1, 0, 2)[:, :, output_indices]
+                # all_states is already (Batch, Steps, Neurons)
+                predicted_outputs = all_states[:, :, output_indices]
                 # Note: target_values must also be (Batch, Steps, Output_Size) or compatible
             else:
                 predicted_outputs = final_state[:, output_indices]
@@ -196,7 +196,7 @@ class RealNetTrainer:
             output_indices = self.model.output_ids
             
             if full_sequence:
-                 return all_states.permute(1, 0, 2)[:, :, output_indices]
+                 return all_states[:, :, output_indices]
             else:
                  return final_state[:, output_indices]
 
