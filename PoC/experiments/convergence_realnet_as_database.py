@@ -91,7 +91,7 @@ def main():
     trainer = RealNetTrainer(model, device=DEVICE, gradient_persistence=0.0, synaptic_noise=0.0) # Increased for deeper memory
     trainer.optimizer = torch.optim.AdamW(model.parameters(), lr=5e-4, weight_decay=1e-5)
 
-    print(f"Config: {NUM_KEYS} Keys | {NUM_OPS} Ops per Batch | {NUM_NEURONS} Neurons | Persistence: 0.5")
+    print(f"Config: {NUM_KEYS} Keys | {NUM_OPS} Ops per Batch | {NUM_NEURONS} Neurons | Persistence: 0.0")
     print("Training...")
     
     EPOCHS = 10000 
