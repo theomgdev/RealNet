@@ -231,7 +231,7 @@ def calculate_optimal_batch_size(device, num_neurons, activation, seq_len, think
         # Heuristic: Bytes per neuron per step (FP16 Activations + Grads + Overhead)
         # Native Mode: We only store activations for (Batch, SeqLen) now! (Outputs are decimated)
         # However, internal gradients still track through time.
-        BYTES_PER_NEURON_STEP = 12
+        BYTES_PER_NEURON_STEP = 16
 
         if activation == 'swiglu':
             BYTES_PER_NEURON_STEP *= 1.5
