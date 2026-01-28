@@ -15,6 +15,22 @@ class RealNet(nn.Module):
         self.num_neurons = num_neurons
         self.input_ids = input_ids
         self.output_ids = output_ids
+        
+        # Buffers for fast indexing
+        self.register_buffer('input_pos', torch.tensor(input_ids, dtype=torch.long, device=device))
+        self.register_buffer('output_pos', torch.tensor(output_ids, dtype=torch.long, device=device))
+        
+        # Learnable Scaling Parameters
+        self.input_scale = nn.Parameter(torch.ones(len(input_ids), device=device))
+        self.output_scale = nn.Parameter(torch.ones(len(output_ids), device=device))
+        
+        # Learnable Time Constant (Alpha/Tau)
+        # Controls the mix between Old State (Memory) and New State (Chaos).
+        # Alpha near 1.0 = Overwrite (Chaos/Standard RealNet)
+        # Alpha near 0.0 = Freeze (Memory/Latch)
+        # Initialized to 0.0 (Sigmoid 0.0 = 0.5) for balanced starting point (50% Memory, 50% Chaos).
+        self.tau = nn.Parameter(torch.full((num_neurons,), 0.0, device=device))
+        
         self.pulse_mode = pulse_mode
         self.activation_type = activation
         self.gradient_checkpointing = gradient_checkpointing
@@ -214,7 +230,7 @@ class RealNet(nn.Module):
             effective_W_gate = self.W_gate * self.mask_gate
 
         def _single_step(h_t_in, t_idx, x_input_step):
-            """Single timestep computation - can be checkpointed."""
+            # 3. Activation
             # 1. Chaotic Transmission (DENSE)
             # Standard Projection (Value Path)
             signal = torch.matmul(h_t_in, effective_W) + self.B
@@ -234,8 +250,6 @@ class RealNet(nn.Module):
                      signal = signal + x_input_step
                 
                 # Element-wise Gating (No activation on Value path, just Linear * Swish(Gate))
-                # Note: Traditional GLU is Linear * Sigmoid. SwiGLU is Linear * Swish.
-                # Here signal is Linear. gate_act is Swish.
                 activated = signal * gate_act
             else:
                 # Standard Activation
@@ -243,9 +257,22 @@ class RealNet(nn.Module):
                     signal = signal + x_input_step
                 activated = self.act(signal)
             
-            # StepNorm & Dropout
-            normalized = self.norm(activated)
-            h_t_out = self.drop(normalized)
+            # 4. Dropout (Applied to the 'Gradient' / New Information)
+            candidate = self.drop(activated)
+
+            # 5. Leaky Integration (Time-Continuous Residual)
+            # We use the formulation: h_t = h_{t-1} + alpha * (candidate - h_{t-1})
+            # This is mathematically equivalent to (1-alpha)h + alpha*cand
+            # But numerically more stable for "Residual Learning" (if alpha is small, it learns corrections)
+            alpha = torch.sigmoid(self.tau)
+            
+            # Expand for Batch
+            # h_t_combined is the pre-normalized new state
+            h_t_combined = h_t_in + alpha * (candidate - h_t_in)
+
+            # 6. StepNorm (Applied LAST to bound energy)
+            # This ensures the state never explodes despite the integration
+            h_t_out = self.norm(h_t_combined)
             
             return h_t_out
 
@@ -280,7 +307,13 @@ class RealNet(nn.Module):
                                     # Assumes input_ids are contiguous. neuron_idx = token_idx + input_ids[0]
                                     offset = self.input_ids[0]
                                     valid_neurons = token_indices[valid_mask] + offset
-                                    x_step_dense[valid_mask, valid_neurons] = 1.0
+                                    
+                                    # Apply Input Scaling (Mapped)
+                                    # valid_neurons corresponds to input_pos[scale_indices]
+                                    scale_indices = valid_neurons - offset
+                                    
+                                    x_step_dense = torch.zeros(batch_sz, self.num_neurons, device=self.device)
+                                    x_step_dense[valid_mask, valid_neurons] = self.input_scale[scale_indices]
                                     x_step = x_step_dense
                                
                 elif x_input.ndim == 3:
@@ -293,6 +326,14 @@ class RealNet(nn.Module):
                         x_step = x_input
                 else:
                     x_step = x_input
+            
+            # Apply Input Scaling for Dense Inputs
+            if x_step is not None and x_input.ndim != 2: # Skip if already handled in index-based block
+                 # We need to scale only the input neurons
+                 # x_step is (Batch, Neurons)
+                 # Always clone to avoid modifying the original x_input in-place (which might be a view or leaf)
+                 x_step = x_step.clone()
+                 x_step[:, self.input_pos] = x_step[:, self.input_pos] * self.input_scale
             
             # Use gradient checkpointing if enabled (saves VRAM, costs recomputation)
             if self.gradient_checkpointing and self.training:
@@ -309,7 +350,14 @@ class RealNet(nn.Module):
             if (t + 1) % ratio == 0:
                 outputs.append(h_t)
 
-        return torch.stack(outputs), h_t
+        # Apply Output Scaling to the collected outputs
+        stacked_outputs = torch.stack(outputs)
+        # Apply scale to output neurons only
+        # stacked_outputs: (Batch, Steps, Neurons)
+        # output_scale: (Out_Neurons)
+        stacked_outputs[:, :, self.output_pos] = stacked_outputs[:, :, self.output_pos] * self.output_scale
+
+        return stacked_outputs, h_t
 
     def reset_state(self, batch_size=1):
         self.state = torch.zeros(batch_size, self.num_neurons, device=self.device)

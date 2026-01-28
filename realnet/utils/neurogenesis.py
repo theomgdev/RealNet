@@ -65,6 +65,10 @@ class Neurogenesis:
         old_W_gate_param = model.W_gate if is_swiglu else None
         old_B_gate_param = model.B_gate if is_swiglu else None
         
+        old_input_scale = model.input_scale
+        old_output_scale = model.output_scale
+        old_tau = model.tau
+        
         old_opt = optimizer
         
         # 1. Expand Weights (W)
@@ -128,6 +132,15 @@ class Neurogenesis:
             model.W_gate = nn.Parameter(new_W_gate)
             model.B_gate = nn.Parameter(new_B_gate)
             model.register_buffer('mask_gate', new_mask_gate)
+            
+        # Re-bind scaling params (they are safe as is)
+        model.input_scale = nn.Parameter(old_input_scale.data)
+        model.output_scale = nn.Parameter(old_output_scale.data)
+        
+        # Expand Tau (Time Constant)
+        new_tau = torch.full((new_n,), 0.0, device=device) # Init new neurons to Balanced (0.5)
+        new_tau[:old_n] = old_tau.data
+        model.tau = nn.Parameter(new_tau)
         
         # 6. OPTIMIZER MIGRATION
         # Create new optimizer dynamically based on old optimizer type
@@ -218,6 +231,10 @@ class Neurogenesis:
                     transfer_state(old_W_gate_param, model.W_gate, is_matrix=True)
                     transfer_state(old_B_gate_param, model.B_gate, is_matrix=False)
                 
+                transfer_state(old_input_scale, model.input_scale, is_matrix=False)
+                transfer_state(old_output_scale, model.output_scale, is_matrix=False)
+                transfer_state(old_tau, model.tau, is_matrix=False)
+                
                 print("   ✅ Optimizer State Transferred (Momentum Preserved)")
             except Exception as e:
                 print(f"   ⚠️ Optimizer State Transfer Failed ({e}). Performing Cold Restart.")
@@ -232,6 +249,10 @@ class Neurogenesis:
         if is_swiglu:
             del old_W_gate_param
             del old_B_gate_param
+            
+        del old_input_scale
+        del old_output_scale
+        del old_tau
         
         gc.collect()
         if torch.cuda.is_available():
