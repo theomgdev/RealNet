@@ -67,6 +67,7 @@ class Neurogenesis:
         
         old_input_scale = model.input_scale
         old_output_scale = model.output_scale
+        old_tau = model.tau
         
         old_opt = optimizer
         
@@ -135,6 +136,11 @@ class Neurogenesis:
         # Re-bind scaling params (they are safe as is)
         model.input_scale = nn.Parameter(old_input_scale.data)
         model.output_scale = nn.Parameter(old_output_scale.data)
+        
+        # Expand Tau (Time Constant)
+        new_tau = torch.full((new_n,), 0.0, device=device) # Init new neurons to Balanced (0.5)
+        new_tau[:old_n] = old_tau.data
+        model.tau = nn.Parameter(new_tau)
         
         # 6. OPTIMIZER MIGRATION
         # Create new optimizer dynamically based on old optimizer type
@@ -227,6 +233,7 @@ class Neurogenesis:
                 
                 transfer_state(old_input_scale, model.input_scale, is_matrix=False)
                 transfer_state(old_output_scale, model.output_scale, is_matrix=False)
+                transfer_state(old_tau, model.tau, is_matrix=False)
                 
                 print("   ✅ Optimizer State Transferred (Momentum Preserved)")
             except Exception as e:
@@ -245,6 +252,7 @@ class Neurogenesis:
             
         del old_input_scale
         del old_output_scale
+        del old_tau
         
         gc.collect()
         if torch.cuda.is_available():
