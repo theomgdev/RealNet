@@ -146,7 +146,7 @@ class Neurogenesis:
         model.output_ids = old_output_ids
         
         # Expand Tau (Time Constant)
-        new_tau = torch.full((new_n,), 0.0, device=device) # Init new neurons to Balanced (0.5)
+        new_tau = torch.full((new_n,), 0.255, device=device) # Init new neurons to 0.255 (2*tanh(0.255) ~= 0.5 for balanced alpha)
         new_tau[:old_n] = old_tau.data
         model.tau = nn.Parameter(new_tau)
         

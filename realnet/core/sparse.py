@@ -31,11 +31,11 @@ class SparseRealNet(RealNet):
         
         # Copy new Learnable Parameters explicitly to be sure
         if hasattr(dense_model, 'input_scale'):
-            self.input_scale = dense_model.input_scale
+            self.input_scale = nn.Parameter(dense_model.input_scale.data.clone())
         if hasattr(dense_model, 'output_scale'):
-            self.output_scale = dense_model.output_scale
+            self.output_scale = nn.Parameter(dense_model.output_scale.data.clone())
         if hasattr(dense_model, 'tau'):
-             self.tau = dense_model.tau
+             self.tau = nn.Parameter(dense_model.tau.data.clone())
         
         # Determine SwiGLU status
         self.is_swiglu = getattr(dense_model, 'is_swiglu', False)
@@ -96,7 +96,7 @@ class SparseRealNet(RealNet):
                        max_outputs = x_input.shape[1]
 
         for t in range(steps):
-             # Prepare Input Step
+            # Prepare Input Step
             x_step = None
             if x_input is not None:
                 # Handle Index-Based Input
@@ -163,8 +163,8 @@ class SparseRealNet(RealNet):
             
             # 3. Leaky Integration (Residual)
             # h_t = h_{t-1} + tau * (candidate - h_{t-1})
-            # tau uses Sigmoid
-            alpha = torch.sigmoid(self.tau)
+            # tau uses 2*Tanh
+            alpha = 2.0 * torch.tanh(self.tau)
             h_t_combined = h_t + alpha * (candidate - h_t)
             
             # 4. StepNorm (Last)
