@@ -11,7 +11,9 @@ import random
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from realnet import RealNet, RealNetTrainer, save_checkpoint, load_checkpoint, transplant_weights
 
-torch.set_float32_matmul_precision('high')
+# TF32 Optimization (Consistent with Notebook)
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
 
 # --- CONFIGURATION ---
 TRUNCATED_BPTT_SEQ_LEN = 5
@@ -33,7 +35,7 @@ MAX_LOSS_INCREASE = 10
 NEUROGENESIS_AMOUNT = 10
 
 # REGENERATION CONFIG (PHOENIX)
-DARWINIAN_REGENERATION = True
+DARWINIAN_REGENERATION = False
 REGENERATION_MODE = 'percentage' # 'threshold' or 'percentage'
 REGENERATION_THRESHOLD = 0.01
 REGENERATION_PERCENTAGE = 0.001
@@ -46,7 +48,7 @@ OVERWRITE_LR_OF_CKPT = True
 LEARNING_RATE = 1e-4
 
 # SCHEDULER CONFIG
-USE_SCHEDULER = True
+USE_SCHEDULER = False
 SCHEDULER_T0 = 100
 SCHEDULER_ETA_MIN = 1e-6 
 
