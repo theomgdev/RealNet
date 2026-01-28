@@ -394,7 +394,7 @@ def main():
 
     # CrossEntropy
     # Note: 'ignore_index' is less critical now as outputs are perfectly aligned!
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.005)
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.0)
     trainer.loss_fn = criterion
 
     # OUTPUT TRANSFORM: Flatten (Batch, Steps, Out) -> (N, Out)
