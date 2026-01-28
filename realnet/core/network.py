@@ -279,15 +279,19 @@ class RealNet(nn.Module):
         # Calculate Thinking Ratio (Native Temporal Stretching)
         # Default ratio is 1 (Every step is an I/O step)
         ratio = 1
+        max_outputs = steps
+
         if x_input is not None:
              if x_input.dtype in [torch.long, torch.int64, torch.int32] and x_input.ndim == 2:
                   # Index-based Sequential
                   if x_input.shape[1] > 0:
                        ratio = max(1, steps // x_input.shape[1])
+                       max_outputs = x_input.shape[1]
              elif x_input.ndim == 3 and not self.pulse_mode:
                   # Dense Sequential (Pulse mode is instant, so ratio 1)
                   if x_input.shape[1] > 0:
                        ratio = max(1, steps // x_input.shape[1])
+                       max_outputs = x_input.shape[1]
 
         for t in range(steps):
             # Prepare input for this step
@@ -347,7 +351,8 @@ class RealNet(nn.Module):
             # Smart Output Collection
             # Only collect the state at the END of a thinking block (or every step if ratio=1)
             # This aligns the output tensor shape with the input sequence length, not total steps.
-            if (t + 1) % ratio == 0:
+            # We also enforce max_outputs to avoid collecting extra steps if steps % ratio != 0
+            if (t + 1) % ratio == 0 and len(outputs) < max_outputs:
                 outputs.append(h_t)
 
         # Apply Output Scaling to the collected outputs
