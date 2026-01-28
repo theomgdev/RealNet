@@ -37,7 +37,7 @@ def save_checkpoint(model, optimizer, epoch, loss, path, extra_data=None):
     return path
 
 
-def load_checkpoint(model, optimizer, path, device='cpu', strict=True):
+def load_checkpoint(model, optimizer, path, device='cpu', strict=True, lr=None):
     """
     Loads a training checkpoint.
     
@@ -48,6 +48,8 @@ def load_checkpoint(model, optimizer, path, device='cpu', strict=True):
         device (str): Device to load tensors to.
         strict (bool): If True, raises error on architecture mismatch.
                        If False, ignores mismatched keys (standard PyTorch behavior).
+        lr (float, optional): If provided, overwrites the learning rate in the optimizer 
+                              after loading the state.
     
     Returns:
         dict: The loaded checkpoint data (epoch, loss, etc.)
@@ -66,6 +68,13 @@ def load_checkpoint(model, optimizer, path, device='cpu', strict=True):
     if optimizer and 'optimizer_state_dict' in checkpoint:
         try:
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            
+            # Allow overwriting LR if requested (e.g. for fine-tuning or experiments)
+            if lr is not None:
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = lr
+                print(f"⚡ Optimizer LR overwritten to: {lr}")
+                
         except Exception as e:
             print(f"⚠️ Could not load optimizer state: {e}. Optimizer will start fresh.")
     

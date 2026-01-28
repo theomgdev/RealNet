@@ -42,6 +42,7 @@ REGENERATION_INTERVAL = 10
 # OPTIMIZER CONFIG
 VOCAB_SIZE = 256
 RESET_OPTIMIZER_ON_LOAD = False 
+OVERWRITE_LR_OF_CKPT = True
 LEARNING_RATE = 1e-4
 
 # SCHEDULER CONFIG
@@ -302,6 +303,7 @@ def main():
     print(f"RESET_OPTIM_ON_LOAD: {RESET_OPTIMIZER_ON_LOAD}")
     print(f"SCHEDULER: Enabled={USE_SCHEDULER}, T0={SCHEDULER_T0}, MinLR={SCHEDULER_ETA_MIN}")
     print(f"LEARNING_RATE: {LEARNING_RATE}")
+    print(f"OVERWRITE_LR_OF_CKPT: {OVERWRITE_LR_OF_CKPT}")
     print(f"---------------------")
     
     # --- CHECKPOINT PRE-LOAD (For Data Resume) ---
@@ -380,7 +382,8 @@ def main():
                         NUM_NEURONS = saved_dim 
                         model, trainer, _, _ = initialize_system(dataset.get_vocab_size(), NUM_NEURONS, DEVICE, LEARNING_RATE, ACTIVATION)
                         opt_arg = None if RESET_OPTIMIZER_ON_LOAD else trainer.optimizer
-                        load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True)
+                        target_lr = LEARNING_RATE if OVERWRITE_LR_OF_CKPT else None
+                        load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True, lr=target_lr)
                         print(f"✅ Resuming from Epoch {start_epoch}")
                         
                     elif action == '2':
@@ -395,12 +398,14 @@ def main():
                         
                 else:
                     opt_arg = None if RESET_OPTIMIZER_ON_LOAD else trainer.optimizer
+                    target_lr = LEARNING_RATE if OVERWRITE_LR_OF_CKPT else None
                     print(f"🔄 Loading Checkpoint from {CKPT_PATH}...")
-                    load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True)
+                    load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True, lr=target_lr)
                     print(f"✅ Resuming from Epoch {start_epoch}")
             else:
                  opt_arg = None if RESET_OPTIMIZER_ON_LOAD else trainer.optimizer
-                 load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True)
+                 target_lr = LEARNING_RATE if OVERWRITE_LR_OF_CKPT else None
+                 load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True, lr=target_lr)
                  start_epoch = checkpoint['epoch'] + 1
 
         except Exception as e:
