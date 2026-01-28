@@ -60,7 +60,7 @@ class Neurogenesis:
         old_W_param = model.W
         old_B_param = model.B
         
-        # Norm Preservation (StepNorm & TauNorm)
+        # Norm Preservation (StepNorm)
         old_norm_w_param = model.norm.weight
         old_norm_b_param = model.norm.bias
         

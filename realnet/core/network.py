@@ -40,7 +40,7 @@ class RealNet(nn.Module):
         self.B = nn.Parameter(torch.zeros(num_neurons, device=device))
 
         # Architecturally defined components
-        self.norm = nn.LayerNorm(num_neurons).to(device) # StepNorm (Output Stabilization Only)
+        self.norm = nn.LayerNorm(num_neurons).to(device) # StepNorm
         
         # Activation Function
         self.is_swiglu = False
