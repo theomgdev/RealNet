@@ -60,7 +60,7 @@ class Neurogenesis:
         old_W_param = model.W
         old_B_param = model.B
         
-        # Single Shared Norm Preservation
+        # Norm Preservation (StepNorm & TauNorm)
         old_norm_w_param = model.norm.weight
         old_norm_b_param = model.norm.bias
         
@@ -69,7 +69,6 @@ class Neurogenesis:
         
         old_input_scale = model.input_scale
         old_output_scale = model.output_scale
-        old_tau = model.tau
         
         # Explicitly preserve ID lists (vital for offsets)
         old_input_ids = list(model.input_ids)
@@ -115,8 +114,9 @@ class Neurogenesis:
         if hasattr(model, 'mask'):
             new_mask[:old_n, :old_n] = model.mask
         
-        # 4. Expand Shared Norm
+        # 4. Expand Norms (StepNorm)
         new_norm = nn.LayerNorm(new_n).to(device)
+        
         with torch.no_grad():
             new_norm.weight[:old_n] = model.norm.weight.data
             new_norm.bias[:old_n]   = model.norm.bias.data
@@ -133,7 +133,7 @@ class Neurogenesis:
         model.B = nn.Parameter(new_B)
         model.register_buffer('mask', new_mask)
         
-        # Apply new norm
+        # Apply new norms
         model.norm = new_norm
         
         if is_swiglu:
@@ -148,11 +148,6 @@ class Neurogenesis:
         # Re-bind IDs
         model.input_ids = old_input_ids
         model.output_ids = old_output_ids
-        
-        # Expand Tau (Time Constant)
-        new_tau = torch.full((new_n,), 0.255, device=device) # Init new neurons to 0.255 (2*tanh(0.255) ~= 0.5 for Balanced)
-        new_tau[:old_n] = old_tau.data
-        model.tau = nn.Parameter(new_tau)
         
         # 6. OPTIMIZER MIGRATION
         # Create new optimizer dynamically based on old optimizer type
@@ -237,7 +232,7 @@ class Neurogenesis:
                 transfer_state(old_W_param, model.W, is_matrix=True)
                 transfer_state(old_B_param, model.B, is_matrix=False)
                 
-                # Transfer Shared Norm State
+                # Transfer StepNorm State
                 transfer_state(old_norm_w_param, model.norm.weight, is_matrix=False)
                 transfer_state(old_norm_b_param, model.norm.bias, is_matrix=False)
                 
@@ -247,7 +242,6 @@ class Neurogenesis:
                 
                 transfer_state(old_input_scale, model.input_scale, is_matrix=False)
                 transfer_state(old_output_scale, model.output_scale, is_matrix=False)
-                transfer_state(old_tau, model.tau, is_matrix=False)
                 
                 print("   ✅ Optimizer State Transferred (Momentum Preserved)")
             except Exception as e:
@@ -273,7 +267,6 @@ class Neurogenesis:
             
         del old_input_scale
         del old_output_scale
-        del old_tau
         
         gc.collect()
         if torch.cuda.is_available():

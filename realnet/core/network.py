@@ -20,17 +20,9 @@ class RealNet(nn.Module):
         self.register_buffer('input_pos', torch.tensor(input_ids, dtype=torch.long, device=device))
         self.register_buffer('output_pos', torch.tensor(output_ids, dtype=torch.long, device=device))
         
-        # Learnable Scaling Parameters
-        # Init to 0.5 (Soft Start) - Dampens initial signal/gradient flow.
+        # Scaling Parameters (Input/Output)
         self.input_scale = nn.Parameter(torch.full((len(input_ids),), 0.5, device=device))
         self.output_scale = nn.Parameter(torch.full((len(output_ids),), 0.5, device=device))
-        
-        # Learnable Time Constant (Alpha/Tau)
-        # Controls the mix between Old State (Memory) and New State (Chaos).
-        # Alpha near 1.0 = Overwrite (Chaos/Standard RealNet)
-        # Alpha near 0.0 = Freeze (Memory/Latch)
-        # Initialized to 0.255 (2*tanh(0.255) ~= 0.5) for Balanced point (50% Memory, 50% Chaos).
-        self.tau = nn.Parameter(torch.full((num_neurons,), 0.255, device=device))
         
         self.pulse_mode = pulse_mode
         self.activation_type = activation
@@ -48,7 +40,7 @@ class RealNet(nn.Module):
         self.B = nn.Parameter(torch.zeros(num_neurons, device=device))
 
         # Architecturally defined components
-        self.norm = nn.LayerNorm(num_neurons).to(device) # StepNorm (Shared for Pre/Post Integration)
+        self.norm = nn.LayerNorm(num_neurons).to(device) # StepNorm (Output Stabilization Only)
         
         # Activation Function
         self.is_swiglu = False
@@ -88,17 +80,7 @@ class RealNet(nn.Module):
         self.register_buffer('mask', torch.ones(num_neurons, num_neurons, device=device))
         if self.is_swiglu:
              self.register_buffer('mask_gate', torch.ones(num_neurons, num_neurons, device=device))
-
-        # Dampen gradients for sensitive meta-parameters
-        # This makes them learn 10x slower than weights for stability
-        scale_lr_factor = 0.1
-        if self.input_scale.requires_grad:
-            self.input_scale.register_hook(lambda grad: grad * scale_lr_factor)
-        if self.output_scale.requires_grad:
-            self.output_scale.register_hook(lambda grad: grad * scale_lr_factor)
-        if self.tau.requires_grad:
-            self.tau.register_hook(lambda grad: grad * scale_lr_factor)
-
+        
     def _init_weights(self, strategy):
         self._apply_init(self.W, strategy)
 
@@ -267,24 +249,8 @@ class RealNet(nn.Module):
                     signal = signal + x_input_step
                 activated = self.act(signal)
             
-            # 2. Dropout (Applied to the 'Gradient' / New Information)
-            candidate = self.norm(self.drop(activated)) # Shared Norm
-
-            # 3. Leaky Integration (Time-Continuous Residual)
-            # We use the formulation: h_t = h_{t-1} + alpha * (candidate - h_{t-1})
-            # This is mathematically equivalent to (1-alpha)h + alpha*cand
-            # But numerically more stable for "Residual Learning" (if alpha is small, it learns corrections)
-            alpha = 2.0 * torch.tanh(self.tau)
-            
-            # Expand for Batch
-            # h_t_combined is the pre-normalized new state
-            h_t_combined = h_t_in + alpha * (candidate - h_t_in)
-
-            # 4. StepNorm (Applied LAST to bound energy)
-            # This ensures the state never explodes despite the integration
-            h_t_out = self.norm(h_t_combined) # Shared Norm
-            
-            return h_t_out
+            # 2. Dropout & 3. StepNorm
+            return self.norm(self.drop(activated))
 
         # Calculate Thinking Ratio (Native Temporal Stretching)
         # Default ratio is 1 (Every step is an I/O step)
