@@ -29,6 +29,17 @@ class SparseRealNet(RealNet):
         # Copy State Dictionary (weights, biases, mask, etc.)
         self.load_state_dict(dense_model.state_dict())
         
+        # Copy new Learnable Parameters explicitly to be sure
+        if hasattr(dense_model, 'input_scale'):
+            self.input_scale = dense_model.input_scale
+        if hasattr(dense_model, 'output_scale'):
+            self.output_scale = dense_model.output_scale
+        if hasattr(dense_model, 'tau'):
+             self.tau = dense_model.tau
+        
+        # Determine SwiGLU status
+        self.is_swiglu = getattr(dense_model, 'is_swiglu', False)
+        
         # Convert W to Sparse immediately
         self._sparsify_weights()
         
@@ -41,6 +52,11 @@ class SparseRealNet(RealNet):
             self.W_sparse = masked_W.to_sparse()
             # Cache the transpose for valid matrix multiplication: (h_t @ W) -> (W.t @ h_t.t).t
             self.W_t_sparse = self.W_sparse.t().coalesce()
+            
+            if self.is_swiglu:
+                masked_W_gate = self.W_gate * self.mask_gate
+                self.W_gate_sparse = masked_W_gate.to_sparse()
+                self.W_gate_t_sparse = self.W_gate_sparse.t().coalesce()
             
             # We don't need Dense W anymore in memory for computation, 
             # but we keep it referenced in parameters if we want to save/load cleanly.
@@ -63,37 +79,103 @@ class SparseRealNet(RealNet):
         h_t = current_state
         outputs = []
 
+        # Calculate Thinking Ratio (Native Temporal Stretching)
+        ratio = 1
+        if x_input is not None:
+             if x_input.dtype in [torch.long, torch.int64, torch.int32] and x_input.ndim == 2:
+                  # Index-based Sequential
+                  if x_input.shape[1] > 0:
+                       ratio = max(1, steps // x_input.shape[1])
+             elif x_input.ndim == 3 and not self.pulse_mode:
+                  # Dense Sequential
+                  if x_input.shape[1] > 0:
+                       ratio = max(1, steps // x_input.shape[1])
+
         for t in range(steps):
-            # 1. Chaotic Transmission (SPARSE)
-            # Matrix Math Trick: (h_t @ W) <=> (W.T @ h_t.T).T
-            # PyTorch supports: Sparse(N,N) @ Dense(N,B) -> Dense(N,B)
-            
-            # h_t is (Batch, N), we need (N, Batch) for spmm
-            signal_T = torch.sparse.mm(self.W_t_sparse, h_t.t())
-            signal = signal_T.t() # Back to (Batch, N)
-            
-            # 2. Add Character (Bias)
-            signal = signal + self.B
-            
-            # 3. Add Input
+             # Prepare Input Step
+            x_step = None
             if x_input is not None:
-                if x_input.ndim == 3:
-                     if t < x_input.shape[1]:
-                         signal = signal + x_input[:, t, :]
-                elif self.pulse_mode:
+                # Handle Index-Based Input
+                 if x_input.dtype in [torch.long, torch.int64, torch.int32]:
+                      if x_input.ndim == 2:
+                           if t % ratio == 0 and (t // ratio) < x_input.shape[1]:
+                                token_indices = x_input[:, t // ratio]
+                                valid_mask = token_indices != -1
+                                if valid_mask.any():
+                                     # Sparse injection not fully supported, convert step to dense
+                                     offset = self.input_ids[0]
+                                     valid_neurons = token_indices[valid_mask] + offset
+                                     
+                                     # Scaling
+                                     scale_indices = valid_neurons - offset
+                                     
+                                     x_step_dense = torch.zeros(batch_sz, self.num_neurons, device=self.device)
+                                     x_step_dense[valid_mask, valid_neurons] = self.input_scale[scale_indices]
+                                     x_step = x_step_dense
+                                     
+                 elif x_input.ndim == 3:
+                    if t % ratio == 0 and (t // ratio) < x_input.shape[1]:
+                        x_step = x_input[:, t // ratio, :]
+                        
+                 elif self.pulse_mode:
                     if t == 0:
-                        signal = signal + x_input
-                else:
-                    signal = signal + x_input
-
-            # 4. Activation & Norm
-            activated = self.act(signal)
-            normalized = self.norm(activated)
-            h_t = self.drop(normalized)
+                        x_step = x_input
+                 else:
+                    x_step = x_input
             
-            outputs.append(h_t)
+            # Apply Input Scaling for Dense Inputs
+            if x_step is not None and x_input.ndim != 2:
+                 # Clone and Scale
+                 if x_step.is_leaf: # Optimization: check leaf
+                      x_step = x_step.clone()
+                 x_step[:, self.input_pos] = x_step[:, self.input_pos] * self.input_scale
 
-        return torch.stack(outputs), h_t
+            # 1. Chaotic Transmission (SPARSE)
+            # h_t is (Batch, N), we need (N, Batch) for spmm
+            # signal = h_t @ W + B
+            signal_T = torch.sparse.mm(self.W_t_sparse, h_t.t())
+            signal = signal_T.t() + self.B
+            
+            # SwiGLU Logic
+            if self.is_swiglu:
+                gate_signal_T = torch.sparse.mm(self.W_gate_t_sparse, h_t.t())
+                gate_signal = gate_signal_T.t() + self.B_gate
+                
+                if x_step is not None:
+                    gate_signal = gate_signal + x_step
+                
+                gate_act = self.act(gate_signal)
+                
+                if x_step is not None:
+                    signal = signal + x_step
+                    
+                activated = signal * gate_act
+            else:
+                if x_step is not None:
+                    signal = signal + x_step
+                activated = self.act(signal)
+
+            # 2. Dropout
+            candidate = self.drop(activated)
+            
+            # 3. Leaky Integration (Residual)
+            # h_t = h_{t-1} + tau * (candidate - h_{t-1})
+            # tau uses Sigmoid
+            alpha = torch.sigmoid(self.tau)
+            h_t_combined = h_t + alpha * (candidate - h_t)
+            
+            # 4. StepNorm (Last)
+            h_t = self.norm(h_t_combined)
+            
+            # Smart Output Collection
+            if (t + 1) % ratio == 0:
+                outputs.append(h_t)
+
+        # Apply Output Scaling
+        stacked_outputs = torch.stack(outputs)
+        stacked_outputs[:, :, self.output_pos] = stacked_outputs[:, :, self.output_pos] * self.output_scale
+
+        return stacked_outputs, h_t
 
     @classmethod
     def from_dense(cls, model):

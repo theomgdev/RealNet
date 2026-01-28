@@ -23,6 +23,14 @@ class RealNet(nn.Module):
         # Learnable Scaling Parameters
         self.input_scale = nn.Parameter(torch.ones(len(input_ids), device=device))
         self.output_scale = nn.Parameter(torch.ones(len(output_ids), device=device))
+        
+        # Learnable Time Constant (Alpha/Tau)
+        # Controls the mix between Old State (Memory) and New State (Chaos).
+        # Alpha near 1.0 = Overwrite (Chaos/Standard RealNet)
+        # Alpha near 0.0 = Freeze (Memory/Latch)
+        # Initialized to 0.0 (Sigmoid 0.0 = 0.5) for balanced starting point (50% Memory, 50% Chaos).
+        self.tau = nn.Parameter(torch.full((num_neurons,), 0.0, device=device))
+        
         self.pulse_mode = pulse_mode
         self.activation_type = activation
         self.gradient_checkpointing = gradient_checkpointing
@@ -222,7 +230,7 @@ class RealNet(nn.Module):
             effective_W_gate = self.W_gate * self.mask_gate
 
         def _single_step(h_t_in, t_idx, x_input_step):
-            """Single timestep computation - can be checkpointed."""
+            # 3. Activation
             # 1. Chaotic Transmission (DENSE)
             # Standard Projection (Value Path)
             signal = torch.matmul(h_t_in, effective_W) + self.B
@@ -242,8 +250,6 @@ class RealNet(nn.Module):
                      signal = signal + x_input_step
                 
                 # Element-wise Gating (No activation on Value path, just Linear * Swish(Gate))
-                # Note: Traditional GLU is Linear * Sigmoid. SwiGLU is Linear * Swish.
-                # Here signal is Linear. gate_act is Swish.
                 activated = signal * gate_act
             else:
                 # Standard Activation
@@ -251,9 +257,22 @@ class RealNet(nn.Module):
                     signal = signal + x_input_step
                 activated = self.act(signal)
             
-            # StepNorm & Dropout
-            normalized = self.norm(activated)
-            h_t_out = self.drop(normalized)
+            # 4. Dropout (Applied to the 'Gradient' / New Information)
+            candidate = self.drop(activated)
+
+            # 5. Leaky Integration (Time-Continuous Residual)
+            # We use the formulation: h_t = h_{t-1} + alpha * (candidate - h_{t-1})
+            # This is mathematically equivalent to (1-alpha)h + alpha*cand
+            # But numerically more stable for "Residual Learning" (if alpha is small, it learns corrections)
+            alpha = torch.sigmoid(self.tau)
+            
+            # Expand for Batch
+            # h_t_combined is the pre-normalized new state
+            h_t_combined = h_t_in + alpha * (candidate - h_t_in)
+
+            # 6. StepNorm (Applied LAST to bound energy)
+            # This ensures the state never explodes despite the integration
+            h_t_out = self.norm(h_t_combined)
             
             return h_t_out
 
