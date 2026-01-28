@@ -1,4 +1,5 @@
 # Python / PyTorch
+*_temp.py
 __pycache__/
 *.pyc
 *.pyo
