@@ -15,6 +15,14 @@ class RealNet(nn.Module):
         self.num_neurons = num_neurons
         self.input_ids = input_ids
         self.output_ids = output_ids
+        
+        # Buffers for fast indexing
+        self.register_buffer('input_pos', torch.tensor(input_ids, dtype=torch.long, device=device))
+        self.register_buffer('output_pos', torch.tensor(output_ids, dtype=torch.long, device=device))
+        
+        # Learnable Scaling Parameters
+        self.input_scale = nn.Parameter(torch.ones(len(input_ids), device=device))
+        self.output_scale = nn.Parameter(torch.ones(len(output_ids), device=device))
         self.pulse_mode = pulse_mode
         self.activation_type = activation
         self.gradient_checkpointing = gradient_checkpointing
@@ -280,7 +288,13 @@ class RealNet(nn.Module):
                                     # Assumes input_ids are contiguous. neuron_idx = token_idx + input_ids[0]
                                     offset = self.input_ids[0]
                                     valid_neurons = token_indices[valid_mask] + offset
-                                    x_step_dense[valid_mask, valid_neurons] = 1.0
+                                    
+                                    # Apply Input Scaling (Mapped)
+                                    # valid_neurons corresponds to input_pos[scale_indices]
+                                    scale_indices = valid_neurons - offset
+                                    
+                                    x_step_dense = torch.zeros(batch_sz, self.num_neurons, device=self.device)
+                                    x_step_dense[valid_mask, valid_neurons] = self.input_scale[scale_indices]
                                     x_step = x_step_dense
                                
                 elif x_input.ndim == 3:
@@ -293,6 +307,14 @@ class RealNet(nn.Module):
                         x_step = x_input
                 else:
                     x_step = x_input
+            
+            # Apply Input Scaling for Dense Inputs
+            if x_step is not None and x_input.ndim != 2: # Skip if already handled in index-based block
+                 # We need to scale only the input neurons
+                 # x_step is (Batch, Neurons)
+                 # Always clone to avoid modifying the original x_input in-place (which might be a view or leaf)
+                 x_step = x_step.clone()
+                 x_step[:, self.input_pos] = x_step[:, self.input_pos] * self.input_scale
             
             # Use gradient checkpointing if enabled (saves VRAM, costs recomputation)
             if self.gradient_checkpointing and self.training:
@@ -309,7 +331,14 @@ class RealNet(nn.Module):
             if (t + 1) % ratio == 0:
                 outputs.append(h_t)
 
-        return torch.stack(outputs), h_t
+        # Apply Output Scaling to the collected outputs
+        stacked_outputs = torch.stack(outputs)
+        # Apply scale to output neurons only
+        # stacked_outputs: (Batch, Steps, Neurons)
+        # output_scale: (Out_Neurons)
+        stacked_outputs[:, :, self.output_pos] = stacked_outputs[:, :, self.output_pos] * self.output_scale
+
+        return stacked_outputs, h_t
 
     def reset_state(self, batch_size=1):
         self.state = torch.zeros(batch_size, self.num_neurons, device=self.device)
