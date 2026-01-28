@@ -35,16 +35,6 @@ class SparseRealNet(RealNet):
         if hasattr(dense_model, 'output_scale'):
             self.output_scale = nn.Parameter(dense_model.output_scale.data.clone())
         
-        # Determine SwiGLU status
-        self.is_swiglu = getattr(dense_model, 'is_swiglu', False)
-        
-        # Dampen gradients for sensitive meta-parameters (Re-apply because we replaced parameters)
-        scale_lr_factor = 0.1
-        if hasattr(self, 'input_scale') and self.input_scale.requires_grad:
-            self.input_scale.register_hook(lambda grad: grad * scale_lr_factor)
-        if hasattr(self, 'output_scale') and self.output_scale.requires_grad:
-            self.output_scale.register_hook(lambda grad: grad * scale_lr_factor)
-
         # Convert W to Sparse immediately
         self._sparsify_weights()
         
@@ -57,11 +47,6 @@ class SparseRealNet(RealNet):
             self.W_sparse = masked_W.to_sparse()
             # Cache the transpose for valid matrix multiplication: (h_t @ W) -> (W.t @ h_t.t).t
             self.W_t_sparse = self.W_sparse.t().coalesce()
-            
-            if self.is_swiglu:
-                masked_W_gate = self.W_gate * self.mask_gate
-                self.W_gate_sparse = masked_W_gate.to_sparse()
-                self.W_gate_t_sparse = self.W_gate_sparse.t().coalesce()
             
             # We don't need Dense W anymore in memory for computation, 
             # but we keep it referenced in parameters if we want to save/load cleanly.
@@ -144,24 +129,9 @@ class SparseRealNet(RealNet):
             signal_T = torch.sparse.mm(self.W_t_sparse, h_t.t())
             signal = signal_T.t() + self.B
             
-            # SwiGLU Logic
-            if self.is_swiglu:
-                gate_signal_T = torch.sparse.mm(self.W_gate_t_sparse, h_t.t())
-                gate_signal = gate_signal_T.t() + self.B_gate
-                
-                if x_step is not None:
-                    gate_signal = gate_signal + x_step
-                
-                gate_act = self.act(gate_signal)
-                
-                if x_step is not None:
-                    signal = signal + x_step
-                    
-                activated = signal * gate_act
-            else:
-                if x_step is not None:
-                    signal = signal + x_step
-                activated = self.act(signal)
+            if x_step is not None:
+                signal = signal + x_step
+            activated = self.act(signal)
 
             # 2. Dropout & 3. StepNorm
             h_t = self.norm(self.drop(activated))

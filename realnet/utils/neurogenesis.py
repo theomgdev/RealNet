@@ -53,9 +53,6 @@ class Neurogenesis:
         new_n = old_n + amount
         device = model.device
         
-        # Check for SwiGLU
-        is_swiglu = getattr(model, 'is_swiglu', False)
-        
         # Preserve references to old parameters for state migration
         old_W_param = model.W
         old_B_param = model.B
@@ -63,9 +60,6 @@ class Neurogenesis:
         # Norm Preservation (StepNorm)
         old_norm_w_param = model.norm.weight
         old_norm_b_param = model.norm.bias
-        
-        old_W_gate_param = model.W_gate if is_swiglu else None
-        old_B_gate_param = model.B_gate if is_swiglu else None
         
         old_input_scale = model.input_scale
         old_output_scale = model.output_scale
@@ -88,26 +82,6 @@ class Neurogenesis:
         # 2. Expand Bias (B)
         new_B = torch.zeros(new_n, device=device)
         new_B[:old_n] = model.B.data
-
-        # --- Expand Gates (if SwiGLU) ---
-        new_W_gate = None
-        new_B_gate = None
-        new_mask_gate = None
-        
-        if is_swiglu:
-            # W_gate
-            new_W_gate = torch.zeros(new_n, new_n, device=device)
-            new_W_gate[:old_n, :old_n] = model.W_gate.data
-            new_W_gate[:old_n, old_n:] = torch.randn(old_n, amount, device=device) * noise_std # Noise for outgoing
-            
-            # B_gate
-            new_B_gate = torch.zeros(new_n, device=device)
-            new_B_gate[:old_n] = model.B_gate.data
-            
-            # Mask Gate
-            new_mask_gate = torch.ones(new_n, new_n, device=device)
-            if hasattr(model, 'mask_gate'):
-                 new_mask_gate[:old_n, :old_n] = model.mask_gate
 
         # 3. Expand Mask
         new_mask = torch.ones(new_n, new_n, device=device)
@@ -135,11 +109,6 @@ class Neurogenesis:
         
         # Apply new norms
         model.norm = new_norm
-        
-        if is_swiglu:
-            model.W_gate = nn.Parameter(new_W_gate)
-            model.B_gate = nn.Parameter(new_B_gate)
-            model.register_buffer('mask_gate', new_mask_gate)
             
         # Re-bind scaling params (they are safe as is)
         model.input_scale = nn.Parameter(old_input_scale.data)
@@ -236,10 +205,6 @@ class Neurogenesis:
                 transfer_state(old_norm_w_param, model.norm.weight, is_matrix=False)
                 transfer_state(old_norm_b_param, model.norm.bias, is_matrix=False)
                 
-                if is_swiglu:
-                    transfer_state(old_W_gate_param, model.W_gate, is_matrix=True)
-                    transfer_state(old_B_gate_param, model.B_gate, is_matrix=False)
-                
                 transfer_state(old_input_scale, model.input_scale, is_matrix=False)
                 transfer_state(old_output_scale, model.output_scale, is_matrix=False)
                 
@@ -259,12 +224,6 @@ class Neurogenesis:
         del old_norm_w_param
         del old_norm_b_param
         del old_opt
-        
-        if is_swiglu:
-            del old_W_gate_param
-            del old_B_gate_param
-
-            
         del old_input_scale
         del old_output_scale
         

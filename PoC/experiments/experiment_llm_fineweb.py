@@ -233,9 +233,6 @@ def calculate_optimal_batch_size(device, num_neurons, activation, seq_len, think
         # However, internal gradients still track through time.
         BYTES_PER_NEURON_STEP = 16
 
-        if activation == 'swiglu':
-            BYTES_PER_NEURON_STEP *= 1.5
-
         if truncated_bptt_seq_len > 0:
             # We process raw tokens but computation graph is deep
             effective_mem_len = truncated_bptt_seq_len * (think_gap + 1)

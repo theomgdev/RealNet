@@ -4,7 +4,7 @@ import torch.utils.checkpoint as checkpoint
 import numpy as np
 
 class RealNet(nn.Module):
-    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='orthogonal', gate_init=None, activation='tanh', gradient_checkpointing=False):
+    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='orthogonal', activation='tanh', gradient_checkpointing=False):
         super(RealNet, self).__init__()
         
         # Auto size to input and output
@@ -29,7 +29,6 @@ class RealNet(nn.Module):
         self.gradient_checkpointing = gradient_checkpointing
         self._device = device # Private variable for property
         self.weight_init_strategy = weight_init
-        self.gate_init_strategy = gate_init
         
         # Initialization
         # W: N x N weights. Anyone can talk to anyone.
@@ -42,8 +41,6 @@ class RealNet(nn.Module):
         # Architecturally defined components
         self.norm = nn.LayerNorm(num_neurons).to(device) # StepNorm
         
-        # Activation Function
-        self.is_swiglu = False
         if activation == 'tanh':
             self.act = nn.Tanh()
         elif activation == 'relu':
@@ -56,19 +53,8 @@ class RealNet(nn.Module):
             self.act = nn.GELU()
         elif activation == 'silu':
              self.act = nn.SiLU()
-        elif activation == 'swiglu':
-            self.is_swiglu = True
-            # SwiGLU requires a secondary Gate Matrix
-            self.W_gate = nn.Parameter(torch.empty(num_neurons, num_neurons, device=device))
-            self.B_gate = nn.Parameter(torch.zeros(num_neurons, device=device))
-            self._init_weights_gate(gate_init if gate_init is not None else weight_init)
-            self.act = nn.SiLU() # Swish part of SwiGLU
         else:
              raise ValueError(f"Unknown activation function: {activation}")
-
-        # Inform user if gate_init is provided but not used
-        if gate_init is not None and not self.is_swiglu:
-             print(f"RealNet Info: 'gate_init' parameter ('{gate_init}') is ignored because activation is '{activation}'.")
 
         self.drop = nn.Dropout(p=dropout_rate) # Biological Failure Simulation
 
@@ -78,14 +64,9 @@ class RealNet(nn.Module):
         # PRUNING MASK (Synaptic Life)
         # 1 = Alive, 0 = Dead
         self.register_buffer('mask', torch.ones(num_neurons, num_neurons, device=device))
-        if self.is_swiglu:
-             self.register_buffer('mask_gate', torch.ones(num_neurons, num_neurons, device=device))
         
     def _init_weights(self, strategy):
         self._apply_init(self.W, strategy)
-
-    def _init_weights_gate(self, strategy):
-        self._apply_init(self.W_gate, strategy)
         
     def _apply_init(self, tensor, strategy):
         """
@@ -148,25 +129,8 @@ class RealNet(nn.Module):
             if count > 0:
                 self.W.data[weak_mask] = fresh_W[weak_mask]
             
-            # 2. Gate Weights (if SwiGLU)
-            gate_count = 0
-            if self.is_swiglu:
-                # Recalculate dynamic threshold for Gate independently if percentage mode
-                gate_threshold = threshold
-                if percentage is not None:
-                    gate_threshold = torch.quantile(torch.abs(self.W_gate), percentage).item()
-                
-                fresh_gate = torch.empty_like(self.W_gate)
-                self._apply_init(fresh_gate, self.gate_init_strategy)
-                
-                weak_gate_mask = torch.abs(self.W_gate) < gate_threshold
-                gate_count = weak_gate_mask.sum().item()
-                
-                if gate_count > 0:
-                    self.W_gate.data[weak_gate_mask] = fresh_gate[weak_gate_mask]
-            
-            total_revived = count + gate_count
-            total_params = self.W.numel() + (self.W_gate.numel() if self.is_swiglu else 0)
+            total_revived = count
+            total_params = self.W.numel()
             
             return total_revived, total_params
 
@@ -216,38 +180,16 @@ class RealNet(nn.Module):
 
         # Apply Mask to Weights (Dead synapses transmit nothing)
         effective_W = self.W * self.mask
-        
-        # Prepare Gate Weights for SwiGLU
-        effective_W_gate = None
-        if self.is_swiglu:
-            effective_W_gate = self.W_gate * self.mask_gate
 
         def _single_step(h_t_in, t_idx, x_input_step):
             # 1. Chaotic Transmission (DENSE)
             # Standard Projection (Value Path)
             signal = torch.matmul(h_t_in, effective_W) + self.B
             
-            # SwiGLU Split Path
-            if self.is_swiglu:
-                # Gate Projection
-                gate_signal = torch.matmul(h_t_in, effective_W_gate) + self.B_gate
-                if x_input_step is not None:
-                    gate_signal = gate_signal + x_input_step # Inject input to gate too
-                    
-                # Gate Activation (SiLU / Swish)
-                gate_act = self.act(gate_signal)
-                
-                # Value Injection
-                if x_input_step is not None:
-                     signal = signal + x_input_step
-                
-                # Element-wise Gating (No activation on Value path, just Linear * Swish(Gate))
-                activated = signal * gate_act
-            else:
-                # Standard Activation
-                if x_input_step is not None:
-                    signal = signal + x_input_step
-                activated = self.act(signal)
+            # Standard Activation
+            if x_input_step is not None:
+                signal = signal + x_input_step
+            activated = self.act(signal)
             
             # 2. Dropout & 3. StepNorm
             return self.norm(self.drop(activated))
