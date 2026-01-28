@@ -59,6 +59,8 @@ class Neurogenesis:
         # Preserve references to old parameters for state migration
         old_W_param = model.W
         old_B_param = model.B
+        
+        # Single Shared Norm Preservation
         old_norm_w_param = model.norm.weight
         old_norm_b_param = model.norm.bias
         
@@ -113,11 +115,11 @@ class Neurogenesis:
         if hasattr(model, 'mask'):
             new_mask[:old_n, :old_n] = model.mask
         
-        # 4. Expand LayerNorm
+        # 4. Expand Shared Norm
         new_norm = nn.LayerNorm(new_n).to(device)
         with torch.no_grad():
             new_norm.weight[:old_n] = model.norm.weight.data
-            new_norm.bias[:old_n] = model.norm.bias.data
+            new_norm.bias[:old_n]   = model.norm.bias.data
             
         # 5. Expand State (if exists) - Pad with 0
         if hasattr(model, 'state'):
@@ -130,6 +132,8 @@ class Neurogenesis:
         model.W = nn.Parameter(new_W)
         model.B = nn.Parameter(new_B)
         model.register_buffer('mask', new_mask)
+        
+        # Apply new norm
         model.norm = new_norm
         
         if is_swiglu:
@@ -146,7 +150,7 @@ class Neurogenesis:
         model.output_ids = old_output_ids
         
         # Expand Tau (Time Constant)
-        new_tau = torch.full((new_n,), 0.255, device=device) # Init new neurons to 0.255 (2*tanh(0.255) ~= 0.5 for balanced alpha)
+        new_tau = torch.full((new_n,), 0.255, device=device) # Init new neurons to 0.255 (2*tanh(0.255) ~= 0.5 for Balanced)
         new_tau[:old_n] = old_tau.data
         model.tau = nn.Parameter(new_tau)
         
@@ -232,6 +236,8 @@ class Neurogenesis:
             try:
                 transfer_state(old_W_param, model.W, is_matrix=True)
                 transfer_state(old_B_param, model.B, is_matrix=False)
+                
+                # Transfer Shared Norm State
                 transfer_state(old_norm_w_param, model.norm.weight, is_matrix=False)
                 transfer_state(old_norm_b_param, model.norm.bias, is_matrix=False)
                 
@@ -263,6 +269,7 @@ class Neurogenesis:
         if is_swiglu:
             del old_W_gate_param
             del old_B_gate_param
+
             
         del old_input_scale
         del old_output_scale

@@ -29,7 +29,7 @@ def main():
         dropout_rate=0.0,
         device=DEVICE,
         activation='gelu',
-        weight_init='classic'
+        weight_init='xavier_uniform'
     )
     trainer = RealNetTrainer(model, device=DEVICE, synaptic_noise=0.0)
 

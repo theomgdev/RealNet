@@ -40,6 +40,15 @@ class SparseRealNet(RealNet):
         # Determine SwiGLU status
         self.is_swiglu = getattr(dense_model, 'is_swiglu', False)
         
+        # Dampen gradients for sensitive meta-parameters (Re-apply because we replaced parameters)
+        scale_lr_factor = 0.1
+        if hasattr(self, 'input_scale') and self.input_scale.requires_grad:
+            self.input_scale.register_hook(lambda grad: grad * scale_lr_factor)
+        if hasattr(self, 'output_scale') and self.output_scale.requires_grad:
+            self.output_scale.register_hook(lambda grad: grad * scale_lr_factor)
+        if hasattr(self, 'tau') and self.tau.requires_grad:
+            self.tau.register_hook(lambda grad: grad * scale_lr_factor)
+
         # Convert W to Sparse immediately
         self._sparsify_weights()
         
@@ -159,7 +168,7 @@ class SparseRealNet(RealNet):
                 activated = self.act(signal)
 
             # 2. Dropout
-            candidate = self.drop(activated)
+            candidate = self.norm(self.drop(activated)) # Shared Norm
             
             # 3. Leaky Integration (Residual)
             # h_t = h_{t-1} + tau * (candidate - h_{t-1})
@@ -168,7 +177,7 @@ class SparseRealNet(RealNet):
             h_t_combined = h_t + alpha * (candidate - h_t)
             
             # 4. StepNorm (Last)
-            h_t = self.norm(h_t_combined)
+            h_t = self.norm(h_t_combined) # Shared Norm
             
             # Smart Output Collection
             if (t + 1) % ratio == 0 and len(outputs) < max_outputs:
