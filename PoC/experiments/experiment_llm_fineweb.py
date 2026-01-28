@@ -14,9 +14,9 @@ from realnet import RealNet, RealNetTrainer, save_checkpoint, load_checkpoint, t
 torch.set_float32_matmul_precision('high')
 
 # --- CONFIGURATION ---
-TRUNCATED_BPTT_STEPS = 64
+TRUNCATED_BPTT_SEQ_LEN = 10
 GENERATION_LENGTH = 1024
-SEQ_LEN = 64 if TRUNCATED_BPTT_STEPS == -1 else 128
+SEQ_LEN = 64 if TRUNCATED_BPTT_SEQ_LEN == -1 else 128
 BATCH_SIZE = -1
 STEPS_PER_EPOCH = 10
 LOG_INTERVAL = 1
@@ -211,7 +211,7 @@ def initialize_system(vocab_size, num_neurons, device, lr=1e-4, activation='gelu
 
     return model, trainer, input_ids, output_ids
 
-def calculate_optimal_batch_size(device, num_neurons, activation, seq_len, think_gap, truncated_bptt_steps):
+def calculate_optimal_batch_size(device, num_neurons, activation, seq_len, think_gap, truncated_bptt_seq_len):
     """Calculates optimal batch size based on VRAM capacity."""
     print("\n⚖️  Auto-Tuning Batch Size...")
 
@@ -234,9 +234,9 @@ def calculate_optimal_batch_size(device, num_neurons, activation, seq_len, think
         if activation == 'swiglu':
             BYTES_PER_NEURON_STEP *= 1.5
 
-        if truncated_bptt_steps > 0:
+        if truncated_bptt_seq_len > 0:
             # We process raw tokens but computation graph is deep
-            effective_mem_len = truncated_bptt_steps * (think_gap + 1)
+            effective_mem_len = truncated_bptt_seq_len * (think_gap + 1)
         else:
             effective_mem_len = seq_len * (think_gap + 1)
 
@@ -263,7 +263,7 @@ def main():
     print(f"SEQ_LEN: {SEQ_LEN}")
     print(f"BATCH_SIZE: {BATCH_SIZE} (Will Auto-Tune if -1)")
     print(f"NUM_NEURONS: {NUM_NEURONS}")
-    print(f"TRUNCATED_BPTT_STEPS (Tokens): {TRUNCATED_BPTT_STEPS}")
+    print(f"TRUNCATED_BPTT_SEQ_LEN (Tokens): {TRUNCATED_BPTT_SEQ_LEN}")
     print(f"STEPS_PER_EPOCH: {STEPS_PER_EPOCH}")
     print(f"LOG_INTERVAL: {LOG_INTERVAL}")
     print(f"MAX_START_SKIP: {MAX_START_SKIP}")
@@ -320,7 +320,7 @@ def main():
              ACTIVATION,
              SEQ_LEN,
              THINK_GAP,
-             TRUNCATED_BPTT_STEPS
+             TRUNCATED_BPTT_SEQ_LEN
          )
 
     # DataLoader for IterableDataset
@@ -462,16 +462,16 @@ def main():
             seq_len = x.shape[1]
             total_thinking_steps = seq_len * (THINK_GAP + 1)
 
-            if TRUNCATED_BPTT_STEPS != -1 and TRUNCATED_BPTT_STEPS > 0:
+            if TRUNCATED_BPTT_SEQ_LEN != -1 and TRUNCATED_BPTT_SEQ_LEN > 0:
                 current_state = None
                 batch_loss = 0
                 steps_count = 0
                 
                 # Chunking based on raw tokens, NOT dilated steps!
-                chunk_size_tokens = TRUNCATED_BPTT_STEPS
+                chunk_len = TRUNCATED_BPTT_SEQ_LEN
                 
-                for t_start in range(0, seq_len, chunk_size_tokens):
-                    t_end = min(t_start + chunk_size_tokens, seq_len)
+                for t_start in range(0, seq_len, chunk_len):
+                    t_end = min(t_start + chunk_len, seq_len)
                     
                     # Raw Chunk
                     x_chunk = x[:, t_start:t_end]
