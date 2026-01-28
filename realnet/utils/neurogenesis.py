@@ -69,6 +69,10 @@ class Neurogenesis:
         old_output_scale = model.output_scale
         old_tau = model.tau
         
+        # Explicitly preserve ID lists (vital for offsets)
+        old_input_ids = list(model.input_ids)
+        old_output_ids = list(model.output_ids)
+        
         old_opt = optimizer
         
         # 1. Expand Weights (W)
@@ -136,6 +140,10 @@ class Neurogenesis:
         # Re-bind scaling params (they are safe as is)
         model.input_scale = nn.Parameter(old_input_scale.data)
         model.output_scale = nn.Parameter(old_output_scale.data)
+        
+        # Re-bind IDs
+        model.input_ids = old_input_ids
+        model.output_ids = old_output_ids
         
         # Expand Tau (Time Constant)
         new_tau = torch.full((new_n,), 0.0, device=device) # Init new neurons to Balanced (0.5)

@@ -317,7 +317,7 @@ class RealNet(nn.Module):
                                     scale_indices = valid_neurons - offset
                                     
                                     x_step_dense = torch.zeros(batch_sz, self.num_neurons, device=self.device)
-                                    x_step_dense[valid_mask, valid_neurons] = self.input_scale[scale_indices]
+                                    x_step_dense[valid_mask, valid_neurons] = 1.0 * self.input_scale[scale_indices]
                                     x_step = x_step_dense
                                
                 elif x_input.ndim == 3:
@@ -332,7 +332,7 @@ class RealNet(nn.Module):
                     x_step = x_input
             
             # Apply Input Scaling for Dense Inputs
-            if x_step is not None and x_input.ndim != 2: # Skip if already handled in index-based block
+            if x_step is not None and not (x_input.dtype in [torch.long, torch.int64, torch.int32] and x_input.ndim == 2): # Skip if handled in index-based block
                  # We need to scale only the input neurons
                  # x_step is (Batch, Neurons)
                  # Always clone to avoid modifying the original x_input in-place (which might be a view or leaf)
@@ -356,7 +356,7 @@ class RealNet(nn.Module):
                 outputs.append(h_t)
 
         # Apply Output Scaling to the collected outputs
-        stacked_outputs = torch.stack(outputs, dim=1)
+        stacked_outputs = torch.stack(outputs, dim=1).clone()
         # Apply scale to output neurons only
         # stacked_outputs: (Batch, Steps, Neurons)
         # output_scale: (Out_Neurons)

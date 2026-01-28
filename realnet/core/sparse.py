@@ -114,7 +114,7 @@ class SparseRealNet(RealNet):
                                      scale_indices = valid_neurons - offset
                                      
                                      x_step_dense = torch.zeros(batch_sz, self.num_neurons, device=self.device)
-                                     x_step_dense[valid_mask, valid_neurons] = self.input_scale[scale_indices]
+                                     x_step_dense[valid_mask, valid_neurons] = 1.0 * self.input_scale[scale_indices]
                                      x_step = x_step_dense
                                      
                  elif x_input.ndim == 3:
@@ -128,7 +128,7 @@ class SparseRealNet(RealNet):
                     x_step = x_input
             
             # Apply Input Scaling for Dense Inputs
-            if x_step is not None and x_input.ndim != 2:
+            if x_step is not None and not (x_input.dtype in [torch.long, torch.int64, torch.int32] and x_input.ndim == 2):
                  # Clone and Scale
                  x_step = x_step.clone()
                  x_step[:, self.input_pos] = x_step[:, self.input_pos] * self.input_scale
@@ -175,7 +175,7 @@ class SparseRealNet(RealNet):
                 outputs.append(h_t)
 
         # Apply Output Scaling
-        stacked_outputs = torch.stack(outputs, dim=1)
+        stacked_outputs = torch.stack(outputs, dim=1).clone()
         stacked_outputs[:, :, self.output_pos] = stacked_outputs[:, :, self.output_pos] * self.output_scale
 
         return stacked_outputs, h_t
