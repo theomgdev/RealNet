@@ -128,7 +128,7 @@ class SparseRealNet(RealNet):
                     x_step = x_input
             
             # Apply Input Scaling for Dense Inputs
-            if x_step is not None and not (x_input.dtype in [torch.long, torch.int64, torch.int32] and x_input.ndim == 2):
+            if x_step is not None and x_step.dtype not in [torch.long, torch.int64, torch.int32]:
                  # Clone and Scale
                  x_step = x_step.clone()
                  x_step[:, self.input_pos] = x_step[:, self.input_pos] * self.input_scale
