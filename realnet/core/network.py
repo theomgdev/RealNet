@@ -249,30 +249,45 @@ class RealNet(nn.Module):
             
             return h_t_out
 
+        # Calculate Thinking Ratio (Native Temporal Stretching)
+        # Default ratio is 1 (Every step is an I/O step)
+        ratio = 1
+        if x_input is not None:
+             if x_input.dtype in [torch.long, torch.int64, torch.int32] and x_input.ndim == 2:
+                  # Index-based Sequential
+                  if x_input.shape[1] > 0:
+                       ratio = max(1, steps // x_input.shape[1])
+             elif x_input.ndim == 3 and not self.pulse_mode:
+                  # Dense Sequential (Pulse mode is instant, so ratio 1)
+                  if x_input.shape[1] > 0:
+                       ratio = max(1, steps // x_input.shape[1])
+
         for t in range(steps):
             # Prepare input for this step
             x_step = None
             if x_input is not None:
                 # Handle Index-Based Input (VRAM Efficient)
                 if x_input.dtype in [torch.long, torch.int64, torch.int32]:
-                     if x_input.ndim == 2 and t < x_input.shape[1]:
-                          token_indices = x_input[:, t] # (Batch,)
-                          # Assume -1 is silence/gap
-                          valid_mask = token_indices != -1
-                          
-                          if valid_mask.any():
-                               x_step_dense = torch.zeros(batch_sz, self.num_neurons, device=self.device)
-                               # Map token indices to neuron indices
-                               # Assumes input_ids are contiguous. neuron_idx = token_idx + input_ids[0]
-                               offset = self.input_ids[0]
-                               valid_neurons = token_indices[valid_mask] + offset
-                               x_step_dense[valid_mask, valid_neurons] = 1.0
-                               x_step = x_step_dense
+                     if x_input.ndim == 2:
+                          if t % ratio == 0 and (t // ratio) < x_input.shape[1]:
+                               token_indices = x_input[:, t // ratio] # (Batch,)
+                               # Assume -1 is silence/gap
+                               valid_mask = token_indices != -1
+                               
+                               if valid_mask.any():
+                                    x_step_dense = torch.zeros(batch_sz, self.num_neurons, device=self.device)
+                                    # Map token indices to neuron indices
+                                    # Assumes input_ids are contiguous. neuron_idx = token_idx + input_ids[0]
+                                    offset = self.input_ids[0]
+                                    valid_neurons = token_indices[valid_mask] + offset
+                                    x_step_dense[valid_mask, valid_neurons] = 1.0
+                                    x_step = x_step_dense
                                
                 elif x_input.ndim == 3:
-                    # Sequential Input: (Batch, Steps, Neurons)
-                    if t < x_input.shape[1]:
-                        x_step = x_input[:, t, :]
+                    # Sequential Input: (Batch, MultiSteps, Neurons)
+                    if t % ratio == 0 and (t // ratio) < x_input.shape[1]:
+                        x_step = x_input[:, t // ratio, :]
+                        
                 elif self.pulse_mode:
                     if t == 0:
                         x_step = x_input
@@ -288,7 +303,11 @@ class RealNet(nn.Module):
             else:
                 h_t = _single_step(h_t, t, x_step)
             
-            outputs.append(h_t)
+            # Smart Output Collection
+            # Only collect the state at the END of a thinking block (or every step if ratio=1)
+            # This aligns the output tensor shape with the input sequence length, not total steps.
+            if (t + 1) % ratio == 0:
+                outputs.append(h_t)
 
         return torch.stack(outputs), h_t
 

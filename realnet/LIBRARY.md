@@ -11,7 +11,7 @@ The library is modularized into core components:
 
 ---
 
-## 🧠 RealNet Model (`realnet.core.network`)
+## RealNet Model (`realnet.core.network`)
 
 The `RealNet` class defines the structure and dynamics of the network. It is a single layer where every neuron is connected to every other neuron (including itself).
 
@@ -42,6 +42,59 @@ model = RealNet(
 *   `weight_init` (str): Initialization strategy (`'orthogonal'`, `'xavier_uniform'`, `'kaiming_normal'`, etc.). Default is `'orthogonal'`.
 *   `activation` (str): Activation function used in the update step (`'tanh'`, `'relu'`, `'sigmoid'`, `'gelu'`, `'silu'`, etc.). Default is `'tanh'`.
 
+---
+
+## Input Modalities and Data Handling
+
+RealNet processes data through three distinct modalities. Choosing the right one is critical for performance and VRAM efficiency.
+
+### 1. Pulse Mode (Impulse Computing)
+**Use case**: Static data like images (MNIST) or single-shot logic (XOR).
+*   **Behavior**: Set `pulse_mode=True`. Input is injected at $t=0$ only.
+*   **Thinking**: The model continues computation for the specified number of `steps` without further input.
+*   **VRAM Efficiency**: Optimal. Only (Batch, Neurons) is stored.
+
+```python
+# Image Classification (784 pixels -> 100 steps thinking)
+model = RealNet(..., pulse_mode=True)
+output = model(image_tensor, steps=100)
+```
+
+### 2. Continuous Mode (Static Control)
+**Use case**: Control systems, VCO (Sine Wave), or real-time sensor monitoring.
+*   **Behavior**: Set `pulse_mode=False`. The same input is injected at every time step $t$.
+*   **Thinking**: The model state is constantly influenced by the static input.
+*   **VRAM Efficiency**: High. Only (Batch, Neurons) is stored.
+
+```python
+# Frequency Control for Oscillator
+model = RealNet(..., pulse_mode=False)
+output = model(freq_input, steps=30)
+```
+
+### 3. Native Sequential Thinking (Temporal Stretching)
+**Use case**: Large Language Models (LLM), Time-Series, and reasoning agents.
+*   **Behavior**: Provide a sequence `(Batch, Tokens)`. If `steps` > `tokens`, RealNet automatically scales the temporal resolution.
+*   **Mechanism**: If 100 tokens are provided with 600 `steps` requested, the model automatically intersperses 5 silent thinking steps between each token.
+*   **VRAM Efficiency**: Exceptional. Eliminates the need for manually dilated input tensors.
+
+```python
+# LLM Training: 128 tokens with 5 thinking steps per token (Total 768 steps)
+# No manual zero-padding required.
+tokens = torch.randint(0, 256, (batch, 128))
+output = model(tokens, steps=768)
+```
+
+#### Comparison of Sequential Input Formats
+| Input Type | Format | Modality | Recommended Use Case |
+| :--- | :--- | :--- | :--- |
+| **Index (ID)** | `(Batch, Steps)` (Long) | Sequential | LLMs, Tokenized text. |
+| **Dense** | `(Batch, Steps, Dim)` (Float) | Sequential | Audio, Video, Vector Streams. |
+| **Pulse** | `(Batch, Dim)` (Float) | Instant | Static Images, Logic Gates. |
+| **Continuous**| `(Batch, Dim)` (Float) | Periodic | Oscillators, Constant Signals. |
+
+---
+
 ### Key Methods
 
 #### `model.compile()`
@@ -68,7 +121,7 @@ Replaces the old `make_sparse()` method.
 
 ---
 
-## 🏋️ RealNet Trainer (`realnet.training.trainer`)
+## RealNet Trainer (`realnet.training.trainer`)
 
 The `RealNetTrainer` handles the training loop, gradient accumulation, mixed precision (AMP), and experimental features like Ghost Gradients.
 
@@ -141,7 +194,7 @@ Triggers **Darwinian Regeneration**. Instead of pruning weak weights, this metho
 
 ---
 
-## 🌟 Advanced Capabilities
+## Advanced Capabilities
 
 ### 1. Space-Time Tradeoff (Thinking Steps)
 RealNet replaces layers with time. 
@@ -212,7 +265,7 @@ Reads checkpoint metadata (epoch, loss, num_neurons) without loading into a mode
 
 ---
 
-## 🌱 Neurogenesis (Network Expansion)
+## Neurogenesis (Network Expansion)
 
 RealNet supports dynamic growth, allowing you to add neurons to a live network during training. This mimics biological neurogenesis.
 
@@ -232,7 +285,7 @@ if loss > prev_loss:
 
 ---
 
-## 🛠️ Utilities (`realnet.utils`)
+## Utilities (`realnet.utils`)
 
 ### 1. Data Utilities (`realnet.utils.data`)
 
@@ -260,7 +313,7 @@ See **RealStore** section above for High-Level API (`save_checkpoint`, `load_che
 
 ---
 
-## 🌟 Advanced Capabilities
+## Advanced Capabilities
 
 ### 1. Space-Time Tradeoff (Thinking Steps)
 RealNet replaces layers with time. 
@@ -291,7 +344,7 @@ RealNet can evolve. By calling `prune_synapses()` during training, the network k
 
 ---
 
-## 🚀 Usage Examples
+## Usage Examples
 
 ### Example 1: Solving XOR (The Chaos Gate)
 

@@ -122,35 +122,6 @@ class FineWebIterableDataset(torch.utils.data.IterableDataset):
     def idx_to_char(self):
         return IDX_TO_CHAR
 
-def prepare_inputs_dilated(x, gap, device=None):
-    """Inserts silence tokens (-1) between input tokens."""
-    target_device = device if device is not None else x.device
-    batch_size, seq_len = x.shape
-    total_steps = seq_len * (gap + 1)
-
-    x_dilated = torch.full((batch_size, total_steps), -1, dtype=torch.long, device=target_device)
-
-    for t in range(seq_len):
-        step_idx = t * (gap + 1)
-        x_dilated[:, step_idx] = x[:, t].to(target_device)
-
-    return x_dilated
-
-def prepare_targets_dilated(y, gap, device=None):
-    """Aligns targets to the end of thinking gaps."""
-    target_device = device if device is not None else y.device
-    batch_size, seq_len = y.shape
-    total_steps = seq_len * (gap + 1)
-
-    y_dilated = torch.full((batch_size, total_steps), -100, dtype=torch.long, device=target_device)
-
-    for t in range(seq_len):
-        target_step = t * (gap + 1) + gap
-        if target_step < total_steps:
-             y_dilated[:, target_step] = y[:, t].to(target_device)
-
-    return y_dilated
-
 def generate(model, dataset, start_str="The", length=None, temperature=0.8, top_k=40, top_p=0.9):
     if length is None:
         length = GENERATION_LENGTH
@@ -162,25 +133,30 @@ def generate(model, dataset, start_str="The", length=None, temperature=0.8, top_
 
     current_state = None
 
-    # Warm up state
+    # Warm up state (Native Thinking)
+    # We send raw tokens, but ask model to think for (Gap+1) steps per token
     x_in = torch.tensor(input_seq, dtype=torch.long, device=model.device).unsqueeze(0)
-    x_dilated = prepare_inputs_dilated(x_in, THINK_GAP, device=model.device)
-
+    steps_total = x_in.shape[1] * (THINK_GAP + 1)
+    
     generated_bytes = bytearray(input_bytes)
 
     with torch.no_grad():
-        _, current_state = model(x_dilated, steps=x_dilated.shape[1])
+        _, current_state = model(x_in, steps=steps_total)
 
         last_byte_idx = input_seq[-1]
 
         for _ in range(length):
+            # Native Single Step Generation
+            # Input: 1 Token. Steps: 1 + Gap.
             total_step_single = 1 + THINK_GAP
 
-            x_next = torch.full((1, total_step_single), -1, dtype=torch.long, device=model.device)
-            x_next[0, 0] = last_byte_idx
+            x_next = torch.tensor([[last_byte_idx]], dtype=torch.long, device=model.device)
 
             preds, current_state = model(x_next, steps=total_step_single, current_state=current_state)
-            logits = preds[THINK_GAP, 0, model.output_ids]
+            
+            # Prediction is at the END of the thinking block
+            # Preds shape: (Batch, 1, Output) in native smart output mode
+            logits = preds[0, 0, model.output_ids]
 
             # Sampling logic
             if temperature > 0:
@@ -251,12 +227,15 @@ def calculate_optimal_batch_size(device, num_neurons, activation, seq_len, think
         print(f"   VRAM Free:  {free_vram / 1e9:.2f} GB (Allocated: {a / 1e9:.2f} GB)")
 
         # Heuristic: Bytes per neuron per step (FP16 Activations + Grads + Overhead)
+        # Native Mode: We only store activations for (Batch, SeqLen) now! (Outputs are decimated)
+        # However, internal gradients still track through time.
         BYTES_PER_NEURON_STEP = 12
 
         if activation == 'swiglu':
             BYTES_PER_NEURON_STEP *= 1.5
 
         if truncated_bptt_steps > 0:
+            # We process raw tokens but computation graph is deep
             effective_mem_len = truncated_bptt_steps * (think_gap + 1)
         else:
             effective_mem_len = seq_len * (think_gap + 1)
@@ -279,12 +258,12 @@ def calculate_optimal_batch_size(device, num_neurons, activation, seq_len, think
 def main():
     global NUM_NEURONS, BATCH_SIZE # Allow updating global config if needed
 
-    print(f"🚀 RealNet-1B (FineWeb Streaming)...")
+    print(f"🚀 RealNet-1B (FineWeb Streaming) - NATIVE THINKING MODE")
     print(f"--- Configuration ---")
     print(f"SEQ_LEN: {SEQ_LEN}")
     print(f"BATCH_SIZE: {BATCH_SIZE} (Will Auto-Tune if -1)")
     print(f"NUM_NEURONS: {NUM_NEURONS}")
-    print(f"TRUNCATED_BPTT_STEPS: {TRUNCATED_BPTT_STEPS}")
+    print(f"TRUNCATED_BPTT_STEPS (Tokens): {TRUNCATED_BPTT_STEPS}")
     print(f"STEPS_PER_EPOCH: {STEPS_PER_EPOCH}")
     print(f"LOG_INTERVAL: {LOG_INTERVAL}")
     print(f"MAX_START_SKIP: {MAX_START_SKIP}")
@@ -411,11 +390,12 @@ def main():
         except Exception as e:
             print(f"⚠️ Failed to load/inspect checkpoint: {e}. Starting fresh.")
 
-    # CrossEntropy with Masking (Thinking Gaps)
-    criterion = nn.CrossEntropyLoss(ignore_index=-100, label_smoothing=0.005)
+    # CrossEntropy
+    # Note: 'ignore_index' is less critical now as outputs are perfectly aligned!
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.005)
     trainer.loss_fn = criterion
 
-    # OUTPUT TRANSFORM: Flatten dilated output (Batch, Total_Steps, Out) -> (N, Out)
+    # OUTPUT TRANSFORM: Flatten (Batch, Steps, Out) -> (N, Out)
     def flatten_logits(out):
         return out.reshape(-1, dataset.get_vocab_size())
 
@@ -469,30 +449,42 @@ def main():
                 current_doc = current_doc_tensor[-1].item()
                 dataset.current_doc_index = current_doc
 
-            # Dilate Data
-            x_dilated = prepare_inputs_dilated(x, THINK_GAP, device=DEVICE)
-            y_dilated = prepare_targets_dilated(y, THINK_GAP, device=DEVICE)
-            y_flat = y_dilated.reshape(-1)
-
-            total_steps = x_dilated.shape[1]
+            # Native Thinking Preparation
+            # x is raw tokens: (Batch, SeqLen)
+            # y is raw target: (Batch, SeqLen)
+            # We calculate total steps including gaps:
+            # 1 Step (Read) + N Steps (Think) = N+1 steps per token
+            x = x.to(DEVICE)
+            y = y.to(DEVICE)
+            
+            y_flat = y.reshape(-1)
+            
+            seq_len = x.shape[1]
+            total_thinking_steps = seq_len * (THINK_GAP + 1)
 
             if TRUNCATED_BPTT_STEPS != -1 and TRUNCATED_BPTT_STEPS > 0:
                 current_state = None
                 batch_loss = 0
                 steps_count = 0
-                chunk_size = TRUNCATED_BPTT_STEPS
-
-                for t_start in range(0, total_steps, chunk_size):
-                    t_end = min(t_start + chunk_size, total_steps)
-                    actual_steps = t_end - t_start
-
-                    x_chunk = x_dilated[:, t_start:t_end]
-                    y_chunk_flat = y_dilated[:, t_start:t_end].reshape(-1)
+                
+                # Chunking based on raw tokens, NOT dilated steps!
+                chunk_size_tokens = TRUNCATED_BPTT_STEPS
+                
+                for t_start in range(0, seq_len, chunk_size_tokens):
+                    t_end = min(t_start + chunk_size_tokens, seq_len)
+                    
+                    # Raw Chunk
+                    x_chunk = x[:, t_start:t_end]
+                    y_chunk_flat = y[:, t_start:t_end].reshape(-1)
+                    
+                    # Calculate thinking steps for this chunk
+                    actual_tokens = t_end - t_start
+                    chunk_thinking_steps = actual_tokens * (THINK_GAP + 1)
 
                     loss, current_state = trainer.train_batch(
                         x_chunk,
                         y_chunk_flat,
-                        thinking_steps=actual_steps,
+                        thinking_steps=chunk_thinking_steps,
                         full_sequence=True,
                         output_transform=flatten_logits,
                         initial_state=current_state,
@@ -507,9 +499,9 @@ def main():
 
             else:
                 loss = trainer.train_batch(
-                    x_dilated,
+                    x,
                     y_flat,
-                    thinking_steps=total_steps,
+                    thinking_steps=total_thinking_steps,
                     full_sequence=True,
                     output_transform=flatten_logits
                 )
