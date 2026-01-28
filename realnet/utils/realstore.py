@@ -73,6 +73,9 @@ def load_checkpoint(model, optimizer, path, device='cpu', strict=True, lr=None):
             if lr is not None:
                 for param_group in optimizer.param_groups:
                     param_group['lr'] = lr
+                    # Also overwrite initial_lr if present, so schedulers strictly respect the new value
+                    if 'initial_lr' in param_group:
+                         param_group['initial_lr'] = lr
                 print(f"⚡ Optimizer LR overwritten to: {lr}")
                 
         except Exception as e:
