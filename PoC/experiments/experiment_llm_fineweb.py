@@ -14,7 +14,7 @@ from realnet import RealNet, RealNetTrainer, save_checkpoint, load_checkpoint, t
 torch.set_float32_matmul_precision('high')
 
 # --- CONFIGURATION ---
-TRUNCATED_BPTT_SEQ_LEN = 10
+TRUNCATED_BPTT_SEQ_LEN = 5
 GENERATION_LENGTH = 1024
 SEQ_LEN = 64 if TRUNCATED_BPTT_SEQ_LEN == -1 else 128
 BATCH_SIZE = -1
@@ -275,7 +275,7 @@ def main():
     print(f"DEVICE: {DEVICE}")
     print(f"NEUROGENESIS: Enabled={NEUROGENESIS_ENABLED}, MaxLossInc={MAX_LOSS_INCREASE}, Amount={NEUROGENESIS_AMOUNT}")
     if DARWINIAN_REGENERATION:
-        regen_val = f"{REGENERATION_PERCENTAGE:.1%}" if REGENERATION_MODE == 'percentage' else f"{REGENERATION_THRESHOLD}"
+        regen_val = f"{REGENERATION_PERCENTAGE:.2%}" if REGENERATION_MODE == 'percentage' else f"{REGENERATION_THRESHOLD}"
         print(f"PHOENIX (Regeneration): Mode={REGENERATION_MODE}, Val={regen_val}, Interval={REGENERATION_INTERVAL}")
     else:
         print(f"PHOENIX (Regeneration): Disabled")
