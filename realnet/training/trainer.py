@@ -15,7 +15,7 @@ else:
             import bitsandbytes as bnb
             HAS_BNB = True
         else:
-            # Suppress annoying binary_path logs on Windows during import
+            # Suppress bitsandbytes logs during import
             import sys
             _old_out, _old_err = sys.stdout, sys.stderr
             _null_out, _null_err = open(os.devnull, 'w'), open(os.devnull, 'w')
@@ -51,11 +51,10 @@ class RealNetTrainer:
         self.synaptic_noise = synaptic_noise
         self.initial_lr = lr
         
-        # --- OPTIMIZER (8-bit AdamW if available) ---
+        # Optimizer (8-bit AdamW if available)
         if optimizer:
             self.optimizer = optimizer
-        elif HAS_BNB and device == 'cuda': 
-             # HAS_BNB is strictly False if NO_BNB was set at import time.
+        elif HAS_BNB and device == 'cuda':
              print("RealNetTrainer: Using bitsandbytes 8-bit AdamW for VRAM efficiency.")
              self.optimizer = bnb.optim.AdamW8bit(model.parameters(), lr=lr, weight_decay=0.01)
         else:
@@ -77,7 +76,7 @@ class RealNetTrainer:
             else:
                 self.scaler = torch.cuda.amp.GradScaler(enabled=(self.device == 'cuda'))
 
-        # 1. Synaptic Noise (Thermal Noise / Langevin Dynamics)
+        # Synaptic Noise
         if self.synaptic_noise > 0.0:
             with torch.no_grad():
                 for param in self.model.parameters():
@@ -85,8 +84,7 @@ class RealNetTrainer:
                         noise = torch.randn_like(param) * self.synaptic_noise
                         param.add_(noise)
 
-        # 2. Prepare Data
-        # Optimization: If passing indices (Long/Int), bypass prepare_input expansion
+        # Prepare Data
         if isinstance(input_features, torch.Tensor) and input_features.dtype in [torch.long, torch.int, torch.int32, torch.int64]:
              x_input = input_features.to(self.device)
              batch_size = x_input.shape[0]
@@ -97,7 +95,7 @@ class RealNetTrainer:
         if mask is not None:
             mask = to_tensor(mask, self.device)
 
-        # 3. Reset State & Run (with AMP)
+        # Forward Pass (with AMP)
         device_type = 'cuda' if self.device == 'cuda' else 'cpu'
         if hasattr(torch.amp, 'autocast'):
              autocast_ctx = torch.amp.autocast(device_type=device_type, enabled=(self.device == 'cuda'))
@@ -114,23 +112,19 @@ class RealNetTrainer:
             
             all_states, final_state = self.model(x_input, steps=thinking_steps, current_state=current_state_in)
             
-            # 4. Extract Outputs & Calculate Loss
+            # Extract Outputs & Calculate Loss
             output_indices = self.model.output_ids
             
             if full_sequence:
-                # all_states is already (Batch, Steps, Neurons)
                 predicted_outputs = all_states[:, :, output_indices]
-                # Note: target_values must also be (Batch, Steps, Output_Size) or compatible
             else:
                 predicted_outputs = final_state[:, output_indices]
             
-            # OPTIONAL TRANSFORM (e.g. for CrossEntropy reshaping)
+            # Optional Transform
             if output_transform:
                 predicted_outputs = output_transform(predicted_outputs)
 
             if mask is not None:
-                # Masked MSE Loss
-                # Apply mask to squared errors
                 loss = (torch.square(predicted_outputs - target_values) * mask).mean()
             else:
                 loss = self.loss_fn(predicted_outputs, target_values)
@@ -139,7 +133,7 @@ class RealNetTrainer:
             if gradient_accumulation_steps > 1:
                 loss = loss / gradient_accumulation_steps
 
-        # 5. Backward (with Scaler)
+        # Backward
         self.scaler.scale(loss).backward()
         
         # Step optimizer only if accumulation cycle is complete
@@ -158,15 +152,13 @@ class RealNetTrainer:
             self.scaler.update()
 
             if self.gradient_persistence > 0.0:
-                 # Gradient Persistence (Ghost Gradients)
+                 # Gradient Persistence
                  with torch.no_grad():
                     for param in self.model.parameters():
                         if param.grad is not None:
-                            # CRITICAL: If NaN/Inf, reset completely
                             if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():
                                 param.grad.zero_()
                             else:
-                                # Keep a fraction of the gradient
                                 param.grad.mul_(self.gradient_persistence)
             else:
                  self.optimizer.zero_grad()
@@ -174,7 +166,7 @@ class RealNetTrainer:
             if hasattr(self, '_acc_counter'):
                 self._acc_counter = 0
 
-        # Return the SCALED loss for logging
+        # Return loss for logging
         loss_val = loss.item() * gradient_accumulation_steps
         
         if return_state:

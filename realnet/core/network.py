@@ -7,10 +7,9 @@ class RealNet(nn.Module):
     def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='orthogonal', activation='tanh', gradient_checkpointing=False):
         super(RealNet, self).__init__()
         
-        # Auto size to input and output
+        # Auto-size to input+output
         if num_neurons == -1:
             num_neurons = len(input_ids) + len(output_ids)
-            print(f"RealNet: Auto-sized to {num_neurons} neurons (Minimum: Input+Output)")
             
         self.num_neurons = num_neurons
         self.input_ids = input_ids
@@ -30,16 +29,15 @@ class RealNet(nn.Module):
         self._device = device # Private variable for property
         self.weight_init_strategy = weight_init
         
-        # Initialization
-        # W: N x N weights. Anyone can talk to anyone.
+        # Weight Matrix (N x N)
         self.W = nn.Parameter(torch.empty(num_neurons, num_neurons, device=device))
         self._init_weights(weight_init)
         
-        # B: Bias vector.
+        # Bias Vector
         self.B = nn.Parameter(torch.zeros(num_neurons, device=device))
 
-        # Architecturally defined components
-        self.norm = nn.LayerNorm(num_neurons).to(device) # StepNorm
+        # StepNorm
+        self.norm = nn.LayerNorm(num_neurons).to(device)
         
         if activation == 'tanh':
             self.act = nn.Tanh()
@@ -56,7 +54,7 @@ class RealNet(nn.Module):
         else:
              raise ValueError(f"Unknown activation function: {activation}")
 
-        self.drop = nn.Dropout(p=dropout_rate) # Biological Failure Simulation
+        self.drop = nn.Dropout(p=dropout_rate)
 
         # Internal State (hidden state h_t)
         self.state = torch.zeros(1, num_neurons, device=device)
@@ -90,7 +88,6 @@ class RealNet(nn.Module):
             elif strategy == 'one':
                 nn.init.ones_(tensor)
             else:
-                # Default fallback for Gates usually
                 nn.init.uniform_(tensor, -0.1, 0.1)
 
     def regenerate_weak_weights(self, threshold=0.01, percentage=None):
@@ -135,8 +132,7 @@ class RealNet(nn.Module):
         """
         if hasattr(torch, 'compile'):
             try:
-                print("RealNet: Compiling model with torch.compile...")
-                # Use 'inductor' backend explicitly or let it pick default.
+                # Use 'inductor' backend
                 compiled_model = torch.compile(self)
                 
                 # FORCE DRY RUN to catch lazy errors now
@@ -144,7 +140,6 @@ class RealNet(nn.Module):
                 dummy_input = torch.zeros(1, self.num_neurons, device=self.device)
                 with torch.no_grad():
                     compiled_model(dummy_input, steps=1)
-                
                 print("RealNet: Compilation successful!")
                 return compiled_model
             except Exception as e:
@@ -173,35 +168,30 @@ class RealNet(nn.Module):
         outputs = []
 
         def _single_step(h_t_in, t_idx, x_input_info):
-            # 1. Chaotic Transmission (DENSE)
-            # Standard Projection (Value Path)
+            # Projection
             signal = torch.matmul(h_t_in, self.W) + self.B
             
             # Input Injection
             if x_input_info is not None:
                 if isinstance(x_input_info, tuple):
-                    # Optimized Sparse Injection (Indexed Assignment)
-                    # format: (valid_mask, valid_neurons, scale_indices)
+                    # Sparse Injection
                     v_mask, v_neurons, s_idx = x_input_info
                     if v_mask.any():
-                        # Advanced indexing: add scaled input to specific neurons
                         signal[v_mask, v_neurons] += self.input_scale[s_idx]
                 else:
                     # Legacy Dense Injection
                     signal = signal + x_input_info
             
-            # Standard Activation
             activated = self.act(signal)
             
-            # 2. Dropout & 3. StepNorm
+            # Dropout & StepNorm
             return self.norm(self.drop(activated))
 
-        # Calculate Thinking Ratio (Native Temporal Stretching)
-        # Default ratio is 1 (Every step is an I/O step)
+        # Thinking Ratio (Temporal Stretching)
         ratio = 1
         max_outputs = steps
 
-        # Determine ratio for sequential inputs (both index-based and dense)
+        # Determine ratio for sequential inputs
         if x_input is not None:
             is_index_seq = x_input.dtype in [torch.long, torch.int64, torch.int32] and x_input.ndim == 2
             is_dense_seq = x_input.ndim == 3 and not self.pulse_mode
@@ -219,8 +209,7 @@ class RealNet(nn.Module):
                 if x_input.dtype in [torch.long, torch.int64, torch.int32]:
                      if x_input.ndim == 2:
                           if t % ratio == 0 and (t // ratio) < x_input.shape[1]:
-                               token_indices = x_input[:, t // ratio] # (Batch,)
-                               # Assume -1 is silence/gap
+                               token_indices = x_input[:, t // ratio]
                                valid_mask = token_indices != -1
                                
                                if valid_mask.any():
@@ -228,8 +217,7 @@ class RealNet(nn.Module):
                                     offset = self.input_ids[0]
                                     valid_neurons = token_indices[valid_mask] + offset
                                     scale_indices = valid_neurons - offset
-                                    
-                                    # Pass sparse info instead of allocating dense tensor
+                                    # Sparse info tuple
                                     x_step_info = (valid_mask, valid_neurons, scale_indices)
                                
                 elif x_input.ndim == 3:
@@ -245,17 +233,14 @@ class RealNet(nn.Module):
                         x_step[:, self.input_pos] *= self.input_scale
                         x_step_info = x_step
                 else:
-                    # Continuous mode: inject every step (with clone only on first)
+                    # Continuous mode
                     if t == 0:
                         self._cached_scaled_input = x_input.clone()
                         self._cached_scaled_input[:, self.input_pos] *= self.input_scale
                     x_step_info = self._cached_scaled_input
             
-            # Use gradient checkpointing if enabled (saves VRAM, costs recomputation)
+            # Gradient checkpointing
             if self.gradient_checkpointing and self.training:
-                # checkpoint requires tensors. Tuples are fine as args.
-                # However, if x_step_info is None, we need to pass None.
-                # Checkpoint handles non-tensor args by not optimizing them, which is fine for indices.
                 h_t = checkpoint.checkpoint(_single_step, h_t, torch.tensor(t), x_step_info, use_reentrant=False)
             else:
                 h_t = _single_step(h_t, t, x_step_info)
@@ -264,11 +249,8 @@ class RealNet(nn.Module):
             if (t + 1) % ratio == 0 and len(outputs) < max_outputs:
                 outputs.append(h_t)
 
-        # Apply Output Scaling to the collected outputs
+        # Apply Output Scaling
         stacked_outputs = torch.stack(outputs, dim=1)
-        # Apply scale to output neurons only
-        # stacked_outputs: (Batch, Steps, Neurons)
-        # output_scale: (Out_Neurons)
         stacked_outputs[:, :, self.output_pos] = stacked_outputs[:, :, self.output_pos] * self.output_scale
 
         return stacked_outputs, h_t

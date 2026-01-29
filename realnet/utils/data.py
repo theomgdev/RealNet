@@ -13,7 +13,7 @@ def prepare_input(input_features, model_input_ids, num_neurons, device):
     Returns:
         Tensor: Prepared input tensor of shape (Batch, Num_Neurons).
     """
-    # 1. Convert to Tensor
+    # Convert to Tensor
     if not isinstance(input_features, torch.Tensor):
         input_features = torch.tensor(input_features, dtype=torch.float32, device=device)
     else:
@@ -21,10 +21,10 @@ def prepare_input(input_features, model_input_ids, num_neurons, device):
         
     batch_size = input_features.shape[0]
     
-    # 2. Initialize Full Neuron Tensor
+    # Initialize Full Neuron Tensor
     x_input = torch.zeros(batch_size, num_neurons, device=device)
 
-    # 3. Map features to input_ids
+    # Map features to input neurons
     if len(model_input_ids) > 0:
         # Check for Sequential Input (Batch, Steps, Features)
         if input_features.dim() == 3:
@@ -34,7 +34,6 @@ def prepare_input(input_features, model_input_ids, num_neurons, device):
             
             num_assigned = min(num_features, len(model_input_ids))
             for k in range(num_assigned):
-                # Map Feature k to Neuron input_ids[k] across all time steps
                 x_input[:, :, model_input_ids[k]] = input_features[:, :, k]
             
             return x_input, batch_size
@@ -46,8 +45,7 @@ def prepare_input(input_features, model_input_ids, num_neurons, device):
         num_features = input_features.shape[1]
         num_assigned = min(num_features, len(model_input_ids))
         
-        # Efficient indexing
-        # We assign input_features[:, k] to neuron input_ids[k]
+        # Assign features to neurons
         for k in range(num_assigned):
             x_input[:, model_input_ids[k]] = input_features[:, k]
             

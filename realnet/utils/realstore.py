@@ -69,11 +69,10 @@ def load_checkpoint(model, optimizer, path, device='cpu', strict=True, lr=None):
         try:
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             
-            # Allow overwriting LR if requested (e.g. for fine-tuning or experiments)
+            # Overwrite LR if requested
             if lr is not None:
                 for param_group in optimizer.param_groups:
                     param_group['lr'] = lr
-                    # Also overwrite initial_lr if present, so schedulers strictly respect the new value
                     if 'initial_lr' in param_group:
                          param_group['initial_lr'] = lr
                 print(f"⚡ Optimizer LR overwritten to: {lr}")
@@ -111,7 +110,7 @@ def transplant_weights(model, checkpoint_path, device='cpu', verbose=True):
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
     
     checkpoint = torch.load(checkpoint_path, map_location=device)
-    source_state = checkpoint.get('model_state_dict', checkpoint) # Support raw state_dict too
+    source_state = checkpoint.get('model_state_dict', checkpoint)
     
     target_state = model.state_dict()
     
@@ -136,7 +135,6 @@ def transplant_weights(model, checkpoint_path, device='cpu', verbose=True):
         source_tensor = source_state[key]
         
         if source_tensor.shape == target_tensor.shape:
-            # Perfect match - direct copy
             target_state[key] = source_tensor.clone()
             stats['transplanted_params'] += target_tensor.numel()
             stats['keys_matched'].append(key)
@@ -146,7 +144,6 @@ def transplant_weights(model, checkpoint_path, device='cpu', verbose=True):
             stats['keys_resized'].append((key, source_tensor.shape, target_tensor.shape))
             
             if source_tensor.dim() == 2 and target_tensor.dim() == 2:
-                # 2D Tensor (Weights W: N×N)
                 min_rows = min(source_tensor.shape[0], target_tensor.shape[0])
                 min_cols = min(source_tensor.shape[1], target_tensor.shape[1])
                 target_state[key][:min_rows, :min_cols] = source_tensor[:min_rows, :min_cols]
@@ -154,14 +151,12 @@ def transplant_weights(model, checkpoint_path, device='cpu', verbose=True):
                 stats['new_params'] += target_tensor.numel() - (min_rows * min_cols)
                 
             elif source_tensor.dim() == 1 and target_tensor.dim() == 1:
-                # 1D Tensor (Bias B, LayerNorm weights)
                 min_len = min(source_tensor.shape[0], target_tensor.shape[0])
                 target_state[key][:min_len] = source_tensor[:min_len]
                 stats['transplanted_params'] += min_len
                 stats['new_params'] += target_tensor.numel() - min_len
                 
             else:
-                # Dimension mismatch - skip
                 stats['keys_missing'].append(key)
                 stats['new_params'] += target_tensor.numel()
     

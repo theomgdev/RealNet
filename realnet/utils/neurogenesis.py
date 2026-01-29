@@ -12,7 +12,7 @@ else:
             import bitsandbytes as bnb
             HAS_BNB = True
         else:
-            # Suppress annoying binary_path logs on Windows during import
+            # Suppress bitsandbytes logs during import
             import sys
             _old_out, _old_err = sys.stdout, sys.stderr
             _null_out, _null_err = open(os.devnull, 'w'), open(os.devnull, 'w')
@@ -53,7 +53,7 @@ class Neurogenesis:
         new_n = old_n + amount
         device = model.device
         
-        # Preserve references to old parameters for state migration
+        # Preserve old parameters
         old_W_param = model.W
         old_B_param = model.B
         
@@ -70,41 +70,40 @@ class Neurogenesis:
         
         old_opt = optimizer
         
-        # 1. Expand Weights (W)
-        # Strategy: Incoming=0 (Forward safe), Outgoing=Noise (Backprop safe)
+        # Expand W
         new_W = torch.zeros(new_n, new_n, device=device)
         new_W[:old_n, :old_n] = model.W.data
         
-        # Symmetry Breaking: Initialize outgoing weights to small noise
+        # Symmetry breaking
         noise_std = 1e-5
         new_W[:old_n, old_n:] = torch.randn(old_n, amount, device=device) * noise_std
         
-        # 2. Expand Bias (B)
+        # Expand B
         new_B = torch.zeros(new_n, device=device)
         new_B[:old_n] = model.B.data
 
-        # 3. Expand Norms (StepNorm)
+        # Expand LayerNorm
         new_norm = nn.LayerNorm(new_n).to(device)
         
         with torch.no_grad():
             new_norm.weight[:old_n] = model.norm.weight.data
             new_norm.bias[:old_n]   = model.norm.bias.data
 
-        # 4. Expand State (if exists) - Pad with 0
+        # Expand State
         if hasattr(model, 'state'):
             new_state = torch.zeros(model.state.shape[0], new_n, device=device)
             new_state[:, :old_n] = model.state
             model.state = new_state
             
-        # --- APPLY CHANGES TO MODEL ---
+        # Apply changes
         model.num_neurons = new_n
         model.W = nn.Parameter(new_W)
         model.B = nn.Parameter(new_B)
         
-        # Apply new norms
+        # StepNorm
         model.norm = new_norm
             
-        # Re-bind scaling params (they are safe as is)
+        # Scaling params
         model.input_scale = nn.Parameter(old_input_scale.data)
         model.output_scale = nn.Parameter(old_output_scale.data)
         
@@ -114,8 +113,7 @@ class Neurogenesis:
         model.register_buffer('input_pos', torch.tensor(old_input_ids, dtype=torch.long, device=device))
         model.register_buffer('output_pos', torch.tensor(old_output_ids, dtype=torch.long, device=device))
         
-        # 5. OPTIMIZER MIGRATION
-        # Create new optimizer dynamically based on old optimizer type
+        # Optimizer Migration
         group = old_opt.param_groups[0]
         optimizer_cls = type(old_opt)
         
@@ -123,7 +121,7 @@ class Neurogenesis:
         def get_arg(name, default):
             return group.get(name, default)
 
-        # Re-instantiate optimizer (Generic)
+        # Re-instantiate optimizer
         try:
              new_opt = optimizer_cls(
                 model.parameters(), 
@@ -136,7 +134,7 @@ class Neurogenesis:
             print(f"⚠️ Optimizer re-init failed: {e}. Falling back to standard AdamW.")
             new_opt = torch.optim.AdamW(model.parameters(), lr=group['lr'])
 
-        # Helper to migrate internal optimizer state (exp_avg, exp_avg_sq, state1, state2)
+        # Migrate internal optimizer state
         def transfer_state(old_p, new_p, is_matrix=False):
             if old_p in old_opt.state:
                 old_s = old_opt.state[old_p]
@@ -155,27 +153,22 @@ class Neurogenesis:
                          
                     try:
                         tensor = val
-                        
-                        # LOGIC: Does this state tensor match the parameter shape?
                         if tensor.shape == old_p.shape:
-                            # Matches Parameter Shape -> Needs Resizing (Padding)
+                            # Needs resizing
                             new_tensor = torch.zeros(new_p.shape, dtype=tensor.dtype, device=device)
                             
                             if is_matrix:
-                                # 2D Parameter (W: NxN)
                                 min_rows = min(tensor.shape[0], new_p.shape[0])
                                 min_cols = min(tensor.shape[1], new_p.shape[1])
                                 new_tensor[:min_rows, :min_cols] = tensor[:min_rows, :min_cols]
                             else:
-                                # 1D Parameter (B: N)
                                 min_len = min(tensor.shape[0], new_p.shape[0])
                                 new_tensor[:min_len] = tensor[:min_len]
                                 
                             new_s[key] = new_tensor
                             
                         else:
-                            # Does NOT match parameter shape (Metadata like qmap1)
-                            # Direct Copy
+                            # Metadata tensor - direct copy
                             new_s[key] = tensor.clone()
                             
                     except Exception as e:
@@ -186,7 +179,7 @@ class Neurogenesis:
                 if new_s:
                     new_opt.state[new_p] = new_s
                 
-        # Transfer state for each parameter (Only for standard optimizers)
+        # Transfer state for each parameter
         is_bnb = HAS_BNB and isinstance(new_opt, (bnb.optim.Adam8bit, bnb.optim.AdamW8bit))
         
         if is_bnb:
@@ -207,7 +200,7 @@ class Neurogenesis:
             except Exception as e:
                 print(f"   ⚠️ Optimizer State Transfer Failed ({e}). Performing Cold Restart.")
 
-        # 6. CLEANUP MEMORY
+        # Cleanup
         del old_W_param
         del old_B_param
         del old_norm_w_param
