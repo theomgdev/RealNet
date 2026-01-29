@@ -180,14 +180,12 @@ class RealNet(nn.Module):
             # Input Injection
             if x_input_info is not None:
                 if isinstance(x_input_info, tuple):
-                    # Optimized Sparse Injection (In-Place)
+                    # Optimized Sparse Injection (Indexed Assignment)
                     # format: (valid_mask, valid_neurons, scale_indices)
                     v_mask, v_neurons, s_idx = x_input_info
                     if v_mask.any():
-                        # We use advanced indexing to add directly to signal
-                        # signal[v_mask, v_neurons] selects the specific neurons for valid batch items
-                        # We add the scaled input directly.
-                        signal[v_mask, v_neurons] = signal[v_mask, v_neurons] + self.input_scale[s_idx]
+                        # Advanced indexing: add scaled input to specific neurons
+                        signal[v_mask, v_neurons] += self.input_scale[s_idx]
                 else:
                     # Legacy Dense Injection
                     signal = signal + x_input_info
@@ -203,17 +201,14 @@ class RealNet(nn.Module):
         ratio = 1
         max_outputs = steps
 
+        # Determine ratio for sequential inputs (both index-based and dense)
         if x_input is not None:
-             if x_input.dtype in [torch.long, torch.int64, torch.int32] and x_input.ndim == 2:
-                  # Index-based Sequential
-                  if x_input.shape[1] > 0:
-                       ratio = max(1, steps // x_input.shape[1])
-                       max_outputs = x_input.shape[1]
-             elif x_input.ndim == 3 and not self.pulse_mode:
-                  # Dense Sequential (Pulse mode is instant, so ratio 1)
-                  if x_input.shape[1] > 0:
-                       ratio = max(1, steps // x_input.shape[1])
-                       max_outputs = x_input.shape[1]
+            is_index_seq = x_input.dtype in [torch.long, torch.int64, torch.int32] and x_input.ndim == 2
+            is_dense_seq = x_input.ndim == 3 and not self.pulse_mode
+            
+            if (is_index_seq or is_dense_seq) and x_input.shape[1] > 0:
+                ratio = max(1, steps // x_input.shape[1])
+                max_outputs = x_input.shape[1]
 
         for t in range(steps):
             # Prepare input for this step
@@ -240,22 +235,21 @@ class RealNet(nn.Module):
                 elif x_input.ndim == 3:
                     # Sequential Input: (Batch, MultiSteps, Neurons)
                     if t % ratio == 0 and (t // ratio) < x_input.shape[1]:
-                        x_step = x_input[:, t // ratio, :]
-                        # Apply Scaling for Dense Inputs Immediately
-                        # Clone to avoid modifying original input if it's reused
-                        x_step = x_step.clone()
-                        x_step[:, self.input_pos] = x_step[:, self.input_pos] * self.input_scale
+                        x_step = x_input[:, t // ratio, :].clone()
+                        x_step[:, self.input_pos] *= self.input_scale
                         x_step_info = x_step
                         
                 elif self.pulse_mode:
                     if t == 0:
                         x_step = x_input.clone()
-                        x_step[:, self.input_pos] = x_step[:, self.input_pos] * self.input_scale
+                        x_step[:, self.input_pos] *= self.input_scale
                         x_step_info = x_step
                 else:
-                    x_step = x_input.clone()
-                    x_step[:, self.input_pos] = x_step[:, self.input_pos] * self.input_scale
-                    x_step_info = x_step
+                    # Continuous mode: inject every step (with clone only on first)
+                    if t == 0:
+                        self._cached_scaled_input = x_input.clone()
+                        self._cached_scaled_input[:, self.input_pos] *= self.input_scale
+                    x_step_info = self._cached_scaled_input
             
             # Use gradient checkpointing if enabled (saves VRAM, costs recomputation)
             if self.gradient_checkpointing and self.training:

@@ -108,9 +108,11 @@ class Neurogenesis:
         model.input_scale = nn.Parameter(old_input_scale.data)
         model.output_scale = nn.Parameter(old_output_scale.data)
         
-        # Re-bind IDs
+        # Re-bind IDs and update buffers
         model.input_ids = old_input_ids
         model.output_ids = old_output_ids
+        model.register_buffer('input_pos', torch.tensor(old_input_ids, dtype=torch.long, device=device))
+        model.register_buffer('output_pos', torch.tensor(old_output_ids, dtype=torch.long, device=device))
         
         # 5. OPTIMIZER MIGRATION
         # Create new optimizer dynamically based on old optimizer type

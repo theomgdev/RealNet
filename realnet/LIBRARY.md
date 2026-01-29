@@ -102,9 +102,12 @@ Optimizes the model using `torch.compile` (PyTorch 2.0+) for faster execution. R
 
 #### `model.forward(x_input, steps=1, current_state=None)`
 Runs the dynamic system.
-*   `x_input`: Input tensor. Can be a single pulse or a sequence.
+*   `x_input`: Input tensor. Can be a single pulse or a sequence (index-based or dense).
 *   `steps`: **Thinking Time**. How many times the signal reverberates in the echo chamber.
+*   `current_state`: Optional. Pass a previous state to continue from.
 *   **Returns**: `(all_states, final_state)`
+    *   `all_states`: Tensor of shape `(Batch, Steps, Neurons)` - **Batch-first format**.
+    *   `final_state`: Tensor of shape `(Batch, Neurons)` - The last hidden state.
 
 ---
 

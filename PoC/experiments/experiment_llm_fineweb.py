@@ -213,7 +213,7 @@ def initialize_system(vocab_size, num_neurons, device, lr=1e-4, activation='gelu
 
     return model, trainer, input_ids, output_ids
 
-def calculate_optimal_batch_size(device, num_neurons, activation, seq_len, think_gap, truncated_bptt_seq_len):
+def calculate_optimal_batch_size(device, num_neurons, seq_len, think_gap, truncated_bptt_seq_len):
     """Calculates optimal batch size based on VRAM capacity."""
     print("\n⚖️  Auto-Tuning Batch Size...")
 
@@ -316,7 +316,6 @@ def main():
          BATCH_SIZE = calculate_optimal_batch_size(
              DEVICE,
              NUM_NEURONS,
-             ACTIVATION,
              SEQ_LEN,
              THINK_GAP,
              TRUNCATED_BPTT_SEQ_LEN
