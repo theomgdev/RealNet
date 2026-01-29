@@ -36,8 +36,8 @@ class RealNet(nn.Module):
         # Bias Vector
         self.B = nn.Parameter(torch.zeros(num_neurons, device=device))
 
-        # StepNorm
-        self.norm = nn.LayerNorm(num_neurons).to(device)
+        # StepNorm (RMSNorm - faster than LayerNorm, used in modern LLMs)
+        self.norm = nn.RMSNorm(num_neurons).to(device)
         
         if activation == 'tanh':
             self.act = nn.Tanh()
