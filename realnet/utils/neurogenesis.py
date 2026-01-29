@@ -83,19 +83,14 @@ class Neurogenesis:
         new_B = torch.zeros(new_n, device=device)
         new_B[:old_n] = model.B.data
 
-        # 3. Expand Mask
-        new_mask = torch.ones(new_n, new_n, device=device)
-        if hasattr(model, 'mask'):
-            new_mask[:old_n, :old_n] = model.mask
-        
-        # 4. Expand Norms (StepNorm)
+        # 3. Expand Norms (StepNorm)
         new_norm = nn.LayerNorm(new_n).to(device)
         
         with torch.no_grad():
             new_norm.weight[:old_n] = model.norm.weight.data
             new_norm.bias[:old_n]   = model.norm.bias.data
-            
-        # 5. Expand State (if exists) - Pad with 0
+
+        # 4. Expand State (if exists) - Pad with 0
         if hasattr(model, 'state'):
             new_state = torch.zeros(model.state.shape[0], new_n, device=device)
             new_state[:, :old_n] = model.state
@@ -105,7 +100,6 @@ class Neurogenesis:
         model.num_neurons = new_n
         model.W = nn.Parameter(new_W)
         model.B = nn.Parameter(new_B)
-        model.register_buffer('mask', new_mask)
         
         # Apply new norms
         model.norm = new_norm
@@ -118,7 +112,7 @@ class Neurogenesis:
         model.input_ids = old_input_ids
         model.output_ids = old_output_ids
         
-        # 6. OPTIMIZER MIGRATION
+        # 5. OPTIMIZER MIGRATION
         # Create new optimizer dynamically based on old optimizer type
         group = old_opt.param_groups[0]
         optimizer_cls = type(old_opt)
@@ -140,7 +134,6 @@ class Neurogenesis:
             print(f"⚠️ Optimizer re-init failed: {e}. Falling back to standard AdamW.")
             new_opt = torch.optim.AdamW(model.parameters(), lr=group['lr'])
 
-        
         # Helper to migrate internal optimizer state (exp_avg, exp_avg_sq, state1, state2)
         def transfer_state(old_p, new_p, is_matrix=False):
             if old_p in old_opt.state:
@@ -212,13 +205,7 @@ class Neurogenesis:
             except Exception as e:
                 print(f"   ⚠️ Optimizer State Transfer Failed ({e}). Performing Cold Restart.")
 
-        # --- SPARSE MODEL SUPPORT ---
-        # If this is a SparseRealNet, we must update the Cached Sparse Matrices
-        # because we just replaced the dense W and W_gate parameters.
-        if hasattr(model, '_sparsify_weights'):
-             model._sparsify_weights()
-        
-        # 7. CLEANUP MEMORY
+        # 6. CLEANUP MEMORY
         del old_W_param
         del old_B_param
         del old_norm_w_param

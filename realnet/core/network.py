@@ -61,10 +61,6 @@ class RealNet(nn.Module):
         # Internal State (hidden state h_t)
         self.state = torch.zeros(1, num_neurons, device=device)
         
-        # PRUNING MASK (Synaptic Life)
-        # 1 = Alive, 0 = Dead
-        self.register_buffer('mask', torch.ones(num_neurons, num_neurons, device=device))
-        
     def _init_weights(self, strategy):
         self._apply_init(self.W, strategy)
         
@@ -108,8 +104,6 @@ class RealNet(nn.Module):
                                 E.g., 0.05 will regenerate the weakest 5% of connections.
         """
         with torch.no_grad():
-            # 1. Main Weights
-            
             # Determine Threshold dynamically if percentage is active
             current_threshold = threshold
             if percentage is not None:
@@ -178,17 +172,27 @@ class RealNet(nn.Module):
         h_t = current_state
         outputs = []
 
-        # Apply Mask to Weights (Dead synapses transmit nothing)
-        effective_W = self.W * self.mask
-
-        def _single_step(h_t_in, t_idx, x_input_step):
+        def _single_step(h_t_in, t_idx, x_input_info):
             # 1. Chaotic Transmission (DENSE)
             # Standard Projection (Value Path)
-            signal = torch.matmul(h_t_in, effective_W) + self.B
+            signal = torch.matmul(h_t_in, self.W) + self.B
+            
+            # Input Injection
+            if x_input_info is not None:
+                if isinstance(x_input_info, tuple):
+                    # Optimized Sparse Injection (In-Place)
+                    # format: (valid_mask, valid_neurons, scale_indices)
+                    v_mask, v_neurons, s_idx = x_input_info
+                    if v_mask.any():
+                        # We use advanced indexing to add directly to signal
+                        # signal[v_mask, v_neurons] selects the specific neurons for valid batch items
+                        # We add the scaled input directly.
+                        signal[v_mask, v_neurons] = signal[v_mask, v_neurons] + self.input_scale[s_idx]
+                else:
+                    # Legacy Dense Injection
+                    signal = signal + x_input_info
             
             # Standard Activation
-            if x_input_step is not None:
-                signal = signal + x_input_step
             activated = self.act(signal)
             
             # 2. Dropout & 3. StepNorm
@@ -213,7 +217,8 @@ class RealNet(nn.Module):
 
         for t in range(steps):
             # Prepare input for this step
-            x_step = None
+            x_step_info = None
+            
             if x_input is not None:
                 # Handle Index-Based Input (VRAM Efficient)
                 if x_input.dtype in [torch.long, torch.int64, torch.int32]:
@@ -224,49 +229,44 @@ class RealNet(nn.Module):
                                valid_mask = token_indices != -1
                                
                                if valid_mask.any():
-                                    x_step_dense = torch.zeros(batch_sz, self.num_neurons, device=self.device)
                                     # Map token indices to neuron indices
-                                    # Assumes input_ids are contiguous. neuron_idx = token_idx + input_ids[0]
                                     offset = self.input_ids[0]
                                     valid_neurons = token_indices[valid_mask] + offset
-                                    
-                                    # Apply Input Scaling (Mapped)
-                                    # valid_neurons corresponds to input_pos[scale_indices]
                                     scale_indices = valid_neurons - offset
                                     
-                                    x_step_dense = torch.zeros(batch_sz, self.num_neurons, device=self.device)
-                                    x_step_dense[valid_mask, valid_neurons] = 1.0 * self.input_scale[scale_indices]
-                                    x_step = x_step_dense
+                                    # Pass sparse info instead of allocating dense tensor
+                                    x_step_info = (valid_mask, valid_neurons, scale_indices)
                                
                 elif x_input.ndim == 3:
                     # Sequential Input: (Batch, MultiSteps, Neurons)
                     if t % ratio == 0 and (t // ratio) < x_input.shape[1]:
                         x_step = x_input[:, t // ratio, :]
+                        # Apply Scaling for Dense Inputs Immediately
+                        # Clone to avoid modifying original input if it's reused
+                        x_step = x_step.clone()
+                        x_step[:, self.input_pos] = x_step[:, self.input_pos] * self.input_scale
+                        x_step_info = x_step
                         
                 elif self.pulse_mode:
                     if t == 0:
-                        x_step = x_input
+                        x_step = x_input.clone()
+                        x_step[:, self.input_pos] = x_step[:, self.input_pos] * self.input_scale
+                        x_step_info = x_step
                 else:
-                    x_step = x_input
-            
-            # Apply Input Scaling for Dense Inputs
-            if x_step is not None and (x_input.dtype not in [torch.long, torch.int64, torch.int32]):
-                 x_step = x_step.clone()
-                 x_step[:, self.input_pos] = x_step[:, self.input_pos] * self.input_scale
+                    x_step = x_input.clone()
+                    x_step[:, self.input_pos] = x_step[:, self.input_pos] * self.input_scale
+                    x_step_info = x_step
             
             # Use gradient checkpointing if enabled (saves VRAM, costs recomputation)
             if self.gradient_checkpointing and self.training:
-                # checkpoint requires tensors, not None - use dummy if needed
-                if x_step is None:
-                    x_step = torch.zeros_like(h_t)
-                h_t = checkpoint.checkpoint(_single_step, h_t, torch.tensor(t), x_step, use_reentrant=False)
+                # checkpoint requires tensors. Tuples are fine as args.
+                # However, if x_step_info is None, we need to pass None.
+                # Checkpoint handles non-tensor args by not optimizing them, which is fine for indices.
+                h_t = checkpoint.checkpoint(_single_step, h_t, torch.tensor(t), x_step_info, use_reentrant=False)
             else:
-                h_t = _single_step(h_t, t, x_step)
+                h_t = _single_step(h_t, t, x_step_info)
             
             # Smart Output Collection
-            # Only collect the state at the END of a thinking block (or every step if ratio=1)
-            # This aligns the output tensor shape with the input sequence length, not total steps.
-            # We also enforce max_outputs to avoid collecting extra steps if steps % ratio != 0
             if (t + 1) % ratio == 0 and len(outputs) < max_outputs:
                 outputs.append(h_t)
 

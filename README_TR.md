@@ -214,22 +214,7 @@ RealNet'in görsel yetenekleri, sağlamlık, ölçeklenebilirlik ve verimliliği
 *   **Script:** `PoC/convergence_mnist.py`
 *   **İçgörü:** Standart lineer modeller ~%92'de tıkanır. RealNet, Derin Öğrenme katmanları olmadan, sadece **Zamansal Derinlik** sayesinde Derin Öğrenme performansı (~%96) yakalar.
 
-**2. Darwin Deneyi (En Güçlünün Hayatta Kalması)**
-*   **Yöntem:** MNIST eğitilirken her epoch sonunda zayıf bağlantıları **budamak (pruning)**.
-*   **Sonuç:** **%93.6 Ölü Sinaps** ile **%94.2 Doğruluk**.
-    <details>
-    <summary>Hayatta Kalma İstatistiklerini Gör</summary>
-
-    ```text
-    Ölü Sinapslar: 93.59% (590054/630436)
-    Aktif Parametre: ~40k
-    Doğruluk: 94.20%
-    ```
-    </details>
-*   **Script:** `PoC/experiments/convergence_mnist_alive.py`
-*   **İçgörü:** RealNet organiktir. Kendini büyütür ve budar, yüksek zekayı korurken enerji verimliliğini optimize eder.
-
-**3. Anka Kuşu Deneyi (Sürekli Rejenerasyon)**
+**2. Anka Kuşu Deneyi (Sürekli Rejenerasyon)**
 *   **Hipotez:** Ölü sinapsları sadece öldürmek yerine **yeniden canlandırarak** (rastgele yeniden başlatma) %100 parametre verimliliğine ulaşabilir miyiz?
 *   **Sonuç:** **%95.2 Doğruluk**.
 *   **Gözlemler:**
@@ -248,7 +233,7 @@ RealNet'in görsel yetenekleri, sağlamlık, ölçeklenebilirlik ve verimliliği
 *   **Script:** `PoC/experiments/convergence_mnist_revive.py`
 *   **İçgörü:** Kapasiteyi küçülten standart budamanın aksine, RealNet zayıf bağlantıları sürekli geri dönüştürerek tam kapasiteyi koruyabilir. Bu, doygunluk olmadan **Sürekli Öğrenmeyi** (FineWeb'deki gibi) mümkün kılar. "Hata, Özellik Oldu (Bug became a Feature)."
 
-**4. Tiny Challenge (Aşırı Kısıtlamalar)**
+**3. Tiny Challenge (Aşırı Kısıtlamalar)**
 *   **Hedef:** 7x7 Küçültülmüş MNIST. (Bir ikondan bile küçük).
 *   **Mimari:** **59 Nöron** toplam (~3.5k Parametre).
 *   **Sonuç:** **~%89.3 Doğruluk**.

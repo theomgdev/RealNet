@@ -215,22 +215,7 @@ RealNet's vision capabilities were tested under four distinct conditions to prov
 *   **Script:** `PoC/convergence_mnist.py`
 *   **Insight:** Standard linear models cap at ~92%. RealNet achieves Deep Learning performance (~96%) without Deep Learning layers, purely through **Temporal Depth**.
 
-**2. The Darwin Experiment (Survival of the Fittest)**
-*   **Method:** Train MNIST while **pruning** weak connections after every epoch.
-*   **Result:** **94.2% Accuracy** with **93.6% Dead Synapses**.
-    <details>
-    <summary>See Survival Stats</summary>
-
-    ```text
-    Dead Synapses: 93.59% (590054/630436)
-    Active Params: ~40k
-    Accuracy: 94.20%
-    ```
-    </details>
-*   **Script:** `PoC/experiments/convergence_mnist_alive.py`
-*   **Insight:** RealNet is organic. It grows and trims itself, optimizing energy efficiency while maintaining high intelligence.
-
-**3. The Phoenix Experiment (Continuous Regeneration)**
+**2. The Phoenix Experiment (Continuous Regeneration)**
 *   **Hypothesis:** Can we reach 100% parameter efficiency by **reviving** dead synapses (random re-initialization) instead of just killing them?
 *   **Result:** **95.2% Accuracy**.
 *   **Observations:**
@@ -249,7 +234,7 @@ RealNet's vision capabilities were tested under four distinct conditions to prov
 *   **Script:** `PoC/experiments/convergence_mnist_revive.py`
 *   **Insight:** Unlike standard pruning which shrinks capacity, RealNet can maintain full capacity by constantly recycling weak connections. This allows for **Continuous Learning** (like in FineWeb) without saturation. "Bug became a Feature."
 
-**4. The Tiny Challenge (Extreme Constraints)**
+**3. The Tiny Challenge (Extreme Constraints)**
 *   **Target:** 7x7 Downscaled MNIST. (Less than an icon).
 *   **Architecture:** **59 Neurons** total (~3.5k Parameters).
 *   **Result:** **~89.3% Accuracy**.
@@ -314,7 +299,6 @@ RealNet's vision capabilities were tested under four distinct conditions to prov
 *   **Script:** `PoC/experiments/convergence_adder.py`
 *   **Insight:** Validates **Short-Term Memory**. The network holds variable $A$ in its chaotic state, waits for $B$, and performs non-linear integration (approximate arithmetic) to output the sum. This demonstrates RealNet's ability to process **Video-like** data streams. Similar to "Mental Math".
 
-
 #### G. The Latch (Willpower)
 *   **Target:** Wait for a trigger pulse. Once received, switch output to ON and **hold it forever**.
 *   **Challenge:** Standard RNNs fade to zero. RealNet must trap the energy in a stable attractor.
@@ -333,7 +317,6 @@ RealNet's vision capabilities were tested under four distinct conditions to prov
     </details>
 *   **Script:** `PoC/experiments/convergence_latch.py`
 *   **Insight:** Demonstrates **Decision Maintaining**. RealNet can make a choice and stick to it, resisting decay.
-
 
 #### H. The Stopwatch (Internal Clock)
 *   **Target:** "Wait for X steps, then fire." (No input during waiting).
@@ -427,4 +410,3 @@ We have proven that a chaotic forest of neurons, given enough time to "think" an
 ## LICENSE
 
 MIT
- 

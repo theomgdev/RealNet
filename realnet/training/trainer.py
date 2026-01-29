@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 from ..utils.data import prepare_input, to_tensor
-from ..utils.pruning import SynapticPruner
+
 import os
 if os.environ.get('NO_BNB'):
     HAS_BNB = False
@@ -97,7 +97,7 @@ class RealNetTrainer:
         if mask is not None:
             mask = to_tensor(mask, self.device)
 
-        # 2. Reset State & Run (with AMP)
+        # 3. Reset State & Run (with AMP)
         device_type = 'cuda' if self.device == 'cuda' else 'cpu'
         if hasattr(torch.amp, 'autocast'):
              autocast_ctx = torch.amp.autocast(device_type=device_type, enabled=(self.device == 'cuda'))
@@ -110,12 +110,11 @@ class RealNetTrainer:
                 current_state_in = initial_state
             else:
                 self.model.reset_state(batch_size)
-                current_state_in = None # Let model use its internal state or resetting logic if needed, but model.forward checks this.
-                # Actually model.forward(..., current_state=None) triggers reset if needed inside.
+                current_state_in = None
             
             all_states, final_state = self.model(x_input, steps=thinking_steps, current_state=current_state_in)
             
-            # 3. Extract Outputs & Calculate Loss
+            # 4. Extract Outputs & Calculate Loss
             output_indices = self.model.output_ids
             
             if full_sequence:
@@ -140,7 +139,7 @@ class RealNetTrainer:
             if gradient_accumulation_steps > 1:
                 loss = loss / gradient_accumulation_steps
 
-        # 4. Backward (with Scaler)
+        # 5. Backward (with Scaler)
         self.scaler.scale(loss).backward()
         
         # Step optimizer only if accumulation cycle is complete
@@ -212,12 +211,6 @@ class RealNetTrainer:
             loss = self.loss_fn(preds, target_values)
             return loss.item()
 
-    def prune(self, threshold=0.01):
-        """
-        Triggers synaptic pruning on the model.
-        """
-        return SynapticPruner.prune(self.model, threshold)
-
     def regenerate_synapses(self, threshold=0.01, percentage=None):
         """
         Triggers synaptic regeneration (Darwinian Revive) on weak connections.
@@ -226,7 +219,7 @@ class RealNetTrainer:
         revived, total = self.model.regenerate_weak_weights(threshold, percentage)
         return revived, total
 
-    def fit(self, input_features, target_values, epochs, batch_size=32, thinking_steps=10, verbose=True, pruning_threshold=0.0):
+    def fit(self, input_features, target_values, epochs, batch_size=32, thinking_steps=10, verbose=True):
         """
         Trains the model for a fixed number of epochs.
         """
@@ -260,16 +253,8 @@ class RealNetTrainer:
             avg_loss = epoch_loss / num_batches
             history.append(avg_loss)
             
-            # --- DARWINIAN PRUNING (If Enabled) ---
-            pruning_info = ""
-            if pruning_threshold > 0.0:
-                 # Prune weak connections
-                 pruned, dead, total = self.prune(threshold=pruning_threshold)
-                 sparsity = (dead / total) * 100.0
-                 pruning_info = f" | Dead: {sparsity:.1f}%"
-            
             if verbose and (epoch % 10 == 0 or epoch == epochs - 1):
-                print(f"Epoch {epoch}/{epochs}: Loss {avg_loss:.6f}{pruning_info}")
+                print(f"Epoch {epoch}/{epochs}: Loss {avg_loss:.6f}")
                 
         return history
 

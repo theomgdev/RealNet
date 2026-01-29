@@ -7,7 +7,7 @@ RealNet is a PyTorch-based library that implements **Zero-Hidden Layer** neural 
 The library is modularized into core components:
 1.  **`realnet.core.network`**: Contains the `RealNet` architecture.
 2.  **`realnet.training.trainer`**: Contains `RealNetTrainer`.
-3.  **`realnet.utils`**: Utilities for data (`data.py`) and pruning (`pruning.py`).
+3.  **`realnet.utils`**: Utilities for data (`data.py`), neurogenesis, and model persistence.
 
 ---
 
@@ -106,19 +106,6 @@ Runs the dynamic system.
 *   `steps`: **Thinking Time**. How many times the signal reverberates in the echo chamber.
 *   **Returns**: `(all_states, final_state)`
 
-#### `SynapticPruner.prune(model, threshold=0.001)`
-Permanently kills connections that are below the absolute threshold.
-*   **Location**: `realnet.utils.pruning`
-*   **Returns**: `(pruned_count, total_dead, total_synapses)`
-
-#### `SparseRealNet.from_dense(model)`
-Creates an optimized Sparse version of the model for inference.
-```python
-from realnet import SparseRealNet
-sparse_model = SparseRealNet.from_dense(model)
-```
-Replaces the old `make_sparse()` method.
-
 ---
 
 ## RealNet Trainer (`realnet.training.trainer`)
@@ -161,7 +148,7 @@ trainer = RealNetTrainer(
 ### Key Methods
 
 #### `trainer.fit(...)`
-Runs a full training loop with optional Darwinian Pruning.
+Runs a full training loop.
 
 ```python
 history = trainer.fit(
@@ -169,8 +156,7 @@ history = trainer.fit(
     target_values=Y, 
     epochs=100, 
     batch_size=32, 
-    thinking_steps=10,       # Temporal Depth
-    pruning_threshold=0.0    # If > 0, prunes weak links every epoch
+    thinking_steps=10       # Temporal Depth
 )
 ```
 
@@ -219,11 +205,7 @@ By setting `gradient_persistence > 0`, you enable a form of **Temporal Momentum*
 *   **Use Case:** When the loss curve is extremely jagged or the model gets stuck in local minima.
 *   **Effect:** Smooths out optimization and can force convergence in "Impossible" tasks (like Zero-Hidden XOR).
 
-### 4. Darwinian Evolution (Pruning)
-RealNet can evolve. By calling `prune_synapses()` during training, the network kills off useless connections.
-*   **Result**: You can end up with a model that has 95% dead connections (High Sparsity) but maintains 99% accuracy. This mimics the human brain's development (synaptic pruning).
-
-### 5. Darwinian Regeneration (The Phoenix Effect)
+### 4. Darwinian Regeneration (The Phoenix Effect)
 Instead of just killing weak connections, RealNet can **revive** them.
 *   **Concept**: A weight near 0 is contributing nothing. By randomizing it (Re-init), it gets a second chance to find a useful feature.
 *   **Benefit**: Maximizes parameter efficiency. The network becomes a living organism where cells (synapses) constantly die and are reborn, ensuring 100% of the capacity is always searching for a solution.
@@ -305,42 +287,8 @@ Safely converts any list/array/int/float into a PyTorch tensor on the target dev
 ### 2. Neurogenesis (`realnet.utils.neurogenesis`)
 See **Neurogenesis** section above.
 
-### 3. Pruning (`realnet.utils.pruning`)
-See **Synaptic Pruner** section above.
-
-### 4. RealStore (`realnet.utils.realstore`)
+### 3. RealStore (`realnet.utils.realstore`)
 See **RealStore** section above for High-Level API (`save_checkpoint`, `load_checkpoint`, `transplant_weights`, `get_checkpoint_info`).
-
----
-
-## Advanced Capabilities
-
-### 1. Space-Time Tradeoff (Thinking Steps)
-RealNet replaces layers with time. 
-*   **Standard NN**: 10 Layers = Fixed Depth.
-*   **RealNet**: You can choose `thinking_steps=5`, `10`, or `100` at runtime.
-    *   **Low Steps**: Fast, shallow reasoning.
-    *   **High Steps**: Slow, deep reasoning (equivalent to dozens of layers).
-
-### 2. Gradient Accumulation (Virtual Batch Size)
-RealNet allows you to simulate massive batch sizes on limited hardware (e.g., consumer GPUs).
-*   **How it works:** Instead of updating weights after every batch, it accumulates gradients for `N` steps and then performs a single update.
-*   **Usage:**
-    ```python
-    # Simulates a batch size of 32 * 4 = 128
-    trainer.train_batch(x, y, thinking_steps=10, gradient_accumulation_steps=4)
-    ```
-*   **Benefit:** Allows training large models or using large batch stability without running out of VRAM.
-
-### 3. Ghost Gradients (Gradient Persistence)
-By setting `gradient_persistence > 0`, you enable a form of **Temporal Momentum**. The network "remembers" the direction of the error from the previous batch.
-*   **Difference from Accumulation:** Accumulation is exact math (summing). Ghost Gradients is a decaying echo (multiplying by 0.1).
-*   **Use Case:** When the loss curve is extremely jagged or the model gets stuck in local minima.
-*   **Effect:** Smooths out optimization and can force convergence in "Impossible" tasks (like Zero-Hidden XOR).
-
-### 4. Darwinian Evolution (Pruning)
-RealNet can evolve. By calling `prune_synapses()` during training, the network kills off useless connections.
-*   **Result**: You can end up with a model that has 95% dead connections (High Sparsity) but maintains 99% accuracy. This mimics the human brain's development (synaptic pruning).
 
 ---
 
@@ -359,19 +307,4 @@ Y = [[-1], [1], [1], [-1]]
 
 # Train with 5 Thinking Steps
 trainer.fit(X, Y, epochs=100, thinking_steps=5)
-```
-
-### Example 2: Evolutionary Training (Self-Optimizing)
-
-```python
-# Train on a task, but kill weak neurons every epoch
-trainer.fit(
-    X_train, Y_train, 
-    epochs=50, 
-    thinking_steps=10, 
-    pruning_threshold=0.01 # Kill weights < 0.01
-)
-
-# Convert to sparse for efficiency
-model.make_sparse()
 ```
