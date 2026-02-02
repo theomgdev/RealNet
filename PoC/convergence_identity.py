@@ -18,24 +18,20 @@ def main():
     OUTPUT_ID = 1
     
     # CRITICAL CONFIG FOR TINY NETWORKS:
-    # 1. dropout_rate=0.0 (Every neuron is vital)
-    # 2. activation='gelu' (Flow allows better gradient flow in small circuits)
-    # 3. weight_init='xavier_uniform' (Higher variance needed for signal propagation in small nets)
+    # dropout_rate=0.0 (Every neuron is vital)
     model = RealNet(
         num_neurons=NUM_NEURONS, 
         input_ids=[INPUT_ID], 
         output_ids=[OUTPUT_ID], 
         pulse_mode=True, 
         dropout_rate=0.0,
-        device=DEVICE,
-        activation='gelu',
-        weight_init='xavier_uniform'
+        device=DEVICE
     )
     trainer = RealNetTrainer(model, device=DEVICE, synaptic_noise=0.0)
 
     # CRITICAL OPTIMIZER: NO WEIGHT DECAY
     # Small networks shouldn't be penalized for magnitude.
-    trainer.optimizer = torch.optim.AdamW(model.parameters(), lr=0.01, weight_decay=0.0)
+    trainer.optimizer = torch.optim.AdamW(model.parameters(), lr=0.01)
     
     # Data
     inputs_val = torch.randint(0, 2, (100, 1)).float() * 2 - 1 
