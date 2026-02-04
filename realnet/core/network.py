@@ -7,11 +7,21 @@ class RealNet(nn.Module):
     def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='orthogonal', activation='tanh', gradient_checkpointing=False):
         super(RealNet, self).__init__()
         
-        # Auto-size to input+output
+        # Auto-size to unique input+output IDs
         if num_neurons == -1:
-            num_neurons = len(input_ids) + len(output_ids)
-            
+             unique_ids = set(input_ids) | set(output_ids)
+             if len(unique_ids) > 0:
+                 max_id = max(unique_ids)
+                 num_neurons = max_id + 1
+                 
+                 difference = num_neurons - len(unique_ids)
+                 if difference > 0:
+                      print(f"ℹ️ RealNet Auto-Sizing: Sparse IDs detected. Created {num_neurons} neurons (covering Max ID {max_id}). Unconnected neurons: {difference}")
+             else:
+                 num_neurons = 0
+        
         self.num_neurons = num_neurons
+
         self.input_ids = input_ids
         self.output_ids = output_ids
         
