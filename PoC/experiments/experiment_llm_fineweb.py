@@ -27,6 +27,8 @@ LOG_INTERVAL = 1
 MAX_START_SKIP = 1000
 RESET_DATA_ITER = False
 NUM_NEURONS = 512
+INPUT_NEURON_COUNT = -1
+OUTPUT_NEURON_COUNT = -1
 ACTIVATION = 'gelu'
 THINK_GAP = 5
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -214,9 +216,16 @@ def generate(model, tokenizer, start_str="The", length=None, temperature=0.8, to
 
     return tokenizer.decode(input_seq)
 
-def initialize_system(vocab_size, num_neurons, device, lr=1e-4, activation='gelu'):
-    input_neuron_count = num_neurons // 2
-    output_neuron_count = num_neurons // 2
+def initialize_system(vocab_size, num_neurons, device, input_count=-1, output_count=-1, lr=1e-4, activation='gelu'):
+    if input_count == -1:
+        input_neuron_count = num_neurons // 2
+    else:
+        input_neuron_count = input_count
+
+    if output_count == -1:
+        output_neuron_count = num_neurons // 2
+    else:
+        output_neuron_count = output_count
     
     input_ids = list(range(input_neuron_count))
     output_ids = list(range(input_neuron_count, input_neuron_count + output_neuron_count))
@@ -295,6 +304,8 @@ def main():
     print(f"SEQ_LEN: {SEQ_LEN}")
     print(f"BATCH_SIZE: {BATCH_SIZE} (Will Auto-Tune if -1)")
     print(f"NUM_NEURONS: {NUM_NEURONS}")
+    print(f"INPUT_NEURON_COUNT: {INPUT_NEURON_COUNT} (Half of NumNeurons if -1)")
+    print(f"OUTPUT_NEURON_COUNT: {OUTPUT_NEURON_COUNT} (Half of NumNeurons if -1)")
     print(f"TRUNCATED_BPTT_SEQ_LEN (Tokens): {TRUNCATED_BPTT_SEQ_LEN}")
     print(f"STEPS_PER_EPOCH: {STEPS_PER_EPOCH}")
     print(f"LOG_INTERVAL: {LOG_INTERVAL}")
@@ -341,7 +352,7 @@ def main():
     dataset = FineWebIterableDataset(SEQ_LEN, TOKENIZER, skip_offset=resume_doc_index, debug=False)
 
     # --- MODEL SETUP ---
-    model, trainer, input_ids, output_ids = initialize_system(VOCAB_SIZE, NUM_NEURONS, DEVICE, LEARNING_RATE, ACTIVATION)
+    model, trainer, input_ids, output_ids = initialize_system(VOCAB_SIZE, NUM_NEURONS, DEVICE, input_count=INPUT_NEURON_COUNT, output_count=OUTPUT_NEURON_COUNT, lr=LEARNING_RATE, activation=ACTIVATION)
     NUM_NEURONS = model.num_neurons
 
     # --- BATCH SIZE OPTIMIZATION ---
@@ -391,7 +402,7 @@ def main():
                     if action == '1':
                         print(f"🔄 Resizing to {saved_dim}...")
                         NUM_NEURONS = saved_dim
-                        model, trainer, _, _ = initialize_system(VOCAB_SIZE, NUM_NEURONS, DEVICE, LEARNING_RATE, ACTIVATION)
+                        model, trainer, _, _ = initialize_system(VOCAB_SIZE, NUM_NEURONS, DEVICE, input_count=INPUT_NEURON_COUNT, output_count=OUTPUT_NEURON_COUNT, lr=LEARNING_RATE, activation=ACTIVATION)
                         opt_arg = None if RESET_OPTIMIZER_ON_LOAD else trainer.optimizer
                         target_lr = LEARNING_RATE if OVERWRITE_LR_OF_CKPT else None
                         load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True, lr=target_lr)
