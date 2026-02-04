@@ -196,6 +196,16 @@ class Neurogenesis:
                 transfer_state(old_input_scale, model.input_scale, is_matrix=False)
                 transfer_state(old_output_scale, model.output_scale, is_matrix=False)
                 
+                # Transfer Vocab Layers State (Shapes are constant during Neurogenesis)
+                if hasattr(model, 'embed') and model.embed is not None:
+                     transfer_state(model.embed.weight, model.embed.weight, is_matrix=True)
+                
+                if hasattr(model, 'proj') and model.proj is not None:
+                     transfer_state(model.proj.weight, model.proj.weight, is_matrix=True)
+                     
+                if hasattr(model, 'output_decoder') and model.output_decoder is not None:
+                     transfer_state(model.output_decoder.weight, model.output_decoder.weight, is_matrix=True)
+                
                 print("   ✅ Optimizer State Transferred (Momentum Preserved)")
             except Exception as e:
                 print(f"   ⚠️ Optimizer State Transfer Failed ({e}). Performing Cold Restart.")

@@ -108,10 +108,17 @@ class FineWebIterableDataset(torch.utils.data.IterableDataset):
             indices = list(chunk_bytes)
 
             if len(indices) == self.seq_len + 1:
-                x = torch.tensor(indices[:-1], dtype=torch.long)
-                y = torch.tensor(indices[1:], dtype=torch.long)
-                # Yield index too so main process knows where we are
-                yield x, y, local_doc_index
+                # Safety Check: Ensure tokens are within byte range (0-255)
+                max_val = max(indices)
+                if max_val >= 256:
+                     print(f"Error: Found invalid token >= 256! Max: {max_val} Indices: {indices}")
+                
+                # Only yield if safe to prevent device-side assertions
+                if max_val < 256:
+                    x = torch.tensor(indices[:-1], dtype=torch.long)
+                    y = torch.tensor(indices[1:], dtype=torch.long)
+                    # Yield index too so main process knows where we are
+                    yield x, y, local_doc_index
 
     def get_vocab_size(self):
         return VOCAB_SIZE
@@ -157,8 +164,9 @@ def generate(model, dataset, start_str="The", length=None, temperature=0.8, top_
             preds, current_state = model(x_next, steps=total_step_single, current_state=current_state)
             
             # Prediction is at the END of the thinking block
-            # Preds shape: (Batch, 1, Output) in native smart output mode
-            logits = preds[0, 0, model.output_ids]
+            # Preds shape: (Batch, 1, VocabSize) in native vocab mode
+            # We select the last step (which is index 0 here since we passed 1 token)
+            logits = preds[0, 0, :]
 
             # Sampling logic
             if temperature > 0:
@@ -195,9 +203,20 @@ def generate(model, dataset, start_str="The", length=None, temperature=0.8, top_
         return str(generated_bytes)
 
 def initialize_system(vocab_size, num_neurons, device, lr=1e-4, activation='gelu'):
-    input_ids = list(range(vocab_size))
-    output_ids = list(range(vocab_size, 2 * vocab_size))
-
+    # --- VOCAB DECOUPLING ---
+    # With vocab_size support, input_ids and output_ids refer to NEURONS, not Tokens.
+    # We allocate a subset of neurons for Input Embedding and Output Readout.
+    
+    # Example: 256 Neurons for Embedding Input, 256 Neurons for Output Readout
+    # The actual Vocab (50k etc) is projected onto these.
+    input_neuron_count = 256
+    output_neuron_count = 256
+    
+    input_ids = list(range(input_neuron_count))
+    output_ids = list(range(input_neuron_count, input_neuron_count + output_neuron_count))
+    
+    # If num_neurons is -1, auto-size will handle it based on max(output_ids)
+    
     model = RealNet(
         num_neurons=num_neurons,
         input_ids=input_ids,
@@ -206,7 +225,9 @@ def initialize_system(vocab_size, num_neurons, device, lr=1e-4, activation='gelu
         dropout_rate=0.0,
         activation=activation,
         weight_init='orthogonal',
-        gradient_checkpointing=True
+        gradient_checkpointing=True,
+        vocab_size=vocab_size,   # Enable built-in embedding/decoding
+        vocab_mode='hybrid'      # Default to hybrid for flexibility
     )
 
     trainer = RealNetTrainer(model, lr=lr, device=device, gradient_persistence=0.0, synaptic_noise=0)
@@ -231,7 +252,7 @@ def calculate_optimal_batch_size(device, num_neurons, seq_len, think_gap, trunca
         # Heuristic: Bytes per neuron per step (FP16 Activations + Grads + Overhead)
         # Native Mode: We only store activations for (Batch, SeqLen) now! (Outputs are decimated)
         # However, internal gradients still track through time.
-        BYTES_PER_NEURON_STEP = 12
+        BYTES_PER_NEURON_STEP = 24
 
         if truncated_bptt_seq_len > 0:
             # We process raw tokens but computation graph is deep
@@ -394,6 +415,7 @@ def main():
     trainer.loss_fn = criterion
 
     # OUTPUT TRANSFORM: Flatten (Batch, Steps, Out) -> (N, Out)
+    # RealNet now returns (Batch, Steps, VocabSize) directly due to built-in decoder.
     def flatten_logits(out):
         return out.reshape(-1, dataset.get_vocab_size())
 

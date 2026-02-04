@@ -4,7 +4,7 @@ import torch.utils.checkpoint as checkpoint
 import numpy as np
 
 class RealNet(nn.Module):
-    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='orthogonal', activation='tanh', gradient_checkpointing=False):
+    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='orthogonal', activation='tanh', gradient_checkpointing=False, vocab_size=None, vocab_mode='hybrid'):
         super(RealNet, self).__init__()
         
         # Auto-size to unique input+output IDs
@@ -25,6 +25,37 @@ class RealNet(nn.Module):
         self.input_ids = input_ids
         self.output_ids = output_ids
         
+        # Vocab / Projection Mode
+        self.vocab_size = vocab_size
+        self.vocab_mode = vocab_mode
+        self.embed = None
+        self.proj = None
+        self.output_decoder = None
+
+        if vocab_size is not None:
+            # Parse Asymmetric Vocab Size
+            if isinstance(vocab_size, (list, tuple)):
+                v_in, v_out = vocab_size
+            else:
+                v_in = vocab_size
+                v_out = vocab_size
+
+            # Output Decoder (Neurons -> Vocab)
+            # Enabled if v_out > 0
+            if v_out > 0:
+                self.output_decoder = nn.Linear(len(output_ids), v_out, bias=False).to(device)
+            
+            # Input Projection (Vocab -> Neurons)
+            # Enabled if v_in > 0
+            if v_in > 0:
+                target_dim = len(input_ids)
+                
+                if vocab_mode in ['hybrid', 'discrete']:
+                    self.embed = nn.Embedding(v_in, target_dim).to(device)
+                    
+                if vocab_mode in ['hybrid', 'continuous']:
+                    self.proj = nn.Linear(v_in, target_dim, bias=False).to(device)
+
         # Buffers for fast indexing
         self.register_buffer('input_pos', torch.tensor(input_ids, dtype=torch.long, device=device))
         self.register_buffer('output_pos', torch.tensor(output_ids, dtype=torch.long, device=device))
@@ -70,7 +101,16 @@ class RealNet(nn.Module):
         self.state = torch.zeros(1, num_neurons, device=device)
         
     def _init_weights(self, strategy):
+        # Core Matrix
         self._apply_init(self.W, strategy)
+        
+        # Projections & Embeddings (LLM Standards)
+        if self.embed is not None:
+            self._apply_init(self.embed.weight, strategy)
+        if self.proj is not None:
+            self._apply_init(self.proj.weight, strategy)
+        if self.output_decoder is not None:
+            self._apply_init(self.output_decoder.weight, strategy)
         
     def _apply_init(self, tensor, strategy):
         """
@@ -215,39 +255,105 @@ class RealNet(nn.Module):
             x_step_info = None
             
             if x_input is not None:
-                # Handle Index-Based Input (VRAM Efficient)
-                if x_input.dtype in [torch.long, torch.int64, torch.int32]:
-                     if x_input.ndim == 2:
-                          if t % ratio == 0 and (t // ratio) < x_input.shape[1]:
-                               token_indices = x_input[:, t // ratio]
-                               valid_mask = token_indices != -1
-                               
-                               if valid_mask.any():
-                                    # Map token indices to neuron indices
-                                    offset = self.input_ids[0]
-                                    valid_neurons = token_indices[valid_mask] + offset
-                                    scale_indices = valid_neurons - offset
-                                    # Sparse info tuple
-                                    x_step_info = (valid_mask, valid_neurons, scale_indices)
-                               
-                elif x_input.ndim == 3:
-                    # Sequential Input: (Batch, MultiSteps, Neurons)
-                    if t % ratio == 0 and (t // ratio) < x_input.shape[1]:
-                        x_step = x_input[:, t // ratio, :].clone()
-                        x_step[:, self.input_pos] *= self.input_scale
-                        x_step_info = x_step
-                        
-                elif self.pulse_mode:
-                    if t == 0:
-                        x_step = x_input.clone()
-                        x_step[:, self.input_pos] *= self.input_scale
-                        x_step_info = x_step
+                # --- VOCAB MODE ---
+                if self.vocab_size is not None:
+                     x_step_info = None
+                     
+                     # Determine current step index in the input sequence
+                     seq_idx = t // ratio
+                     is_active_step = (t % ratio == 0) and (seq_idx < x_input.shape[1])
+                     
+                     if is_active_step:
+                         # 1. Component Extraction
+                         if x_input.ndim == 2: # (Batch, Seq) - likely indices
+                             step_in = x_input[:, seq_idx]
+                         elif x_input.ndim == 3: # (Batch, Seq, Feat) - continuous
+                             step_in = x_input[:, seq_idx]
+                         else:
+                             # Fallback for Pulse/Single
+                             step_in = x_input
+                             
+                         # 2. Projection (Embed or Linear)
+                         vector = None
+                         
+                         # Discrete (Int/Long) -> Embedding
+                         if step_in.dtype in [torch.long, torch.int64, torch.int32]:
+                             if self.embed is not None:
+                                 vector = self.embed(step_in.long()) # Ensure Long for embedding
+                             else:
+                                 # Fallback for integer inputs in continuous mode
+                                 # Cast to float and project
+                                 if self.proj is not None:
+                                     vector = self.proj(step_in.float())
+                                     
+                         # Continuous (Float) -> Projection
+                         else:
+                             if self.proj is not None:
+                                 vector = self.proj(step_in)
+                             else:
+                                 # Fallback for float inputs in discrete mode
+                                 # Attempt to cast to long for embedding lookup 
+                                 if self.embed is not None:
+                                     vector = self.embed(step_in.long())
+                         
+                         # 3. Map to Network State (Full Tensor Construction)
+                         if vector is not None:
+                              # Apply Input Scaling (Parameter)
+                              vector = vector * self.input_scale
+                              
+                              # Construct full (Batch, N) input
+                              # Dense injection relative to input_ids
+                              full_input = torch.zeros(h_t.shape[0], self.num_neurons, device=self.device)
+                              full_input[:, self.input_pos] = vector
+                              x_step_info = full_input
+                         
+                         # Caching for Continuous/Pulse persistence if needed
+                         if self.pulse_mode and t==0:
+                             pass # Done
+                         elif not self.pulse_mode:
+                              self._cached_scaled_input = x_step_info
+
+                     # Handle persistence for continuous mode (non-pulse)
+                     if not self.pulse_mode: 
+                          # Re-use cached input if available (for static vocab inputs)
+                          if x_step_info is None and hasattr(self, '_cached_scaled_input'):
+                               x_step_info = self._cached_scaled_input
+
+                # --- LEGACY DIRECT MODE ---
                 else:
-                    # Continuous mode
-                    if t == 0:
-                        self._cached_scaled_input = x_input.clone()
-                        self._cached_scaled_input[:, self.input_pos] *= self.input_scale
-                    x_step_info = self._cached_scaled_input
+                    # Handle Index-Based Input (VRAM Efficient)
+                    if x_input.dtype in [torch.long, torch.int64, torch.int32]:
+                         if x_input.ndim == 2:
+                              if t % ratio == 0 and (t // ratio) < x_input.shape[1]:
+                                   token_indices = x_input[:, t // ratio]
+                                   valid_mask = token_indices != -1
+                                   
+                                   if valid_mask.any():
+                                        # Map token indices to neuron indices
+                                        offset = self.input_ids[0]
+                                        valid_neurons = token_indices[valid_mask] + offset
+                                        scale_indices = valid_neurons - offset
+                                        # Sparse info tuple
+                                        x_step_info = (valid_mask, valid_neurons, scale_indices)
+                                   
+                    elif x_input.ndim == 3:
+                        # Sequential Input: (Batch, MultiSteps, Neurons)
+                        if t % ratio == 0 and (t // ratio) < x_input.shape[1]:
+                            x_step = x_input[:, t // ratio, :].clone()
+                            x_step[:, self.input_pos] *= self.input_scale
+                            x_step_info = x_step
+                            
+                    elif self.pulse_mode:
+                        if t == 0:
+                            x_step = x_input.clone()
+                            x_step[:, self.input_pos] *= self.input_scale
+                            x_step_info = x_step
+                    else:
+                        # Continuous mode
+                        if t == 0:
+                            self._cached_scaled_input = x_input.clone()
+                            self._cached_scaled_input[:, self.input_pos] *= self.input_scale
+                        x_step_info = self._cached_scaled_input
             
             # Gradient checkpointing
             if self.gradient_checkpointing and self.training:
@@ -262,6 +368,15 @@ class RealNet(nn.Module):
         # Apply Output Scaling
         stacked_outputs = torch.stack(outputs, dim=1)
         stacked_outputs[:, :, self.output_pos] = stacked_outputs[:, :, self.output_pos] * self.output_scale
+        
+        # Vocab Decoding
+        if self.output_decoder is not None:
+             # Extract only the output neurons
+             out_activity = stacked_outputs[:, :, self.output_pos]
+             # Project to Vocab
+             # Shape: (Batch, Steps, OutNeurons) -> (Batch, Steps, Vocab)
+             decoded = self.output_decoder(out_activity)
+             return decoded, h_t
 
         return stacked_outputs, h_t
 

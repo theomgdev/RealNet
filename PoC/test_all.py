@@ -85,7 +85,7 @@ def run_script(path):
             capture_output=True,
             text=True,
             encoding='utf-8',       # FORCE READ AS UTF-8
-            errors='replace',       # DON'T CRASH ON WEIRD CHARS
+            errors='replace',       # Handle non-utf8 characters gracefully
             env=env
         )
         

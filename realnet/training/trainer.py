@@ -85,7 +85,12 @@ class RealNetTrainer:
                         param.add_(noise)
 
         # Prepare Data
-        if isinstance(input_features, torch.Tensor) and input_features.dtype in [torch.long, torch.int, torch.int32, torch.int64]:
+        # If model has vocab_size, we assume input is Token IDs or Raw Vects for Projection.
+        # We bypass 'prepare_input' which attempts to map features to specific neurons manually.
+        if hasattr(self.model, 'vocab_size') and self.model.vocab_size is not None:
+             x_input = to_tensor(input_features, self.device)
+             batch_size = x_input.shape[0]
+        elif isinstance(input_features, torch.Tensor) and input_features.dtype in [torch.long, torch.int, torch.int32, torch.int64]:
              x_input = input_features.to(self.device)
              batch_size = x_input.shape[0]
         else:
@@ -113,12 +118,22 @@ class RealNetTrainer:
             all_states, final_state = self.model(x_input, steps=thinking_steps, current_state=current_state_in)
             
             # Extract Outputs & Calculate Loss
-            output_indices = self.model.output_ids
-            
-            if full_sequence:
-                predicted_outputs = all_states[:, :, output_indices]
+            if hasattr(self.model, 'vocab_size') and self.model.vocab_size is not None:
+                 # Vocab Mode: 'all_states' is decoded output (Logits)
+                 raw_output = all_states
+                 
+                 if full_sequence:
+                     predicted_outputs = raw_output
+                 else:
+                     # Prediction on last step only: (B, T, Vocab) -> (B, Vocab) at T=-1
+                     predicted_outputs = raw_output[:, -1, :]
             else:
-                predicted_outputs = final_state[:, output_indices]
+                # Legacy Mode: Extract from Neuron Activity
+                output_indices = self.model.output_ids
+                if full_sequence:
+                    predicted_outputs = all_states[:, :, output_indices]
+                else:
+                    predicted_outputs = final_state[:, output_indices]
             
             # Optional Transform
             if output_transform:
@@ -179,17 +194,31 @@ class RealNetTrainer:
         """
         self.model.eval()
         with torch.no_grad():
-            x_input, batch_size = prepare_input(input_features, self.model.input_ids, self.model.num_neurons, self.device)
+            if hasattr(self.model, 'vocab_size') and self.model.vocab_size is not None:
+                x_input = to_tensor(input_features, self.device)
+                batch_size = x_input.shape[0]
+            else:
+                x_input, batch_size = prepare_input(input_features, self.model.input_ids, self.model.num_neurons, self.device)
             
             self.model.reset_state(batch_size)
             all_states, final_state = self.model(x_input, steps=thinking_steps)
             
-            output_indices = self.model.output_ids
-            
-            if full_sequence:
-                 return all_states[:, :, output_indices]
+            if hasattr(self.model, 'vocab_size') and self.model.vocab_size is not None:
+                # In Vocab Mode, 'all_states' is the decoded output (Logits)
+                raw_output = all_states
+                
+                if full_sequence:
+                     return raw_output
+                else:
+                     return raw_output[:, -1, :]
             else:
-                 return final_state[:, output_indices]
+                # Legacy Mode: Slice neurons
+                output_indices = self.model.output_ids
+                
+                if full_sequence:
+                     return all_states[:, :, output_indices]
+                else:
+                     return final_state[:, output_indices]
 
     def evaluate(self, input_features, target_values, thinking_steps):
         """

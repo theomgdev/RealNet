@@ -4,10 +4,10 @@ RealNet is a PyTorch-based library that implements **Zero-Hidden Layer** neural 
 
 ## Core Modules
 
-The library is modularized into core components:
-1.  **`realnet.core.network`**: Contains the `RealNet` architecture.
-2.  **`realnet.training.trainer`**: Contains `RealNetTrainer`.
-3.  **`realnet.utils`**: Utilities for data (`data.py`), neurogenesis, and model persistence.
+The library is organized into three primary modules:
+1.  **`realnet.core.network`**: The recurrent core architecture and update dynamics.
+2.  **`realnet.training.trainer`**: Optimization engine with 8-bit support and bio-inspired regularization.
+3.  **`realnet.utils`**: Data utilities, model persistence (`realstore`), and dynamic expansion (`neurogenesis`).
 
 ---
 
@@ -27,6 +27,8 @@ model = RealNet(
     pulse_mode=True, 
     dropout_rate=0.1, 
     device='cuda'
+    vocab_size=None,     # Optional: Decouples input/output size from neurons
+    vocab_mode='hybrid'  # 'hybrid', 'discrete', or 'continuous'
 )
 ```
 
@@ -41,6 +43,40 @@ model = RealNet(
 *   `device` (str): 'cpu' or 'cuda'.
 *   `weight_init` (str): Initialization strategy (`'orthogonal'`, `'xavier_uniform'`, `'kaiming_normal'`, etc.). Default is `'orthogonal'`.
 *   `activation` (str): Activation function used in the update step (`'tanh'`, `'relu'`, `'sigmoid'`, `'gelu'`, `'silu'`, etc.). Default is `'tanh'`.
+*   `vocab_size` (int or list/tuple, optional): Size of the input/output vocabulary. 
+    *   **Symmetric**: `vocab_size=50257` (GPT-2 style).
+    *   **Asymmetric**: `vocab_size=[v_in, v_out]` (e.g., `[784, 10]` for MNIST to map 784 pixels to 10 classes).
+    *   **Disable**: Use `-1` to disable one side (e.g., `[-1, 1000]` for direct neuron input but decoded output).
+*   `vocab_mode` (str):
+    *   `'hybrid'` (Default): Init both Embedding (for Int inputs) and Linear Projection (for Float inputs).
+    *   `'discrete'`: Init only Embedding (Saves VRAM if only tokens are used).
+    *   `'continuous'`: Init only Projection (Saves VRAM if only float vectors are used).
+
+### Vocabulary Decoupling
+
+When `vocab_size` is typically much larger than `num_neurons` (e.g., 50k vocab vs 1024 neurons), RealNet uses decoupled layers. This can be configured as symmetric (same size for in/out) or asymmetric.
+
+1.  **Encoder (Input)**: Maps `v_in` -> `len(input_ids)` (Neurons).
+    *   Integers (Tokens) use `nn.Embedding`.
+    *   Floats (Vectors) use `nn.Linear` (Projection).
+    *   *Disabled if `v_in == -1`.*
+2.  **Decoder (Output)**: Maps `len(output_ids)` (Neurons) -> `v_out`.
+    *   Uses `nn.Linear` (Decoding).
+    *   *Disabled if `v_out == -1`.*
+
+**Benefit:** This allows the "Thinking Core" (Neurons) to remain small and efficient while handling complex input formats or large output spaces without manual slicing.
+
+```python
+# Asymmetric Example: MNIST (784 pixels -> 10 classes)
+model = RealNet(
+    num_neurons=10,
+    input_ids=range(10),
+    output_ids=range(10),
+    vocab_size=[784, 10], # Input 784, Output 10
+    vocab_mode='continuous'
+)
+# No need for slice_output: model(x) returns (Batch, Steps, 10)
+```
 
 ---
 
@@ -72,17 +108,16 @@ model = RealNet(..., pulse_mode=False)
 output = model(freq_input, steps=30)
 ```
 
-### 3. Native Sequential Thinking (Temporal Stretching)
+### 3. Sequential Mode (Temporal Stretching)
 **Use case**: Large Language Models (LLM), Time-Series, and reasoning agents.
 *   **Behavior**: Provide a sequence `(Batch, Tokens)`. If `steps` > `tokens`, RealNet automatically scales the temporal resolution.
-*   **Mechanism**: If 100 tokens are provided with 600 `steps` requested, the model automatically intersperses 5 silent thinking steps between each token.
-*   **VRAM Efficiency**: Exceptional. Eliminates the need for manually dilated input tensors.
+*   **Mechanism**: If 100 tokens are provided with 500 `steps`, the model intersperses 4 "silent" thinking steps between each token.
+*   **VRAM Efficiency**: High. Eliminates the need for manually dilated/padded input tensors.
 
 ```python
-# LLM Training: 128 tokens with 5 thinking steps per token (Total 768 steps)
-# No manual zero-padding required.
-tokens = torch.randint(0, 256, (batch, 128))
-output = model(tokens, steps=768)
+# LLM: 128 tokens with 5 thinking steps per token (Total 640 steps)
+tokens = torch.randint(0, 50257, (batch, 128))
+output = model(tokens, steps=640)
 ```
 
 #### Comparison of Sequential Input Formats
@@ -139,7 +174,7 @@ trainer = RealNetTrainer(
     *   `os.environ["VERBOSE_BNB"] = "1"`: Enables verbose loading logs for debugging.
 
 **Parameters:**
-*   `lr` (float): The initial learning rate. If no optimizer is provided, this LR is used to create one ARt. It is also stored as `trainer.initial_lr` for use in Scheduler warm restarts or resets.
+*   `lr` (float): The initial learning rate. If no optimizer is provided, this LR is used to initialize one. It is also stored as `trainer.initial_lr` for use in Scheduler warm restarts or resets.
 *   `gradient_persistence` (float): **Ghost Gradients / Persistence**.
     *   `0.0`: Standard behavior (`zero_grad()` after every step).
     *   `> 0.0` (e.g., `0.1`): Keeps a percentage of the previous step's gradient. This creates a "momentum" over time, effectively simulating a larger batch size or longer temporal context. Useful for difficult convergence landscapes.
@@ -185,12 +220,10 @@ Triggers **Darwinian Regeneration**. Instead of pruning weak weights, this metho
 
 ## Advanced Capabilities
 
-### 1. Space-Time Tradeoff (Thinking Steps)
-RealNet replaces layers with time. 
-*   **Standard NN**: 10 Layers = Fixed Depth.
-*   **RealNet**: You can choose `thinking_steps=5`, `10`, or `100` at runtime.
-    *   **Low Steps**: Fast, shallow reasoning.
-    *   **High Steps**: Slow, deep reasoning (equivalent to dozens of layers).
+### 1. Temporal Depth (Space-Time Tradeoff)
+RealNet replaces spatial layers with temporal steps. 
+*   **Vertical vs Horizontal**: A standard 10-layer network has fixed depth. RealNet can be run for 10 or 100 steps on-the-fly.
+*   **Dynamic Complexity**: Higher `steps` allow the network more time to reverberate signals through its recurrent core, enabling deeper reasoning without increasing parameter count.
 
 ### 2. Gradient Accumulation (Virtual Batch Size)
 RealNet allows you to simulate massive batch sizes on limited hardware (e.g., consumer GPUs).
@@ -202,19 +235,22 @@ RealNet allows you to simulate massive batch sizes on limited hardware (e.g., co
     ```
 *   **Benefit:** Allows training large models or using large batch stability without running out of VRAM.
 
-### 3. Ghost Gradients (Gradient Persistence)
-By setting `gradient_persistence > 0`, you enable a form of **Temporal Momentum**. The network "remembers" the direction of the error from the previous batch.
-*   **Difference from Accumulation:** Accumulation is exact math (summing). Ghost Gradients is a decaying echo (multiplying by 0.1).
-*   **Use Case:** When the loss curve is extremely jagged or the model gets stuck in local minima.
-*   **Effect:** Smooths out optimization and can force convergence in "Impossible" tasks (like Zero-Hidden XOR).
+### 3. Gradient Persistence (Ghost Gradients)
+By setting `gradient_persistence > 0`, the network retains a fraction of the previous batch's gradient. 
+*   **Mechanism**: Uses a decaying echo (linear scaling) of previous gradients.
+*   **Use Case**: Smoothing optimization in non-convex landscapes or simulated long-context training.
 
-### 4. Darwinian Regeneration (The Phoenix Effect)
-Instead of just killing weak connections, RealNet can **revive** them.
-*   **Concept**: A weight near 0 is contributing nothing. By randomizing it (Re-init), it gets a second chance to find a useful feature.
-*   **Benefit**: Maximizes parameter efficiency. The network becomes a living organism where cells (synapses) constantly die and are reborn, ensuring 100% of the capacity is always searching for a solution.
+### 4. Synaptic Regeneration (Darwinian Revive)
+RealNet can re-initialize synapses that are no longer contributing to the loss signal (stagnant weights).
+*   **Concept**: Instead of pruning, near-zero weights are re-initialized using the original weight strategy.
+*   **Benefit**: Maximizes network plasticitity and parameter efficiency by converting dead capacity into fresh exploration.
 *   **Usage**: 
-    *   **Threshold Mode**: `trainer.regenerate_synapses(threshold=0.01)` (Revive if abs(w) < 0.01)
-    *   **Percent Mode**: `trainer.regenerate_synapses(percentage=0.05)` (Revive bottom 5% of weights dynamically)
+    *   **Threshold Mode**: `trainer.regenerate_synapses(threshold=0.01)`
+    *   **Percent Mode**: `trainer.regenerate_synapses(percentage=0.05)`
+
+---
+
+## Model Persistence (`realnet.utils.realstore`)
 
 The `realstore` module provides checkpoint management utilities, including a unique **Weight Transplantation** feature for transferring learned knowledge between models of different sizes.
 
@@ -291,23 +327,25 @@ Safely converts any list/array/int/float into a PyTorch tensor on the target dev
 See **Neurogenesis** section above.
 
 ### 3. RealStore (`realnet.utils.realstore`)
-See **RealStore** section above for High-Level API (`save_checkpoint`, `load_checkpoint`, `transplant_weights`, `get_checkpoint_info`).
+This module manages model serialization and the transdimensional weight transplantation feature described in the **Advanced Capabilities** section.
 
 ---
 
 ## Usage Examples
 
-### Example 1: Solving XOR (The Chaos Gate)
-
+### Example 1: XOR Logic
 ```python
 # 2 Inputs, 1 Output. 0 Hidden Layers.
 model = RealNet(3, [0, 1], [2], device='cuda')
-trainer = RealNetTrainer(model, gradient_persistence=0.1) # Use Ghost Gradients
+trainer = RealNetTrainer(model, gradient_persistence=0.1)
 
-# Data: Truth Table
-X = [[-1, -1], [-1, 1], [1, -1], [1, 1]]
-Y = [[-1], [1], [1], [-1]]
-
-# Train with 5 Thinking Steps
+# Training logic...
 trainer.fit(X, Y, epochs=100, thinking_steps=5)
+```
+
+### Example 2: MNIST Asymmetric Vocab
+```python
+# 784 pixels -> 10 neurons -> 10 logits
+model = RealNet(num_neurons=10, input_ids=range(10), output_ids=range(10), vocab_size=[784, 10])
+# Model handles projection and decoding automatically.
 ```
