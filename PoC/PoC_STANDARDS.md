@@ -89,6 +89,17 @@ model = RealNet(..., activation='gelu', weight_init='orthogonal')
 trainer = RealNetTrainer(..., gradient_persistence=0.5)
 ```
 
+### D. Decoupled Projection (Asymmetric Vocabulary)
+For tasks requiring high input/output dimensionality (like vision or LLMs) without scaling the core state size.
+*   **Feature:** Use `vocab_size=(V_IN, V_OUT)` to decouple input/output resolution from internal neuron count.
+*   **Optimization:** This allows a tiny "Thinking Core" (e.g., 10 neurons) to process high-resolution signals (e.g., 784 pixels), achieving extreme parametric efficiency.
+*   **Usage:** Best used in conjunction with sequential signal slices to achieve 'World Record' class compression.
+
+```python
+# RealNet core has N=10 neurons, but processes 784 input channels and 10 output classes.
+model = RealNet(num_neurons=10, ..., vocab_size=(784, 10))
+```
+
 ---
 
 ## ⚡ Hardware Optimization
