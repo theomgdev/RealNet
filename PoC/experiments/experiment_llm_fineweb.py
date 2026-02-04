@@ -6,10 +6,12 @@ import sys
 import os
 import time
 import random
+from tokenizers import Tokenizer, ByteLevelBPETokenizer
 
 # --- ENVIRONMENT & IMPORTS ---
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from realnet import RealNet, RealNetTrainer, save_checkpoint, load_checkpoint, transplant_weights
+from datasets import load_dataset
 
 # TF32 Optimization (Consistent with Notebook)
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -17,14 +19,14 @@ torch.backends.cudnn.allow_tf32 = True
 
 # --- CONFIGURATION ---
 TRUNCATED_BPTT_SEQ_LEN = 5
-GENERATION_LENGTH = 1024
+GENERATION_LENGTH = 128
 SEQ_LEN = 5 if TRUNCATED_BPTT_SEQ_LEN == -1 else 128
 BATCH_SIZE = -1
 STEPS_PER_EPOCH = 10
 LOG_INTERVAL = 1
 MAX_START_SKIP = 1000
 RESET_DATA_ITER = False
-NUM_NEURONS = -1
+NUM_NEURONS = 512
 ACTIVATION = 'gelu'
 THINK_GAP = 5
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -36,34 +38,68 @@ NEUROGENESIS_AMOUNT = 10
 
 # REGENERATION CONFIG (PHOENIX)
 DARWINIAN_REGENERATION = False
-REGENERATION_MODE = 'percentage' # 'threshold' or 'percentage'
+REGENERATION_MODE = 'percentage'
 REGENERATION_THRESHOLD = 0.01
 REGENERATION_PERCENTAGE = 0.001
-REGENERATION_INTERVAL = 10 # Epochs between regeneration checks
+REGENERATION_INTERVAL = 10
 
 # OPTIMIZER CONFIG
-VOCAB_SIZE = 256
+VOCAB_SIZE = 8192
 RESET_OPTIMIZER_ON_LOAD = False
 OVERWRITE_LR_OF_CKPT = True
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 1e-3
 
 # SCHEDULER CONFIG
 USE_SCHEDULER = False
 SCHEDULER_T0 = 100
 SCHEDULER_ETA_MIN = 1e-6 
 
-CHAR_TO_IDX = {i: i for i in range(256)}
-IDX_TO_CHAR = {i: i for i in range(256)}
+# --- TOKENIZER ---
+def get_or_train_tokenizer():
+    CKPT_DIR = os.path.join(os.path.dirname(__file__), 'ckpt')
+    os.makedirs(CKPT_DIR, exist_ok=True)
+    TOKENIZER_PATH = os.path.join(CKPT_DIR, "poc_tokenizer_8k.json")
+    
+    if os.path.exists(TOKENIZER_PATH):
+        print(f"📚 Loading existing 8k BPE Tokenizer from {TOKENIZER_PATH}...")
+        return Tokenizer.from_file(TOKENIZER_PATH)
+    
+    print("📚 Training new 8k BPE Tokenizer from FineWeb slice...")
+    tokenizer = ByteLevelBPETokenizer()
+    
+    # We need a slice to train.
+    dataset = load_dataset("HuggingFaceFW/fineweb-edu", name="CC-MAIN-2024-10", split="train", streaming=True)
+    
+    texts = []
+    count = 0
+    for item in dataset:
+        texts.append(item['text'])
+        count += 1
+        if count >= 100000: break
+    
+    tokenizer.train_from_iterator(texts, vocab_size=VOCAB_SIZE, min_frequency=2, special_tokens=[
+        "<s>",
+        "<pad>",
+        "</s>",
+        "<unk>",
+        "<mask>",
+    ])
+    
+    tokenizer.save(TOKENIZER_PATH)
+    print(f"✅ Tokenizer saved to {TOKENIZER_PATH}")
+    return tokenizer
+
+TOKENIZER = get_or_train_tokenizer()
 
 # --- DATASET ---
-from datasets import load_dataset
 
 class FineWebIterableDataset(torch.utils.data.IterableDataset):
-    def __init__(self, seq_len, skip_offset=0, debug=False):
+    def __init__(self, seq_len, tokenizer, skip_offset=0, debug=False):
         self.seq_len = seq_len
+        self.tokenizer = tokenizer
         self.skip_offset = skip_offset
         self.debug = debug
-        self.current_doc_index = skip_offset # Initialize to avoid AttributeError in main
+        self.current_doc_index = skip_offset
         print("🌊 Connecting to FineWeb-Edu (CC-MAIN-2024-10)...")
         self.dataset = load_dataset("HuggingFaceFW/fineweb-edu", name="CC-MAIN-2024-10", split="train", streaming=True)
 
@@ -84,88 +120,67 @@ class FineWebIterableDataset(torch.utils.data.IterableDataset):
         else:
             iterator = iter(self.dataset)
 
-        buffer_bytes = b""
+        buffer_tokens = []
 
         while True:
             # Replenish buffer
-            while len(buffer_bytes) < self.seq_len + 1:
+            while len(buffer_tokens) < self.seq_len + 1:
                 try:
                     item = next(iterator)
                     local_doc_index += 1
                     if self.debug and local_doc_index % 1000 == 0:
                         print(f"📊 Streaming Index: Document #{local_doc_index}")
                     text = item.get('text', '')
-                    new_bytes = text.encode('utf-8', errors='replace') + b" "
-                    buffer_bytes += new_bytes
+                    encoded = self.tokenizer.encode(text)
+                    buffer_tokens.extend(encoded.ids)
+                    buffer_tokens.append(self.tokenizer.token_to_id("</s>"))
                 except StopIteration:
                     iterator = iter(self.dataset)
                     local_doc_index = 0
 
             # Extract chunk
-            chunk_bytes = buffer_bytes[:self.seq_len + 1]
-            buffer_bytes = buffer_bytes[self.seq_len + 1:]
+            chunk_tokens = buffer_tokens[:self.seq_len + 1]
+            buffer_tokens = buffer_tokens[self.seq_len + 1:]
 
-            indices = list(chunk_bytes)
+            indices = chunk_tokens
 
             if len(indices) == self.seq_len + 1:
-                # Safety Check: Ensure tokens are within byte range (0-255)
-                max_val = max(indices)
-                if max_val >= 256:
-                     print(f"Error: Found invalid token >= 256! Max: {max_val} Indices: {indices}")
-                
-                # Only yield if safe to prevent device-side assertions
-                if max_val < 256:
-                    x = torch.tensor(indices[:-1], dtype=torch.long)
-                    y = torch.tensor(indices[1:], dtype=torch.long)
-                    # Yield index too so main process knows where we are
-                    yield x, y, local_doc_index
+                x = torch.tensor(indices[:-1], dtype=torch.long)
+                y = torch.tensor(indices[1:], dtype=torch.long)
+                # Yield index too so main process knows where we are
+                yield x, y, local_doc_index
 
     def get_vocab_size(self):
-        return VOCAB_SIZE
+        return self.tokenizer.get_vocab_size()
 
-    @property
-    def char_to_idx(self):
-        return CHAR_TO_IDX
-
-    @property
-    def idx_to_char(self):
-        return IDX_TO_CHAR
-
-def generate(model, dataset, start_str="The", length=None, temperature=0.8, top_k=40, top_p=0.9):
+def generate(model, tokenizer, start_str="The", length=None, temperature=0.8, top_k=40, top_p=0.9):
     if length is None:
         length = GENERATION_LENGTH
 
     model.eval()
 
-    input_bytes = start_str.encode('utf-8', errors='replace')
-    input_seq = list(input_bytes)
+    encoded = tokenizer.encode(start_str)
+    input_seq = encoded.ids
 
     current_state = None
 
     # Warm up state (Native Thinking)
-    # We send raw tokens, but ask model to think for (Gap+1) steps per token
     x_in = torch.tensor(input_seq, dtype=torch.long, device=model.device).unsqueeze(0)
     steps_total = x_in.shape[1] * (THINK_GAP + 1)
     
-    generated_bytes = bytearray(input_bytes)
-
     with torch.no_grad():
         _, current_state = model(x_in, steps=steps_total)
 
-        last_byte_idx = input_seq[-1]
+        last_token_idx = input_seq[-1]
 
         for _ in range(length):
             # Native Single Step Generation
-            # Input: 1 Token. Steps: 1 + Gap.
             total_step_single = 1 + THINK_GAP
 
-            x_next = torch.tensor([[last_byte_idx]], dtype=torch.long, device=model.device)
+            x_next = torch.tensor([[last_token_idx]], dtype=torch.long, device=model.device)
 
             preds, current_state = model(x_next, steps=total_step_single, current_state=current_state)
             
-            # Prediction is at the END of the thinking block
-            # Preds shape: (Batch, 1, VocabSize) in native vocab mode
-            # We select the last step (which is index 0 here since we passed 1 token)
             logits = preds[0, 0, :]
 
             # Sampling logic
@@ -194,23 +209,14 @@ def generate(model, dataset, start_str="The", length=None, temperature=0.8, top_
 
             next_idx = torch.multinomial(probs, 1).item()
 
-            generated_bytes.append(next_idx)
-            last_byte_idx = next_idx
+            input_seq.append(next_idx)
+            last_token_idx = next_idx
 
-    try:
-        return generated_bytes.decode('utf-8', errors='replace')
-    except:
-        return str(generated_bytes)
+    return tokenizer.decode(input_seq)
 
 def initialize_system(vocab_size, num_neurons, device, lr=1e-4, activation='gelu'):
-    # --- VOCAB DECOUPLING ---
-    # With vocab_size support, input_ids and output_ids refer to NEURONS, not Tokens.
-    # We allocate a subset of neurons for Input Embedding and Output Readout.
-    
-    # Example: 256 Neurons for Embedding Input, 256 Neurons for Output Readout
-    # The actual Vocab (50k etc) is projected onto these.
-    input_neuron_count = 256
-    output_neuron_count = 256
+    input_neuron_count = num_neurons // 2
+    output_neuron_count = num_neurons // 2
     
     input_ids = list(range(input_neuron_count))
     output_ids = list(range(input_neuron_count, input_neuron_count + output_neuron_count))
@@ -226,15 +232,15 @@ def initialize_system(vocab_size, num_neurons, device, lr=1e-4, activation='gelu
         activation=activation,
         weight_init='orthogonal',
         gradient_checkpointing=True,
-        vocab_size=vocab_size,   # Enable built-in embedding/decoding
-        vocab_mode='hybrid'      # Default to hybrid for flexibility
+        vocab_size=vocab_size,
+        vocab_mode='discrete'
     )
 
     trainer = RealNetTrainer(model, lr=lr, device=device, gradient_persistence=0.0, synaptic_noise=0)
 
     return model, trainer, input_ids, output_ids
 
-def calculate_optimal_batch_size(device, num_neurons, seq_len, think_gap, truncated_bptt_seq_len):
+def calculate_optimal_batch_size(device, num_neurons, vocab_size, seq_len, think_gap, truncated_bptt_seq_len):
     """Calculates optimal batch size based on VRAM capacity."""
     print("\n⚖️  Auto-Tuning Batch Size...")
 
@@ -244,25 +250,31 @@ def calculate_optimal_batch_size(device, num_neurons, seq_len, think_gap, trunca
     if device == 'cuda':
         t = torch.cuda.get_device_properties(0).total_memory
         a = torch.cuda.memory_allocated(0)
-        free_vram = t - a
-
+        
+        approx_params = (num_neurons * num_neurons) + (vocab_size * num_neurons * 2)
+        bytes_per_param = 4 + 4 + 2
+        model_vram = approx_params * bytes_per_param
+        
+        free_vram = t - a - model_vram
+        
         print(f"   VRAM Total: {t / 1e9:.2f} GB")
-        print(f"   VRAM Free:  {free_vram / 1e9:.2f} GB (Allocated: {a / 1e9:.2f} GB)")
-
-        # Heuristic: Bytes per neuron per step (FP16 Activations + Grads + Overhead)
-        # Native Mode: We only store activations for (Batch, SeqLen) now! (Outputs are decimated)
-        # However, internal gradients still track through time.
-        BYTES_PER_NEURON_STEP = 24
+        print(f"   VRAM Free:  {free_vram / 1e9:.2f} GB (Allocated: {a / 1e9:.2f} GB, Model: {model_vram / 1e6:.1f} MB)")
 
         if truncated_bptt_seq_len > 0:
-            # We process raw tokens but computation graph is deep
             effective_mem_len = truncated_bptt_seq_len * (think_gap + 1)
+            logit_seq_len = truncated_bptt_seq_len
         else:
             effective_mem_len = seq_len * (think_gap + 1)
+            logit_seq_len = seq_len
 
-        mem_per_sample = effective_mem_len * num_neurons * BYTES_PER_NEURON_STEP
-        safe_vram = free_vram * 0.85
+        BYTES_PER_NEURON_STEP = 32 
+        core_mem_per_sample = effective_mem_len * num_neurons * BYTES_PER_NEURON_STEP
+        
+        logit_mem_per_sample = logit_seq_len * vocab_size * 8 
 
+        mem_per_sample = core_mem_per_sample + logit_mem_per_sample
+        safe_vram = free_vram * 0.8
+        
         calc_batch = int(safe_vram / mem_per_sample) if mem_per_sample > 0 else 1
         calc_batch = max(1, calc_batch)
 
@@ -326,10 +338,10 @@ def main():
         except:
              pass
 
-    dataset = FineWebIterableDataset(SEQ_LEN, skip_offset=resume_doc_index, debug=False)
+    dataset = FineWebIterableDataset(SEQ_LEN, TOKENIZER, skip_offset=resume_doc_index, debug=False)
 
     # --- MODEL SETUP ---
-    model, trainer, input_ids, output_ids = initialize_system(dataset.get_vocab_size(), NUM_NEURONS, DEVICE, LEARNING_RATE, ACTIVATION)
+    model, trainer, input_ids, output_ids = initialize_system(VOCAB_SIZE, NUM_NEURONS, DEVICE, LEARNING_RATE, ACTIVATION)
     NUM_NEURONS = model.num_neurons
 
     # --- BATCH SIZE OPTIMIZATION ---
@@ -337,6 +349,7 @@ def main():
          BATCH_SIZE = calculate_optimal_batch_size(
              DEVICE,
              NUM_NEURONS,
+             VOCAB_SIZE,
              SEQ_LEN,
              THINK_GAP,
              TRUNCATED_BPTT_SEQ_LEN
@@ -378,7 +391,7 @@ def main():
                     if action == '1':
                         print(f"🔄 Resizing to {saved_dim}...")
                         NUM_NEURONS = saved_dim
-                        model, trainer, _, _ = initialize_system(dataset.get_vocab_size(), NUM_NEURONS, DEVICE, LEARNING_RATE, ACTIVATION)
+                        model, trainer, _, _ = initialize_system(VOCAB_SIZE, NUM_NEURONS, DEVICE, LEARNING_RATE, ACTIVATION)
                         opt_arg = None if RESET_OPTIMIZER_ON_LOAD else trainer.optimizer
                         target_lr = LEARNING_RATE if OVERWRITE_LR_OF_CKPT else None
                         load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True, lr=target_lr)
@@ -404,7 +417,7 @@ def main():
                  opt_arg = None if RESET_OPTIMIZER_ON_LOAD else trainer.optimizer
                  target_lr = LEARNING_RATE if OVERWRITE_LR_OF_CKPT else None
                  load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True, lr=target_lr)
-                 start_epoch = checkpoint['epoch'] + 1
+                 start_epoch = ckpt_peek.get('epoch', 0) + 1
 
         except Exception as e:
             print(f"⚠️ Failed to load/inspect checkpoint: {e}. Starting fresh.")
@@ -422,7 +435,7 @@ def main():
     # --- INITIAL TESTS ---
     print("\n--- GENERATION PREVIEW ---")
     try:
-        gen_text = generate(model, dataset, start_str="The meaning of life is", length=100)
+        gen_text = generate(model, TOKENIZER, start_str="The meaning of life is")
         print(f"Sample: {gen_text}\n")
     except Exception as e:
         print(f"Error: {e}")
@@ -550,7 +563,7 @@ def main():
         # --- PERIODIC GENERATION ---
         print("--- GENERATION ---")
         try:
-            gen_text = generate(model, dataset, start_str="The meaning of life is ")
+            gen_text = generate(model, TOKENIZER, start_str="The meaning of life is ")
             print(gen_text)
         except Exception as e:
             print(f"Generation Error: {e}")

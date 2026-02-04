@@ -25,6 +25,9 @@ logs/
 out_*/
 out/
 
+# Tokenizers
+*_tokenizer_*.json
+
 # OS
 .DS_Store
 Thumbs.db
