@@ -1,10 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.utils.checkpoint as checkpoint
+import torch.nn.functional as F
 import numpy as np
 
 class RealNet(nn.Module):
-    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='orthogonal', activation='tanh', gradient_checkpointing=False, vocab_size=None, vocab_mode='hybrid'):
+    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='orthogonal', activation='tanh', gradient_checkpointing=False, vocab_size=None, vocab_mode='hybrid', tie_embeddings=False):
         super(RealNet, self).__init__()
         
         # Auto-size to unique input+output IDs
@@ -55,6 +56,13 @@ class RealNet(nn.Module):
                     
                 if vocab_mode in ['hybrid', 'continuous']:
                     self.proj = nn.Linear(v_in, target_dim, bias=False).to(device)
+
+            # Weight Tying (Embeddings -> Decoder)
+            if tie_embeddings and (v_in == v_out) and (len(input_ids) == len(output_ids)):
+                if self.embed is not None and self.output_decoder is not None:
+                    self.output_decoder.weight = self.embed.weight
+                elif self.proj is not None and self.embed is None:
+                    print("⚠️ Auto-Tying Warning: Weight tying is not supported for 'continuous' (Linear) vocab_mode due to transposed dimensions.")
 
         # Buffers for fast indexing
         self.register_buffer('input_pos', torch.tensor(input_ids, dtype=torch.long, device=device))
@@ -219,15 +227,19 @@ class RealNet(nn.Module):
 
         def _single_step(h_t_in, t_idx, x_input_info):
             # Projection
-            signal = torch.matmul(h_t_in, self.W) + self.B
+            signal = F.linear(h_t_in, self.W.t(), self.B)
             
             # Input Injection
             if x_input_info is not None:
                 if isinstance(x_input_info, tuple):
-                    # Sparse Injection
-                    v_mask, v_neurons, s_idx = x_input_info
-                    if v_mask.any():
-                        signal[v_mask, v_neurons] += self.input_scale[s_idx]
+                    if len(x_input_info) == 2 and x_input_info[0] is True:
+                        # Out-of-place sparse injection for graph compiler compatibility
+                        signal = signal.index_add(1, self.input_pos, x_input_info[1].to(signal.dtype))
+                    else:
+                        # Index-based Sparse Injection (Legacy)
+                        v_mask, v_neurons, s_idx = x_input_info
+                        if v_mask.any():
+                            signal[v_mask, v_neurons] += self.input_scale[s_idx].to(signal.dtype)
                 else:
                     # Legacy Dense Injection
                     signal = signal + x_input_info
@@ -296,16 +308,13 @@ class RealNet(nn.Module):
                                  if self.embed is not None:
                                      vector = self.embed(step_in.long())
                          
-                         # 3. Map to Network State (Full Tensor Construction)
+                         # 3. Map to Network State
                          if vector is not None:
-                              # Apply Input Scaling (Parameter)
-                              vector = vector * self.input_scale
+                              # Apply Input Scaling
+                              vector = vector * self.input_scale.to(vector.dtype)
                               
-                              # Construct full (Batch, N) input
-                              # Dense injection relative to input_ids
-                              full_input = torch.zeros(h_t.shape[0], self.num_neurons, device=self.device)
-                              full_input[:, self.input_pos] = vector
-                              x_step_info = full_input
+                              # Sparse tuple payload: (Flag, Data)
+                              x_step_info = (True, vector)
                          
                          # Caching for Continuous/Pulse persistence if needed
                          if self.pulse_mode and t==0:
@@ -340,19 +349,19 @@ class RealNet(nn.Module):
                         # Sequential Input: (Batch, MultiSteps, Neurons)
                         if t % ratio == 0 and (t // ratio) < x_input.shape[1]:
                             x_step = x_input[:, t // ratio, :].clone()
-                            x_step[:, self.input_pos] *= self.input_scale
+                            x_step[:, self.input_pos] = x_step[:, self.input_pos] * self.input_scale.to(x_step.dtype)
                             x_step_info = x_step
                             
                     elif self.pulse_mode:
                         if t == 0:
                             x_step = x_input.clone()
-                            x_step[:, self.input_pos] *= self.input_scale
+                            x_step[:, self.input_pos] = x_step[:, self.input_pos] * self.input_scale.to(x_step.dtype)
                             x_step_info = x_step
                     else:
                         # Continuous mode
                         if t == 0:
                             self._cached_scaled_input = x_input.clone()
-                            self._cached_scaled_input[:, self.input_pos] *= self.input_scale
+                            self._cached_scaled_input[:, self.input_pos] = self._cached_scaled_input[:, self.input_pos] * self.input_scale.to(self._cached_scaled_input.dtype)
                         x_step_info = self._cached_scaled_input
             
             # Gradient checkpointing
@@ -367,7 +376,7 @@ class RealNet(nn.Module):
 
         # Apply Output Scaling
         stacked_outputs = torch.stack(outputs, dim=1)
-        stacked_outputs[:, :, self.output_pos] = stacked_outputs[:, :, self.output_pos] * self.output_scale
+        stacked_outputs[:, :, self.output_pos] = stacked_outputs[:, :, self.output_pos] * self.output_scale.to(stacked_outputs.dtype)
         
         # Vocab Decoding
         if self.output_decoder is not None:

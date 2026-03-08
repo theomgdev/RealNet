@@ -59,6 +59,9 @@ RESET_OPTIMIZER_ON_LOAD = False
 OVERWRITE_LR_OF_CKPT = True
 LEARNING_RATE = 1e-4
 
+# TIE EMBEDDINGS (VRAM Saving & Parameter Sharing)
+TIE_EMBEDDINGS = False
+
 # SCHEDULER CONFIG
 USE_SCHEDULER = False
 SCHEDULER_T0 = 100
@@ -77,8 +80,6 @@ def get_or_train_tokenizer():
     
     print(f"📚 Training new {k_size}k BPE Tokenizer from FineWeb slice...")
     tokenizer = ByteLevelBPETokenizer()
-    
-    # We need a slice to train.
     dataset = load_dataset("HuggingFaceFW/fineweb-edu", name="CC-MAIN-2024-10", split="train", streaming=True)
     
     texts = []
@@ -288,14 +289,15 @@ def initialize_system(vocab_size, num_neurons, device, input_count=-1, output_co
         weight_init='orthogonal',
         gradient_checkpointing=True,
         vocab_size=vocab_size,
-        vocab_mode='discrete'
+        vocab_mode='discrete',
+        tie_embeddings=TIE_EMBEDDINGS
     )
 
     trainer = RealNetTrainer(model, lr=lr, device=device, gradient_persistence=0.0, synaptic_noise=0)
 
     return model, trainer, input_ids, output_ids
 
-def calculate_optimal_batch_size(device, num_neurons, vocab_size, seq_len, think_gap, truncated_bptt_seq_len):
+def calculate_optimal_batch_size(model, device, seq_len, think_gap, truncated_bptt_seq_len):
     """Calculates optimal batch size based on VRAM capacity."""
     print("\n⚖️  Auto-Tuning Batch Size...")
 
@@ -306,15 +308,23 @@ def calculate_optimal_batch_size(device, num_neurons, vocab_size, seq_len, think
         t = torch.cuda.get_device_properties(0).total_memory
         a = torch.cuda.memory_allocated(0)
         
-        approx_params = (num_neurons * num_neurons) + (vocab_size * num_neurons * 2)
-        bytes_per_param = 4 + 4 + 2
-        model_vram = approx_params * bytes_per_param
+        # 1. BASELINE VRAM (Batch-size independent)
+        # Note: 'actual_total_params' naturally reflects True param count. If tie_embeddings is enabled,
+        # the parameter count is automatically smaller, accurately reflecting the VRAM savings.
+        actual_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         
-        free_vram = t - a - model_vram
+        # Optimizer overhead + PyTorch/CUBLAS contexts (~1.5 GB workspace limit)
+        baseline_vram = (actual_total_params * 16) + (1.5 * 1024 * 1024 * 1024)
         
-        print(f"   VRAM Total: {t / 1e9:.2f} GB")
-        print(f"   VRAM Free:  {free_vram / 1e9:.2f} GB (Allocated: {a / 1e9:.2f} GB, Model: {model_vram / 1e6:.1f} MB)")
-
+        # 2. ACTIVATIONS VRAM PER SAMPLE (Batch-size dependent)
+        num_neurons = model.num_neurons
+        
+        if hasattr(model, 'vocab_size') and model.vocab_size is not None:
+             vocab_dim = model.vocab_size[-1] if isinstance(model.vocab_size, (list, tuple)) else model.vocab_size
+        else:
+             vocab_dim = num_neurons
+             
+        # Effective steps
         if truncated_bptt_seq_len > 0:
             effective_mem_len = truncated_bptt_seq_len * (think_gap + 1)
             logit_seq_len = truncated_bptt_seq_len
@@ -322,22 +332,35 @@ def calculate_optimal_batch_size(device, num_neurons, vocab_size, seq_len, think
             effective_mem_len = seq_len * (think_gap + 1)
             logit_seq_len = seq_len
 
-        BYTES_PER_NEURON_STEP = 32 
-        core_mem_per_sample = effective_mem_len * num_neurons * BYTES_PER_NEURON_STEP
+        # A: Core execution memory per sample 
+        # Gradient Checkpointing saves input state per step (4 bytes) + Gradients (4 bytes) = 8 bytes
+        core_mem_per_sample = effective_mem_len * num_neurons * 8
         
-        logit_mem_per_sample = logit_seq_len * vocab_size * 8 
+        # B: Vocab / Logits memory per sample
+        # Logits (4) + Softmax Probs (4) + Gradients (4) = 12 bytes
+        logit_mem_per_sample = logit_seq_len * vocab_dim * 12
 
-        mem_per_sample = core_mem_per_sample + logit_mem_per_sample
-        safe_vram = free_vram * 0.8
+        vram_per_sample = core_mem_per_sample + logit_mem_per_sample
         
-        calc_batch = int(safe_vram / mem_per_sample) if mem_per_sample > 0 else 1
+        # CUDA context margin
+        vram_per_sample = vram_per_sample * 1.1
+
+        # We keep 90% of available free VRAM as safe margin
+        free_vram = t - a - baseline_vram
+        safe_vram = free_vram * 0.9
+        
+        calc_batch = int(safe_vram / vram_per_sample) if vram_per_sample > 0 else 1
         calc_batch = max(1, calc_batch)
 
+        # Better hardware utilization if batch size is a multiple of 8 (Tensor Cores limit)
         if calc_batch > 8:
             calc_batch = (calc_batch // 8) * 8
 
-        print(f"   Est. Memory/Sample: {mem_per_sample / 1e6:.2f} MB")
-        print(f"   Optimal Batch Size: {calc_batch}")
+        print(f"   VRAM Total:  {t / 1e9:.2f} GB")
+        print(f"   Model Base:  {baseline_vram / 1e9:.2f} GB (Params + Optim)")
+        print(f"   VRAM Free:   {free_vram / 1e9:.2f} GB")
+        print(f"   Mem/Sample:  {vram_per_sample / 1e6:.2f} MB")
+        print(f"   Opt. Batch:  {calc_batch}")
 
         return calc_batch
     return 32
@@ -360,6 +383,7 @@ def main():
     print(f"GENERATION_LENGTH: {GENERATION_LENGTH}")
     print(f"THINK_GAP: {THINK_GAP}")
     print(f"ACTIVATION: {ACTIVATION}")
+    print(f"TIE_EMBEDDINGS: {TIE_EMBEDDINGS}")
     tiktoken_info = f", Encoding: {TIKTOKEN_ENCODING}" if USE_TIKTOKEN else ""
     print(f"VOCAB_SIZE: {VOCAB_SIZE} (Tiktoken: {USE_TIKTOKEN}{tiktoken_info})")
     print(f"DEVICE: {DEVICE}")
@@ -401,27 +425,6 @@ def main():
     # --- MODEL SETUP ---
     model, trainer, input_ids, output_ids = initialize_system(VOCAB_SIZE, NUM_NEURONS, DEVICE, input_count=INPUT_NEURON_COUNT, output_count=OUTPUT_NEURON_COUNT, lr=LEARNING_RATE, activation=ACTIVATION)
     NUM_NEURONS = model.num_neurons
-
-    # --- BATCH SIZE OPTIMIZATION ---
-    if BATCH_SIZE == -1:
-         BATCH_SIZE = calculate_optimal_batch_size(
-             DEVICE,
-             NUM_NEURONS,
-             VOCAB_SIZE,
-             SEQ_LEN,
-             THINK_GAP,
-             TRUNCATED_BPTT_SEQ_LEN
-         )
-
-    # DataLoader for IterableDataset
-    dataloader = DataLoader(
-        dataset,
-        batch_size=BATCH_SIZE,
-        num_workers=1,        # 1 Background process for downloading
-        prefetch_factor=4,    # Buffer 4 batches ahead in RAM
-        persistent_workers=True, # Keep connection alive
-        pin_memory=True
-    )
 
     print(f"Input IDs: {input_ids[0]}-{input_ids[-1]}")
     print(f"Output IDs: {output_ids[0]}-{output_ids[-1]}")
@@ -478,6 +481,26 @@ def main():
 
         except Exception as e:
             print(f"⚠️ Failed to load/inspect checkpoint: {e}. Starting fresh.")
+
+    # --- BATCH SIZE OPTIMIZATION ---
+    if BATCH_SIZE == -1:
+         BATCH_SIZE = calculate_optimal_batch_size(
+             model,
+             DEVICE,
+             SEQ_LEN,
+             THINK_GAP,
+             TRUNCATED_BPTT_SEQ_LEN
+         )
+
+    # DataLoader for IterableDataset
+    dataloader = DataLoader(
+        dataset,
+        batch_size=BATCH_SIZE,
+        num_workers=1,
+        prefetch_factor=4,
+        persistent_workers=True,
+        pin_memory=True
+    )
 
     # CrossEntropy
     criterion = nn.CrossEntropyLoss(label_smoothing=0.0)
@@ -560,17 +583,16 @@ def main():
                 batch_loss = 0
                 steps_count = 0
                 
-                # Chunking based on raw tokens, NOT dilated steps!
                 chunk_len = TRUNCATED_BPTT_SEQ_LEN
                 
                 for t_start in range(0, seq_len, chunk_len):
                     t_end = min(t_start + chunk_len, seq_len)
                     
-                    # Raw Chunk
+                    # Extract sequence chunk
                     x_chunk = x[:, t_start:t_end]
                     y_chunk_flat = y[:, t_start:t_end].reshape(-1)
                     
-                    # Calculate thinking steps for this chunk
+                    # Thinking steps for the current chunk
                     actual_tokens = t_end - t_start
                     chunk_thinking_steps = actual_tokens * (THINK_GAP + 1)
 
