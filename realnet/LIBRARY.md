@@ -51,6 +51,8 @@ model = RealNet(
     *   `'hybrid'` (Default): Init both Embedding (for Int inputs) and Linear Projection (for Float inputs).
     *   `'discrete'`: Init only Embedding (Saves VRAM if only tokens are used).
     *   `'continuous'`: Init only Projection (Saves VRAM if only float vectors are used).
+*   `tie_embeddings` (bool): 
+    *   If `True`, ties the input embedding weights to the output decoder weights, saving significant VRAM and parameter count (Symmetric `vocab_size` only). Default is `False`.
 
 ### Vocabulary Decoupling
 
