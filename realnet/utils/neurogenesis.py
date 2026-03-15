@@ -64,11 +64,6 @@ class Neurogenesis:
         old_input_scale = model.input_scale
         old_output_scale = model.output_scale
         
-        # Residual Gate Preservation (if gated mode)
-        old_residual_gate = None
-        if hasattr(model, 'residual_gate'):
-            old_residual_gate = model.residual_gate
-        
         # Explicitly preserve ID lists (vital for offsets)
         old_input_ids = list(model.input_ids)
         old_output_ids = list(model.output_ids)
@@ -119,12 +114,6 @@ class Neurogenesis:
         model.output_ids = old_output_ids
         model.register_buffer('input_pos', torch.tensor(old_input_ids, dtype=torch.long, device=device))
         model.register_buffer('output_pos', torch.tensor(old_output_ids, dtype=torch.long, device=device))
-        
-        # Expand Residual Gate (if gated mode)
-        if old_residual_gate is not None:
-            new_gate = torch.full((new_n,), 0.5, device=device)
-            new_gate[:old_n] = old_residual_gate.data
-            model.residual_gate = nn.Parameter(new_gate)
         
         # Optimizer Migration
         group = old_opt.param_groups[0]
@@ -219,10 +208,6 @@ class Neurogenesis:
                 if hasattr(model, 'output_decoder') and model.output_decoder is not None:
                      transfer_state(model.output_decoder.weight, model.output_decoder.weight, is_matrix=True)
                 
-                # Transfer Residual Gate State
-                if old_residual_gate is not None and hasattr(model, 'residual_gate'):
-                     transfer_state(old_residual_gate, model.residual_gate, is_matrix=False)
-                
                 print("   ✅ Optimizer State Transferred (Momentum Preserved)")
             except Exception as e:
                 print(f"   ⚠️ Optimizer State Transfer Failed ({e}). Performing Cold Restart.")
@@ -235,8 +220,6 @@ class Neurogenesis:
         del old_opt
         del old_input_scale
         del old_output_scale
-        if old_residual_gate is not None:
-            del old_residual_gate
         
         gc.collect()
         if torch.cuda.is_available():

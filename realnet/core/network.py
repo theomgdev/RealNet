@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import numpy as np
 
 class RealNet(nn.Module):
-    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='orthogonal', activation='tanh', gradient_checkpointing=False, vocab_size=None, vocab_mode='hybrid', tie_embeddings=False, residual_mode='none'):
+    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='orthogonal', activation='tanh', gradient_checkpointing=False, vocab_size=None, vocab_mode='hybrid', tie_embeddings=False):
         super(RealNet, self).__init__()
         
         # Auto-size to unique input+output IDs
@@ -74,7 +74,6 @@ class RealNet(nn.Module):
         
         self.pulse_mode = pulse_mode
         self.activation_type = activation
-        self.residual_mode = residual_mode
         self.gradient_checkpointing = gradient_checkpointing
         self._device = device # Private variable for property
         self.weight_init_strategy = weight_init
@@ -88,11 +87,6 @@ class RealNet(nn.Module):
 
         # StepNorm (RMSNorm - faster than LayerNorm, used in modern LLMs)
         self.norm = nn.RMSNorm(num_neurons).to(device)
-
-        # Residual Gate (only for 'gated' mode)
-        if residual_mode == 'gated':
-            # Learnable per-neuron gate: starts at 0.5 (balanced mix)
-            self.residual_gate = nn.Parameter(torch.full((num_neurons,), 0.5, device=device))
         
         if activation == 'tanh':
             self.act = nn.Tanh()
@@ -217,22 +211,6 @@ class RealNet(nn.Module):
             print("RealNet: torch.compile not found. Skipping compilation.")
             return self
 
-    def _inject_input(self, signal, x_input_info):
-        """Injects input into the signal tensor (shared across all residual modes)."""
-        if isinstance(x_input_info, tuple):
-            if len(x_input_info) == 2 and x_input_info[0] is True:
-                # Out-of-place sparse injection for graph compiler compatibility
-                signal = signal.index_add(1, self.input_pos, x_input_info[1].to(signal.dtype))
-            else:
-                # Index-based Sparse Injection (Legacy)
-                v_mask, v_neurons, s_idx = x_input_info
-                if v_mask.any():
-                    signal[v_mask, v_neurons] += self.input_scale[s_idx].to(signal.dtype)
-        else:
-            # Legacy Dense Injection
-            signal = signal + x_input_info
-        return signal
-
     def forward(self, x_input, steps=1, current_state=None):
         """
         Runs the dynamic system for `steps` timesteps.
@@ -252,45 +230,28 @@ class RealNet(nn.Module):
         outputs = []
 
         def _single_step(h_t_in, t_idx, x_input_info):
-            # --- Residual Modes ---
-            if self.residual_mode == 'none':
-                # Original behavior: replace state entirely
-                signal = F.linear(h_t_in, self.W.t(), self.B)
-                
-                # Input Injection
-                if x_input_info is not None:
-                    signal = self._inject_input(signal, x_input_info)
-                
-                activated = self.act(signal)
-                return self.norm(self.drop(activated))
+            # Projection
+            signal = F.linear(h_t_in, self.W.t(), self.B)
             
-            elif self.residual_mode == 'simple':
-                # Pre-Norm Residual: h = h + f(norm(h))
-                normed = self.norm(h_t_in)
-                signal = F.linear(normed, self.W.t(), self.B)
-                
-                if x_input_info is not None:
-                    signal = self._inject_input(signal, x_input_info)
-                
-                activated = self.act(signal)
-                return h_t_in + self.drop(activated)
+            # Input Injection
+            if x_input_info is not None:
+                if isinstance(x_input_info, tuple):
+                    if len(x_input_info) == 2 and x_input_info[0] is True:
+                        # Out-of-place sparse injection for graph compiler compatibility
+                        signal = signal.index_add(1, self.input_pos, x_input_info[1].to(signal.dtype))
+                    else:
+                        # Index-based Sparse Injection (Legacy)
+                        v_mask, v_neurons, s_idx = x_input_info
+                        if v_mask.any():
+                            signal[v_mask, v_neurons] += self.input_scale[s_idx].to(signal.dtype)
+                else:
+                    # Legacy Dense Injection
+                    signal = signal + x_input_info
             
-            elif self.residual_mode == 'gated':
-                # Gated Residual: h = α*h + (1-α)*f(norm(h))
-                normed = self.norm(h_t_in)
-                signal = F.linear(normed, self.W.t(), self.B)
-                
-                if x_input_info is not None:
-                    signal = self._inject_input(signal, x_input_info)
-                
-                activated = self.act(signal)
-                new_state = self.drop(activated)
-                
-                alpha = torch.sigmoid(self.residual_gate)  # [0, 1] per neuron
-                return alpha * h_t_in + (1 - alpha) * new_state
+            activated = self.act(signal)
             
-            else:
-                raise ValueError(f"Unknown residual_mode: {self.residual_mode}")
+            # Dropout & StepNorm
+            return self.norm(self.drop(activated))
 
         # Thinking Ratio (Temporal Stretching)
         ratio = 1
