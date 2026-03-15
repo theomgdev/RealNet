@@ -28,7 +28,8 @@ model = RealNet(
     dropout_rate=0.1, 
     device='cuda'
     vocab_size=None,     # Optional: Decouples input/output size from neurons
-    vocab_mode='hybrid'  # 'hybrid', 'discrete', or 'continuous'
+    vocab_mode='hybrid', # 'hybrid', 'discrete', or 'continuous'
+    residual_mode='none' # 'none', 'simple', or 'gated'
 )
 ```
 
@@ -53,6 +54,10 @@ model = RealNet(
     *   `'continuous'`: Init only Projection (Saves VRAM if only float vectors are used).
 *   `tie_embeddings` (bool): 
     *   If `True`, ties the input embedding weights to the output decoder weights, saving significant VRAM and parameter count (Symmetric `vocab_size` only). Default is `False`.
+*   `residual_mode` (str): Controls how the hidden state is updated at each thinking step. Default is `'none'`.
+    *   `'none'`: Original behavior — state is replaced entirely each step: $h_t = f(W \cdot h_{t-1} + B)$.
+    *   `'simple'`: Pre-Norm Residual — adds identity path for gradient flow: $h_t = h_{t-1} + f(\text{Norm}(h_{t-1}))$ (ResNet/Transformer principle).
+    *   `'gated'`: Learnable per-neuron gate controls old/new mix: $h_t = \alpha \cdot h_{t-1} + (1-\alpha) \cdot f(\text{Norm}(h_{t-1}))$ where $\alpha = \sigma(\text{gate})$.
 
 ### Vocabulary Decoupling
 
@@ -370,6 +375,26 @@ RealNet can re-initialize synapses that are no longer contributing to the loss s
 *   **Usage**: 
     *   **Threshold Mode**: `trainer.regenerate_synapses(threshold=0.01)`
     *   **Percent Mode**: `trainer.regenerate_synapses(percentage=0.05)`
+
+### 5. Residual Connections (Gradient Highway)
+RealNet supports optional residual connections that add an identity path to the state update, preventing gradient degradation over many thinking steps.
+*   **Problem:** In `'none'` mode, gradients pass through activation functions at each step, shrinking multiplicatively. After 10+ steps, early states receive negligible learning signal.
+*   **Solution:** `'simple'` and `'gated'` modes add an identity shortcut (inspired by ResNet and Transformers), ensuring gradients flow directly through the skip path.
+*   **Modes:**
+    | Mode | Formula | Use Case |
+    | :--- | :--- | :--- |
+    | `'none'` | $h_t = f(W \cdot h_{t-1})$ | Short thinking, simple tasks |
+    | `'simple'` | $h_t = h_{t-1} + f(\text{Norm}(h_{t-1}))$ | LLMs, long sequences |
+    | `'gated'` | $h_t = \alpha h_{t-1} + (1-\alpha) f(\text{Norm}(h_{t-1}))$ | Adaptive memory control |
+
+*   **Usage:**
+    ```python
+    # Pre-Norm Residual (Recommended for LLMs)
+    model = RealNet(..., residual_mode='simple')
+
+    # Learnable Gate (each neuron learns its retention ratio)
+    model = RealNet(..., residual_mode='gated')
+    ```
 
 ---
 

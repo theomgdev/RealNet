@@ -100,6 +100,20 @@ For tasks requiring high input/output dimensionality (like vision or LLMs) witho
 model = RealNet(num_neurons=10, ..., vocab_size=(784, 10))
 ```
 
+### E. Residual Connections (Gradient Highway)
+For tasks with many thinking steps (high `steps` or `THINK_GAP`), residual connections prevent vanishing gradients.
+*   **Default (`'none'`):** Original behavior. Best for small step counts (<10) and simple tasks.
+*   **Simple (`'simple'`):** Pre-Norm Residual (ResNet-style). Use for LLMs, long sequences, or deep thinking (>10 steps).
+*   **Gated (`'gated'`):** Learnable per-neuron gate. Use when you want the network to learn its own memory vs. update balance.
+
+```python
+# LLM / Long-thinking tasks
+model = RealNet(..., residual_mode='simple')  # Strong gradient flow
+
+# Experimental / adaptive
+model = RealNet(..., residual_mode='gated')   # Network controls mix ratio
+```
+
 ---
 
 ## ⚡ Hardware Optimization

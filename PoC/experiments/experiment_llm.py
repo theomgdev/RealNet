@@ -63,6 +63,9 @@ LEARNING_RATE = 1e-4
 # TIE EMBEDDINGS (VRAM Saving & Parameter Sharing)
 TIE_EMBEDDINGS = False
 
+# RESIDUAL MODE ('none', 'simple', 'gated')
+RESIDUAL_MODE = 'none'
+
 # SCHEDULER CONFIG (Now uses TemporalScheduler)
 USE_SCHEDULER = False
 WARMUP_STEPS = 500       # Linear warmup phase
@@ -292,7 +295,8 @@ def initialize_system(vocab_size, num_neurons, device, input_count=-1, output_co
         gradient_checkpointing=True,
         vocab_size=vocab_size,
         vocab_mode='discrete',
-        tie_embeddings=TIE_EMBEDDINGS
+        tie_embeddings=TIE_EMBEDDINGS,
+        residual_mode=RESIDUAL_MODE
     )
 
     # Build scheduler config from global settings
@@ -403,6 +407,7 @@ def main():
     print(f"THINK_GAP: {THINK_GAP}")
     print(f"ACTIVATION: {ACTIVATION}")
     print(f"TIE_EMBEDDINGS: {TIE_EMBEDDINGS}")
+    print(f"RESIDUAL_MODE: {RESIDUAL_MODE}")
     tiktoken_info = f", Encoding: {TIKTOKEN_ENCODING}" if USE_TIKTOKEN else ""
     print(f"VOCAB_SIZE: {VOCAB_SIZE} (Tiktoken: {USE_TIKTOKEN}{tiktoken_info})")
     print(f"DEVICE: {DEVICE}")

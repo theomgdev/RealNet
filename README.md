@@ -24,6 +24,7 @@ RealNet achieves its efficiency through **Space-Time Trade-off**. Instead of add
 *   **Space-Time Conversion:** Replaces millions of parameters with a few "Thinking Steps".
 *   **Layerless Architecture:** A single $N \times N$ matrix. No hidden layers.
 *   **Trainable Chaos:** Uses **StepNorm** and **GELU** to tame chaotic signals.
+*   **Residual Connections:** Optional skip connections (`simple` or `gated`) for stronger gradient flow across many thinking steps.
 *   **Living Dynamics:** Demonstrates **Willpower** (Latch), **Rhythm** (Stopwatch), and **Resonance** (Sine Wave).
 
 ## 📊 The Evidence: Zero-Hidden Benchmarks
@@ -159,9 +160,13 @@ Unlike Transformers which use explicit $Q \times K$ matrices to "look back" at t
 *   **Result:** The network "attends" to relevant past events without storing the entire history buffer. Time itself acts as the indexing mechanism.
 
 ### Mathematical Model
-The network state $h_t$ evolves as:
+The network state $h_t$ evolves depending on the `residual_mode`:
 
-$$h_t = \text{StepNorm}(\text{GELU}(h_{t-1} \cdot W + B + I_t))$$
+| Mode | Equation |
+| :--- | :--- |
+| `none` (Default) | $h_t = \text{StepNorm}(\text{GELU}(h_{t-1} \cdot W + B + I_t))$ |
+| `simple` | $h_t = h_{t-1} + \text{GELU}(\text{StepNorm}(h_{t-1}) \cdot W + B + I_t)$ |
+| `gated` | $h_t = \alpha \cdot h_{t-1} + (1 - \alpha) \cdot \text{GELU}(\text{StepNorm}(h_{t-1}) \cdot W + B + I_t)$ |
 
 ---
 
