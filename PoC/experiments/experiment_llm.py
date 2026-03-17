@@ -65,8 +65,8 @@ TIE_EMBEDDINGS = False
 
 # SCHEDULER CONFIG (Now uses TemporalScheduler)
 USE_SCHEDULER = False
-WARMUP_STEPS = 500       # Linear warmup phase
-MAX_STEPS = 5000         # Total steps for cosine decay to reach minimum
+WARMUP_STEPS = 50        # Linear warmup phase
+MAX_STEPS = 500          # Total steps for cosine decay to reach minimum
 MIN_LR_RATIO = 0.01      # Decay down to 1% of max LR (i.e., 1e-6)
 
 # --- TOKENIZER ---
