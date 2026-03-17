@@ -265,7 +265,7 @@ class ChaosGrad(torch.optim.Optimizer):
                 # --- Plateau Escape (Controlled Perturbation) ---
                 if is_plateau and is_core:
                     # Inject targeted noise into gradients for the chaos core
-                    noise = torch.randn_like(grad) * plateau_noise * grad.abs().mean()
+                    noise = torch.randn_like(grad) * plateau_noise * p.abs().mean()
                     grad = grad + noise
                 
                 # --- Decoupled Weight Decay ---
@@ -311,6 +311,7 @@ class ChaosGrad(torch.optim.Optimizer):
                         grad_var = grad_var * 0.99 + ratio * 0.01
 
                         # Apply smoothed adaptive scaling multiplier to the step size
+                        # EPS provides numerical stability bounds against scaler artifacts
                         adaptive_mult = 1.0 / (grad_var + eps)
                         adaptive_mult = max(adaptive_clip[0], min(adaptive_clip[1], adaptive_mult))
                         step_size *= adaptive_mult
@@ -340,7 +341,13 @@ class ChaosGrad(torch.optim.Optimizer):
                         self._spectral_radius = abs(sigma_max)
                         
                         if self._spectral_radius > spectral_clip:
-                            p.data.mul_(spectral_clip / (self._spectral_radius + eps))
+                            ratio = spectral_clip / (self._spectral_radius + eps)
+                            p.data.mul_(ratio)
+                            
+                            # Scale internal momentum buffers proportionally to 
+                            # maintain alignment with the clipped topology.
+                            state['exp_avg'].mul_(ratio)
+                            state['exp_avg_sq'].mul_(ratio ** 2)
                     except Exception:
                         pass
                 

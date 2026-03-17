@@ -240,13 +240,16 @@ class RealNetTrainer:
 
             if self.gradient_persistence > 0.0:
                  # Gradient Persistence
+                 # Project persistent gradients into the active AMP scale 
+                 # to maintain numeric consistency across accumulation boundaries.
+                 scale = self.scaler.get_scale() if hasattr(self, 'scaler') and self.scaler.is_enabled() else 1.0
                  with torch.no_grad():
                     for param in self.model.parameters():
                         if param.grad is not None:
                             if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():
                                 param.grad.zero_()
                             else:
-                                param.grad.mul_(self.gradient_persistence)
+                                param.grad.mul_(self.gradient_persistence * scale)
             else:
                  self.optimizer.zero_grad()
                  
