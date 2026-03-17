@@ -119,7 +119,14 @@ class TemporalScheduler:
             return self.min_lr_ratio
             
         # Cosine decay
-        decay_ratio = (effective_step - self.warmup_steps) / max(1, effective_max - self.warmup_steps)
+        if self._cycle_start_step == 0:
+            decay_numerator = effective_step - self.warmup_steps
+            decay_denominator = max(1, effective_max - self.warmup_steps)
+        else:
+            decay_numerator = effective_step
+            decay_denominator = max(1, effective_max)
+        
+        decay_ratio = decay_numerator / decay_denominator
         decay_ratio = max(0.0, min(1.0, decay_ratio))
         coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
         return self.min_lr_ratio + coeff * (1.0 - self.min_lr_ratio)
