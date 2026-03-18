@@ -47,11 +47,7 @@ class ChaosGrad(torch.optim.Optimizer):
         input_sentinel (bool): Track input gradient health. Default: False.
         adaptive_lr (bool): Enable per-param adaptive LR scaling. Default: True.
         adaptive_lr_clip (tuple): (min, max) multiplier for adaptive LR. Default: (0.1, 10.0).
-        adaptive_ema (float): Smoothing factor for adaptive LR variance. Default: 0.99.
         grad_centralization (bool): Center gradients by removing mean. Default: True.
-        plateau_noise_intensity (float): Internal multiplier for plateau noise. Default: 0.1.
-        loss_history_min (int): Minimum number of recent loss values to retain in the history buffer. Default: 200.
-        sentinel_threshold (float): Relative threshold for input health detection. Default: 0.1.
     """
     
     def __init__(self, params, lr=1e-4, betas=(0.9, 0.999), eps=1e-8,
@@ -61,9 +57,7 @@ class ChaosGrad(torch.optim.Optimizer):
                  plateau_patience=0, plateau_noise_scale=0.01,
                  spectral_clip=0.0, input_sentinel=False,
                  adaptive_lr=True, adaptive_lr_clip=(0.1, 10.0),
-                 grad_centralization=True, adaptive_ema=0.99,
-                 plateau_noise_intensity=0.1,
-                 loss_history_min=200, sentinel_threshold=0.1):
+                 grad_centralization=True):
         
         defaults = dict(
             lr=lr, betas=betas, eps=eps,
@@ -78,11 +72,7 @@ class ChaosGrad(torch.optim.Optimizer):
             input_sentinel=input_sentinel,
             adaptive_lr=adaptive_lr,
             adaptive_lr_clip=adaptive_lr_clip,
-            adaptive_ema=adaptive_ema,
             grad_centralization=grad_centralization,
-            plateau_noise_intensity=plateau_noise_intensity,
-            loss_history_min=loss_history_min,
-            sentinel_threshold=sentinel_threshold,
         )
         super().__init__(params, defaults)
         
@@ -118,9 +108,9 @@ class ChaosGrad(torch.optim.Optimizer):
             if not param.requires_grad:
                 continue
                 
-            if name == 'W' or name.endswith('.W'):
+            if name == 'W':
                 chaos_core.append(param)
-            elif any(k in name for k in ['embed', 'proj', 'decoder', 'output_decoder']):
+            elif any(k in name for k in ['embed', 'proj', 'output_decoder']):
                 projections.append(param)
             else:
                 # B, input_scale, output_scale, norm.weight, norm.bias
@@ -168,8 +158,7 @@ class ChaosGrad(torch.optim.Optimizer):
         self._loss_history.append(loss_value)
         
         # Keep only recent history
-        hist_min = self.defaults.get('loss_history_min', 200)
-        max_history = max(hist_min, self.defaults.get('plateau_patience', 0) * 2)
+        max_history = max(200, self.defaults.get('plateau_patience', 0) * 2)
         if len(self._loss_history) > max_history:
             self._loss_history = self._loss_history[-max_history:]
             
@@ -275,14 +264,8 @@ class ChaosGrad(torch.optim.Optimizer):
                 
                 # --- Plateau Escape (Controlled Perturbation) ---
                 if is_plateau and is_core:
-                    intensity = group.get('plateau_noise_intensity', 0.1)
-                    
-                    noise_scale = grad.abs().mean()
-                    if (not torch.isfinite(noise_scale)) or noise_scale < 1e-8:
-                        noise_scale = p.abs().mean()
-                    if (not torch.isfinite(noise_scale)) or noise_scale < 1e-8:
-                        noise_scale = grad.new_tensor(1e-3)
-                    noise = torch.randn_like(grad) * plateau_noise * noise_scale * intensity
+                    # Inject targeted noise into gradients for the chaos core
+                    noise = torch.randn_like(grad) * plateau_noise * grad.abs().mean()
                     grad = grad + noise
                 
                 # --- Decoupled Weight Decay ---
@@ -324,11 +307,10 @@ class ChaosGrad(torch.optim.Optimizer):
                         if not isinstance(grad_var, float):
                             grad_var = grad_var.item()
 
-                        # Smooth the ratio with exponential moving average
-                        ema = group.get('adaptive_ema', 0.99)
-                        grad_var = grad_var * ema + ratio * (1 - ema)
+                        # Smooth the ratio (exponential moving average)
+                        grad_var = grad_var * 0.99 + ratio * 0.01
 
-                        # Apply adaptive multiplier with epsilon guard
+                        # Apply smoothed adaptive scaling multiplier to the step size
                         adaptive_mult = 1.0 / (grad_var + eps)
                         adaptive_mult = max(adaptive_clip[0], min(adaptive_clip[1], adaptive_mult))
                         step_size *= adaptive_mult
@@ -358,12 +340,7 @@ class ChaosGrad(torch.optim.Optimizer):
                         self._spectral_radius = abs(sigma_max)
                         
                         if self._spectral_radius > spectral_clip:
-                            ratio = spectral_clip / (self._spectral_radius + eps)
-                            p.data.mul_(ratio)
-                            
-                            # Update momentum buffers to maintain topological alignment
-                            state['exp_avg'].mul_(ratio)
-                            state['exp_avg_sq'].mul_(ratio ** 2)
+                            p.data.mul_(spectral_clip / (self._spectral_radius + eps))
                     except Exception:
                         pass
                 
@@ -380,11 +357,9 @@ class ChaosGrad(torch.optim.Optimizer):
         self._diagnostics['total_grad_norm'] = total_grad_norm
         self._diagnostics['total_param_norm'] = total_param_norm
         
-        # Input gradient health calculation (detects vanishing inputs)
+        # Input gradient health calculation
         if total_grad_norm > 0:
-            # Compared against a scaled threshold of total activity
-            threshold = self.defaults.get('sentinel_threshold', 0.1)
-            self._input_grad_health = min(1.0, input_grad_norm / (total_grad_norm * threshold + 1e-12))
+            self._input_grad_health = min(1.0, input_grad_norm / (total_grad_norm * 0.1 + 1e-12))
         
         if is_plateau:
             self._diagnostics['plateau_escape_triggered'] = self._global_step
@@ -413,11 +388,7 @@ class ChaosGradConfig:
             chaos_core_lr_mult=1.0,
             projection_lr_mult=1.0,
             adaptive_lr=True,
-            adaptive_ema=0.99,
             grad_centralization=True,
-            plateau_noise_intensity=0.1,
-            sentinel_threshold=0.1,
-            loss_history_min=200,
         )
     
     @staticmethod
@@ -435,11 +406,7 @@ class ChaosGradConfig:
             plateau_noise_scale=0.02,
             adaptive_lr=True,
             adaptive_lr_clip=(0.2, 5.0),
-            adaptive_ema=0.98,
             grad_centralization=True,
-            plateau_noise_intensity=0.2,
-            sentinel_threshold=0.1,
-            loss_history_min=100,
         )
     
     @staticmethod
@@ -455,11 +422,7 @@ class ChaosGradConfig:
             projection_lr_mult=0.8,
             adaptive_lr=True,
             adaptive_lr_clip=(0.5, 2.0),
-            adaptive_ema=0.995,
             grad_centralization=False,
-            plateau_noise_intensity=0.05,
-            sentinel_threshold=0.05,
-            loss_history_min=500,
         )
     
     @staticmethod 
@@ -482,11 +445,7 @@ class ChaosGradConfig:
             input_sentinel=True,
             adaptive_lr=True,
             adaptive_lr_clip=(0.1, 5.0),
-            adaptive_ema=0.99,
             grad_centralization=True,
-            plateau_noise_intensity=0.1,
-            sentinel_threshold=0.2,
-            loss_history_min=200,
         )
     
     @staticmethod
@@ -501,9 +460,5 @@ class ChaosGradConfig:
             chaos_core_lr_mult=1.0,
             projection_lr_mult=1.0,
             adaptive_lr=False,
-            adaptive_ema=0.99,
             grad_centralization=False,
-            plateau_noise_intensity=0.01,
-            sentinel_threshold=0.1,
-            loss_history_min=50,
         )
