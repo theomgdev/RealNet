@@ -50,7 +50,7 @@ class ChaosGrad(torch.optim.Optimizer):
         adaptive_ema (float): Smoothing factor for adaptive LR variance. Default: 0.99.
         grad_centralization (bool): Center gradients by removing mean. Default: True.
         plateau_noise_intensity (float): Internal multiplier for plateau noise. Default: 0.1.
-        loss_history_min (int): Minimum steps for loss history tracking. Default: 200.
+        loss_history_min (int): Minimum number of recent loss values to retain in the history buffer. Default: 200.
         sentinel_threshold (float): Relative threshold for input health detection. Default: 0.1.
     """
     
