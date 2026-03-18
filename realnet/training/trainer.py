@@ -59,6 +59,8 @@ class RealNetTrainer:
                 None = auto (use ChaosGrad only when no custom optimizer given and chaos_config provided).
             use_temporal_scheduler (bool, optional): Force enable/disable TemporalScheduler.
                 None = auto (use when scheduler_config provided).
+            max_grad_norm (float, optional): Maximum L2 norm for gradient clipping. If > 0, gradients
+                are clipped to this global norm; set to 0 to disable gradient clipping.
         """
         self.model = model
         self.device = device
