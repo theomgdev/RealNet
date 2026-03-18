@@ -200,7 +200,15 @@ class RealNet(nn.Module):
                 
                 # FORCE DRY RUN to catch lazy errors now
                 print("RealNet: Performing dry run to verify compilation...")
-                dummy_input = torch.zeros(1, self.num_neurons, device=self.device)
+                if self.vocab_size is not None:
+                    if self.embed is not None:
+                        dummy_input = torch.zeros(1, 1, dtype=torch.long, device=self.device)
+                    elif self.proj is not None:
+                        dummy_input = torch.zeros(1, 1, self.proj.in_features, dtype=self.W.dtype, device=self.device)
+                    else:
+                        dummy_input = torch.zeros(1, self.num_neurons, device=self.device)
+                else:
+                    dummy_input = torch.zeros(1, self.num_neurons, device=self.device)
                 with torch.no_grad():
                     compiled_model(dummy_input, steps=1)
                 print("RealNet: Compilation successful!")
@@ -348,12 +356,35 @@ class RealNet(nn.Module):
                                    valid_mask = token_indices != -1
                                    
                                    if valid_mask.any():
-                                        # Map token indices to neuron indices
-                                        offset = self.input_ids[0]
-                                        valid_neurons = token_indices[valid_mask] + offset
-                                        scale_indices = valid_neurons - offset
-                                        # Sparse info tuple
-                                        x_step_info = (valid_mask, valid_neurons, scale_indices)
+                                        token_values = token_indices[valid_mask].long()
+                                        input_dim = input_pos.numel()
+
+                                        # Fast path: token values are local indices into input_ids.
+                                        in_local_range = (token_values >= 0) & (token_values < input_dim)
+                                        if in_local_range.all():
+                                            scale_indices = token_values
+                                            valid_neurons = input_pos[scale_indices]
+                                            x_step_info = (valid_mask, valid_neurons, scale_indices)
+                                        else:
+                                            # Fallback: token values are explicit neuron IDs.
+                                            if not hasattr(self, '_input_id_to_local'):
+                                                self._input_id_to_local = {int(neuron_id): idx for idx, neuron_id in enumerate(self.input_ids)}
+
+                                            active_batch_indices = torch.nonzero(valid_mask, as_tuple=False).view(-1)
+                                            mapped_batch = []
+                                            mapped_local = []
+                                            for b_idx, neuron_id in zip(active_batch_indices.tolist(), token_values.tolist()):
+                                                local_idx = self._input_id_to_local.get(int(neuron_id))
+                                                if local_idx is not None:
+                                                    mapped_batch.append(b_idx)
+                                                    mapped_local.append(local_idx)
+
+                                            if mapped_local:
+                                                sparse_mask = torch.zeros_like(valid_mask)
+                                                sparse_mask[torch.tensor(mapped_batch, device=valid_mask.device)] = True
+                                                scale_indices = torch.tensor(mapped_local, dtype=torch.long, device=token_values.device)
+                                                valid_neurons = input_pos[scale_indices]
+                                                x_step_info = (sparse_mask, valid_neurons, scale_indices)
                                    
                     elif x_input.ndim == 3:
                         # Sequential Input: (Batch, MultiSteps, Neurons)

@@ -452,6 +452,21 @@ def main():
     print(f"Input IDs: {input_ids[0]}-{input_ids[-1]}")
     print(f"Output IDs: {output_ids[0]}-{output_ids[-1]}")
 
+    def restore_checkpoint_runtime():
+        opt_arg = None if RESET_OPTIMIZER_ON_LOAD else trainer.optimizer
+        target_lr = LEARNING_RATE if OVERWRITE_LR_OF_CKPT else None
+        checkpoint_data = load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True, lr=target_lr)
+
+        trainer_state = checkpoint_data.get('trainer_state_dict')
+        if trainer_state is not None:
+            try:
+                trainer.load_state_dict(trainer_state)
+                print("🧠 Trainer runtime state restored (scheduler/scaler/accumulators).")
+            except Exception as e:
+                print(f"⚠️ Could not restore trainer runtime state: {e}")
+
+        return checkpoint_data
+
     # --- CHECKPOINT LOADING (Full) ---
     if os.path.exists(CKPT_PATH):
         # Pre-check dimensions to handle mismatches interactively
@@ -475,9 +490,7 @@ def main():
                         print(f"🔄 Resizing to {saved_dim}...")
                         NUM_NEURONS = saved_dim
                         model, trainer, _, _ = initialize_system(VOCAB_SIZE, NUM_NEURONS, DEVICE, input_count=INPUT_NEURON_COUNT, output_count=OUTPUT_NEURON_COUNT, lr=LEARNING_RATE, activation=ACTIVATION)
-                        opt_arg = None if RESET_OPTIMIZER_ON_LOAD else trainer.optimizer
-                        target_lr = LEARNING_RATE if OVERWRITE_LR_OF_CKPT else None
-                        load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True, lr=target_lr)
+                        restore_checkpoint_runtime()
                         print(f"✅ Resuming from Epoch {start_epoch}")
 
                     elif action == '2':
@@ -491,16 +504,12 @@ def main():
                         dataset.skip_offset = 0
 
                 else:
-                    opt_arg = None if RESET_OPTIMIZER_ON_LOAD else trainer.optimizer
-                    target_lr = LEARNING_RATE if OVERWRITE_LR_OF_CKPT else None
                     print(f"🔄 Loading Checkpoint from {CKPT_PATH}...")
-                    load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True, lr=target_lr)
+                    restore_checkpoint_runtime()
                     print(f"✅ Resuming from Epoch {start_epoch}")
             else:
-                 opt_arg = None if RESET_OPTIMIZER_ON_LOAD else trainer.optimizer
-                 target_lr = LEARNING_RATE if OVERWRITE_LR_OF_CKPT else None
-                 load_checkpoint(model, opt_arg, CKPT_PATH, device=DEVICE, strict=True, lr=target_lr)
-                 start_epoch = ckpt_peek.get('epoch', 0) + 1
+                 loaded_ckpt = restore_checkpoint_runtime()
+                 start_epoch = loaded_ckpt.get('epoch', 0) + 1
 
         except Exception as e:
             print(f"⚠️ Failed to load/inspect checkpoint: {e}. Starting fresh.")
@@ -670,7 +679,8 @@ def main():
         # --- CHECKPOINT SAVING ---
         ckpt_extra_data = {
             'initial_lr': trainer.initial_lr,
-            'dataset_step': dataset.current_doc_index
+            'dataset_step': dataset.current_doc_index,
+            'trainer_state_dict': trainer.state_dict(),
         }
 
         save_checkpoint(model, trainer.optimizer, epoch, avg_loss, CKPT_PATH, extra_data=ckpt_extra_data)

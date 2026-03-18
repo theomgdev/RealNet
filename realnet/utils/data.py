@@ -51,10 +51,20 @@ def prepare_input(input_features, model_input_ids, num_neurons, device):
             
     return x_input, batch_size
 
-def to_tensor(data, device):
+def to_tensor(data, device, dtype=None):
     """
     Safely converts data to a PyTorch tensor on the target device.
     """
-    if not isinstance(data, torch.Tensor):
-        return torch.tensor(data, dtype=torch.float32, device=device)
-    return data.to(device)
+    if isinstance(data, torch.Tensor):
+        if dtype is not None:
+            return data.to(device=device, dtype=dtype)
+        return data.to(device)
+
+    if dtype is None:
+        inferred = torch.as_tensor(data)
+        dtype = inferred.dtype
+        # Keep default project behavior for float inputs while preserving integer targets/tokens.
+        if dtype == torch.float64:
+            dtype = torch.float32
+
+    return torch.as_tensor(data, dtype=dtype, device=device)

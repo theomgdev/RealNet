@@ -33,7 +33,7 @@ class Neurogenesis:
     """
 
     @staticmethod
-    def expand(model, optimizer, amount=1, verbose=True):
+    def expand(model, optimizer, amount=1, verbose=True, chaos_config=None):
         """
         Dynamically adds neurons to the network while preserving state and memory.
         
@@ -59,7 +59,7 @@ class Neurogenesis:
         
         # Norm Preservation (StepNorm)
         old_norm_w_param = model.norm.weight
-        old_norm_b_param = model.norm.bias
+        old_norm_b_param = getattr(model.norm, 'bias', None)
         
         old_input_scale = model.input_scale
         old_output_scale = model.output_scale
@@ -84,12 +84,20 @@ class Neurogenesis:
         new_B = torch.zeros(new_n, device=device)
         new_B[:old_n] = model.B.data
 
-        # Expand LayerNorm
-        new_norm = nn.LayerNorm(new_n).to(device)
-        
+        # Preserve original normalization family to avoid training-dynamics drift.
+        if isinstance(model.norm, nn.RMSNorm):
+            new_norm = nn.RMSNorm(new_n, eps=model.norm.eps).to(device)
+        elif isinstance(model.norm, nn.LayerNorm):
+            new_norm = nn.LayerNorm(new_n, eps=model.norm.eps).to(device)
+        else:
+            new_norm = nn.LayerNorm(new_n).to(device)
+
         with torch.no_grad():
             new_norm.weight[:old_n] = model.norm.weight.data
-            new_norm.bias[:old_n]   = model.norm.bias.data
+            old_norm_bias = getattr(model.norm, 'bias', None)
+            new_norm_bias = getattr(new_norm, 'bias', None)
+            if isinstance(old_norm_bias, torch.Tensor) and isinstance(new_norm_bias, torch.Tensor):
+                new_norm_bias[:old_n] = old_norm_bias.data
 
         # Expand State
         if hasattr(model, 'state'):
@@ -118,23 +126,40 @@ class Neurogenesis:
         # Optimizer Migration
         group = old_opt.param_groups[0]
         optimizer_cls = type(old_opt)
-        
+
         # Helper to safely get arg
         def get_arg(name, default):
             return group.get(name, default)
 
         # Re-instantiate optimizer
         try:
-             new_opt = optimizer_cls(
-                model.parameters(), 
-                lr=get_arg('lr', 0.001), 
-                weight_decay=get_arg('weight_decay', 0), 
-                betas=get_arg('betas', (0.9, 0.999)), 
-                eps=get_arg('eps', 1e-8)
-            )
+            from ..training.chaos_optimizer import ChaosGrad
+            if isinstance(old_opt, ChaosGrad):
+                cfg = dict(old_opt.defaults)
+                if isinstance(chaos_config, dict):
+                    cfg.update(chaos_config)
+                cfg['lr'] = get_arg('lr', cfg.get('lr', 0.001))
+
+                param_groups, sentinel_params = ChaosGrad.classify_params(model)
+                for group_cfg in param_groups:
+                    for key, value in cfg.items():
+                        if key not in group_cfg and key != 'params':
+                            group_cfg[key] = value
+
+                new_opt = ChaosGrad(param_groups, **cfg)
+                new_opt.set_sentinel_params(sentinel_params)
+            else:
+                new_opt = optimizer_cls(
+                    model.parameters(),
+                    lr=get_arg('lr', 0.001),
+                    weight_decay=get_arg('weight_decay', 0),
+                    betas=get_arg('betas', (0.9, 0.999)),
+                    eps=get_arg('eps', 1e-8)
+                )
+
         except Exception as e:
             print(f"⚠️ Optimizer re-init failed: {e}. Falling back to standard AdamW.")
-            new_opt = torch.optim.AdamW(model.parameters(), lr=group['lr'])
+            new_opt = torch.optim.AdamW(model.parameters(), lr=group.get('lr', 0.001))
 
         # Migrate internal optimizer state
         def transfer_state(old_p, new_p, is_matrix=False):
@@ -200,7 +225,8 @@ class Neurogenesis:
                 
                 # Transfer StepNorm State
                 transfer_state(old_norm_w_param, model.norm.weight, is_matrix=False)
-                transfer_state(old_norm_b_param, model.norm.bias, is_matrix=False)
+                if old_norm_b_param is not None and getattr(model.norm, 'bias', None) is not None:
+                    transfer_state(old_norm_b_param, model.norm.bias, is_matrix=False)
                 
                 transfer_state(old_input_scale, model.input_scale, is_matrix=False)
                 transfer_state(old_output_scale, model.output_scale, is_matrix=False)

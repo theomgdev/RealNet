@@ -8,7 +8,7 @@ for transferring knowledge between models of different sizes.
 import torch
 import os
 
-def save_checkpoint(model, optimizer, epoch, loss, path, extra_data=None):
+def save_checkpoint(model, optimizer, epoch, loss, path, extra_data=None, trainer_state=None):
     """
     Saves a training checkpoint.
     
@@ -19,6 +19,7 @@ def save_checkpoint(model, optimizer, epoch, loss, path, extra_data=None):
         loss (float): Current loss value.
         path (str): File path to save the checkpoint.
         extra_data (dict, optional): Any additional data to save.
+        trainer_state (dict, optional): Runtime trainer state (scheduler/scaler/counters).
     """
     checkpoint = {
         'epoch': epoch,
@@ -26,6 +27,9 @@ def save_checkpoint(model, optimizer, epoch, loss, path, extra_data=None):
         'optimizer_state_dict': optimizer.state_dict(),
         'loss': loss,
     }
+
+    if trainer_state is not None:
+        checkpoint['trainer_state_dict'] = trainer_state
     
     if extra_data:
         checkpoint.update(extra_data)
@@ -37,7 +41,7 @@ def save_checkpoint(model, optimizer, epoch, loss, path, extra_data=None):
     return path
 
 
-def load_checkpoint(model, optimizer, path, device='cpu', strict=True, lr=None):
+def load_checkpoint(model, optimizer, path, device='cpu', strict=True, lr=None, trainer=None):
     """
     Loads a training checkpoint.
     
@@ -50,6 +54,7 @@ def load_checkpoint(model, optimizer, path, device='cpu', strict=True, lr=None):
                        If False, ignores mismatched keys (standard PyTorch behavior).
         lr (float, optional): If provided, overwrites the learning rate in the optimizer 
                               after loading the state.
+        trainer (optional): Trainer instance that implements load_state_dict.
     
     Returns:
         dict: The loaded checkpoint data (epoch, loss, etc.)
@@ -79,6 +84,12 @@ def load_checkpoint(model, optimizer, path, device='cpu', strict=True, lr=None):
                 
         except Exception as e:
             print(f"⚠️ Could not load optimizer state: {e}. Optimizer will start fresh.")
+
+    if trainer is not None and 'trainer_state_dict' in checkpoint:
+        try:
+            trainer.load_state_dict(checkpoint['trainer_state_dict'])
+        except Exception as e:
+            print(f"⚠️ Could not load trainer state: {e}. Runtime trainer state will start fresh.")
     
     return checkpoint
 
