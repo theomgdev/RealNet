@@ -53,8 +53,8 @@ def main():
         vocab_size=[79, 10],   # [79 pixels -> 3 neurons, 10 neurons -> decoder]
         vocab_mode='continuous',
         dropout_rate=0.0,
-        weight_init='xavier_uniform',
-        activation='gelu'
+        weight_init='micro_quiet_8bit',
+        activation='tanh'
     )
     
     # Speed up core with torch.compile if on PyTorch 2.0+
