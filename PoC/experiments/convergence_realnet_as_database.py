@@ -8,18 +8,19 @@ import random
 # Adjust path to import realnet
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from realnet import RealNet, RealNetTrainer, ChaosGradConfig
-from realnet.utils.data import prepare_input
 
-def generate_db_data(batch_size, num_keys, seq_per_op, num_ops, device):
+def generate_db_data(batch_size, num_keys, seq_per_op, num_ops, device, think_steps=5):
     """
     Generates a complex CRUD sequence for RealNet Database.
-    Now with 'Active Training' targets for all ops.
+    Returns: inputs, targets, mask
+    Mask is 1.0 only for READ operations after think_steps.
     """
     total_steps = num_ops * seq_per_op
     input_dim = 3 + num_keys + 1
     
     inputs = torch.zeros(batch_size, total_steps, input_dim, device=device)
     targets = torch.zeros(batch_size, total_steps, 1, device=device)
+    mask = torch.zeros(batch_size, total_steps, 1, device=device)
     
     memories = [{} for _ in range(batch_size)]
     
@@ -29,7 +30,7 @@ def generate_db_data(batch_size, num_keys, seq_per_op, num_ops, device):
             t_end = t_start + seq_per_op
             
             r = random.random()
-            if r < 0.5: cmd = "WRITE"
+            if r < 0.1: cmd = "WRITE"
             elif r < 0.9: cmd = "READ"
             else: cmd = "DELETE"
                 
@@ -50,6 +51,7 @@ def generate_db_data(batch_size, num_keys, seq_per_op, num_ops, device):
                 
                 val = memories[b].get(k_idx, 0.0)
                 targets[b, t_start : t_end, 0] = val
+                mask[b, t_start + think_steps : t_end, 0] = 1.0
                 
             elif cmd == "DELETE":
                 inputs[b, t_start, 2] = 1.0 
@@ -60,7 +62,7 @@ def generate_db_data(batch_size, num_keys, seq_per_op, num_ops, device):
                 
                 targets[b, t_start : t_end, 0] = 0.0
                     
-    return inputs, targets
+    return inputs, targets, mask
 
 def main():
     print("🚀 RealNet Experiment: NEURAL DATABASE (Implicit CRUD)")
@@ -73,41 +75,46 @@ def main():
     NUM_KEYS = 4 
     SEQ_PER_OP = 8 
     NUM_OPS = 12 
-    NUM_NEURONS = 512 
-    
-    input_ids = list(range(8))
-    output_ids = [9]
+    NUM_NEURONS = 256
+
+    RAW_INPUT_DIM = 3 + NUM_KEYS + 1
+    DECODED_OUTPUT_DIM = 1
+
+    PROJ_INPUT_NEURONS = 128
+    DECODER_OUTPUT_NEURONS = 128
+
+    input_ids = list(range(PROJ_INPUT_NEURONS))
+    output_start = PROJ_INPUT_NEURONS
+    output_ids = list(range(output_start, output_start + DECODER_OUTPUT_NEURONS))
     
     model = RealNet(
         num_neurons=NUM_NEURONS,
         input_ids=input_ids,
         output_ids=output_ids,
         device=DEVICE,
-        dropout_rate=0.0,
-        activation='gelu', # Gelu is beter at gating than tanh
-        weight_init='quiet' # We need silence to save data
+        vocab_size=[RAW_INPUT_DIM, DECODED_OUTPUT_DIM],
+        vocab_mode='continuous',
+        dropout_rate=0.0
     )
     
-    trainer = RealNetTrainer(model, device=DEVICE, gradient_persistence=0.0, synaptic_noise=0.0,
-                             chaos_config=ChaosGradConfig.default(lr=5e-4))
+    trainer = RealNetTrainer(model, device=DEVICE, synaptic_noise=0.0,
+                             chaos_config=ChaosGradConfig.default(lr=1e-3))
 
-    print(f"Config: {NUM_KEYS} Keys | {NUM_OPS} Ops per Batch | {NUM_NEURONS} Neurons | Persistence: 0.0")
+    print(
+        f"Config: {NUM_KEYS} Keys | {NUM_OPS} Ops per Batch | Core: {NUM_NEURONS} Neurons "
+        f"| Input: {RAW_INPUT_DIM} -> Proj({PROJ_INPUT_NEURONS}) "
+        f"| Output: Decode({DECODER_OUTPUT_NEURONS}) -> {DECODED_OUTPUT_DIM}"
+    )
     print("Training...")
     
-    EPOCHS = 10000 
+    EPOCHS = 1000
     BATCH_SIZE = 64
     total_steps = NUM_OPS * SEQ_PER_OP
-    THINK_STEPS = 2 # First 2 steps of an op are 'processing', we don't demand output yet
+    THINK_STEPS = 5
     
     for epoch in range(EPOCHS):
-        inputs, targets = generate_db_data(BATCH_SIZE, NUM_KEYS, SEQ_PER_OP, NUM_OPS, DEVICE)
+        inputs, targets, mask = generate_db_data(BATCH_SIZE, NUM_KEYS, SEQ_PER_OP, NUM_OPS, DEVICE, think_steps=THINK_STEPS)
         
-        # CREATE MASK: Weight is 0 for first THINK_STEPS of every op, 1 otherwise
-        mask = torch.ones_like(targets)
-        for op in range(NUM_OPS):
-            t_start = op * SEQ_PER_OP
-            mask[:, t_start : t_start + THINK_STEPS, :] = 0.0
-            
         # TRAIN using Library with Mask support
         loss = trainer.train_batch(inputs, targets, thinking_steps=total_steps, full_sequence=True, mask=mask)
         
@@ -135,7 +142,7 @@ def main():
     # TEST RUN (Simulation)
     print("\n🔍 Simulation Run (The Neural Database in Action):")
     test_ops = 8
-    inputs, targets = generate_db_data(1, NUM_KEYS, SEQ_PER_OP, test_ops, DEVICE)
+    inputs, targets, mask = generate_db_data(1, NUM_KEYS, SEQ_PER_OP, test_ops, DEVICE, think_steps=THINK_STEPS)
     
     with torch.no_grad():
         preds = trainer.predict(inputs, thinking_steps=(test_ops * SEQ_PER_OP), full_sequence=True)
@@ -160,8 +167,14 @@ def main():
         for t in range(t_start, t_start + SEQ_PER_OP):
             target = targets[0, t, 0].item()
             pred = preds[0, t, 0].item()
+            m_val = mask[0, t, 0].item()
+            
             diff = abs(target - pred)
-            status = "✅" if diff < 0.1 else "❌"
+            if m_val > 0.5:
+                status = "✅" if diff < 0.1 else "❌"
+            else:
+                status = ".." # Masked (thinking or non-READ op)
+
             if t > t_start: 
                 c_display = f"({t-t_start})"
                 k_display = "..."

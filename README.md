@@ -153,8 +153,8 @@ RealNet mimics the brain more closely than layered networks, not just in structu
 ### 7. Implicit Attention (Temporal Resonance)
 Unlike Transformers which use explicit $Q \times K$ matrices to "look back" at the history, RealNet achieves attention through **Temporal Resonance**.
 
-*   **Mechanism:** Information from the past is maintained as a standing wave or vibration in the hidden state, amplified by `Persistence`.
-*   **Key-Value Handling (New!):** The **Librarian Experiment** proved that RealNet can act as an addressable database. By using **GELU** as a soft gate, it routes queries to the correct "memory vibration" without any physical storage tables.
+*   **Mechanism:** Information from the past is maintained as a standing wave or vibration in the hidden state.
+*   **Key-Value Handling:** The **Librarian Experiment** proved that RealNet can act as an addressable database, routing queries to the correct "memory vibration" without any physical storage tables.
 *   **Detection:** When a related input arrives (like a READ command for Key 1), it creates a constructive interference (resonance) with the specific wave holding 'Key 1's value', forcing it to surface.
 *   **Result:** The network "attends" to relevant past events without storing the entire history buffer. Time itself acts as the indexing mechanism.
 
@@ -419,7 +419,7 @@ RealNet's vision capabilities were tested under four distinct conditions to prov
 ### K. The Librarian (Neural Database)
 *   **Target:** Act as a Read-Write Memory. `WRITE K1=0.5`. Wait... `READ K1`. Output: `0.5`.
 *   **Challenge:** The network must store multiple key-value pairs in its chaotic hidden state without them interfering, and retrieve them on demand. This requires **Implicit Attention**.
-*   **Result:** **~92% Accuracy** on 4 Keys with **1024 Neurons**.
+*   **Result:** **~92% Accuracy** on 4 Keys with **256 Core Neurons** (`Input: 8 -> Proj(128)`, `Output: Decode(128) -> 1`).
     <details>
     <summary>See Memory Retrieval Log</summary>
 
@@ -435,7 +435,7 @@ RealNet's vision capabilities were tested under four distinct conditions to prov
     ```
     </details>
 *   **Script:** `PoC/experiments/convergence_realnet_as_database.py`
-*   **Insight:** Proves that RealNet can simulate **Key-Value Attention** mechanisms purely through dynamics. By using `GELU` and high `Persistence` (0.5), it creates stable "memory wells" that can be addressed by a query signal, effectively performing the job of a Transformer's KV Cache without explicit storage matrices.
+*   **Insight:** Proves that RealNet can simulate **Key-Value Attention** mechanisms purely through dynamics, creating stable "memory wells" that can be addressed by a query signal and effectively performing the job of a Transformer's KV Cache without explicit storage matrices.
 
 ## 🔮 Vision: The Soul of Silicon (RealNet-1B)
 RealNet is a rebellion against the factory model of AI. We believe intelligence is not a mechanical stacking of layers, but an **organic reverberation of signals**.

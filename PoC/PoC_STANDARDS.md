@@ -80,13 +80,10 @@ model = RealNet(..., activation='tanh', weight_init='orthogonal')
 
 ### C. Associative Memory (Database / Key-Value)
 For tasks requiring precise storage and retrieval of values over time (e.g. Neural Database).
-*   **Activation:** `'gelu'` (The "dip" acts as a natural gate for address mechanisms).
-*   **Gradient Persistence:** `0.5` (Critical for maintaining long-term dependencies).
-*   **Structure:** High neuron count (512+) to provide "space" for memories.
+*   **Structure:** High neuron count (256+) to provide "space" for memories.
 
 ```python
-model = RealNet(..., activation='gelu', weight_init='orthogonal')
-trainer = RealNetTrainer(..., gradient_persistence=0.5)
+model = RealNet(..., weight_init='orthogonal')
 ```
 
 ### D. Decoupled Projection (Asymmetric Vocabulary)

@@ -153,8 +153,8 @@ RealNet, sadece yapısıyla değil, **davranışıyla** da beyni katmanlı ağla
 ### 7. Örtülü Dikkat (Zamansal Rezonans)
 Geçmişe bakmak için açıkça $Q \times K$ matrisleri kullanan Transformer'ların aksine, RealNet dikkati **Zamansal Rezonans** yoluyla sağlar.
 
-*   **Mekanizma:** Geçmişten gelen bilgi, gizli durumda duran bir dalga veya titreşim olarak korunur ve `Israr (Persistence)` ile güçlendirilir.
-*   **Anahtar-Değer Yönetimi (Yeni!):** **Kütüphaneci Deneyi**, RealNet'in adreslenebilir bir veritabanı gibi davranabildiğini kanıtladı. **GELU**'yu yumuşak bir kapı olarak kullanarak, sorguları herhangi bir fiziksel saklama tablosu olmadan doğru "hafıza titreşimine" yönlendirir.
+*   **Mekanizma:** Geçmişten gelen bilgi, gizli durumda duran bir dalga veya titreşim olarak korunur.
+*   **Anahtar-Değer Yönetimi:** **Kütüphaneci Deneyi**, RealNet'in adreslenebilir bir veritabanı gibi davranabildiğini kanıtladı; sorguları herhangi bir fiziksel saklama tablosu olmadan doğru "hafıza titreşimine" yönlendirir.
 *   **Tespit:** İlgili bir girdi geldiğinde (Anahtar 1 için OKU komutu gibi), 'Anahtar 1'in değerini' tutan spesifik dalga ile yapıcı bir girişim (rezonans) yaratır ve onu yüzeye çıkmaya zorlar.
 *   **Sonuç:** Ağ, tüm geçmiş tamponunu saklamadan ilgili geçmiş olaylara "odaklanır" (attend). Zamanın kendisi indeksleme mekanizması olarak işlev görür.
 
@@ -417,7 +417,7 @@ RealNet'in görsel yetenekleri, sağlamlık, ölçeklenebilirlik ve verimliliği
 ### K. Kütüphaneci (Nöral Veritabanı)
 *   **Hedef:** Oku-Yaz Hafıza gibi davranmak. `YAZ K1=0.5`. Bekle... `OKU K1`. Çıktı: `0.5`.
 *   **Zorluk:** Ağın, kaotik gizli durumunda birden çok anahtar-değer çiftini birbirine karıştırmadan saklaması ve istendiğinde geri çağırması gerekir. Bu, **Örtülü Dikkat** gerektirir.
-*   **Sonuç:** **~%92 Doğruluk** (4 Anahtar, 1024 Nöron ile).
+*   **Sonuç:** **~%92 Doğruluk** (4 Anahtar, **256 Çekirdek Nöron** ile; `Girdi: 8 -> Proj(128)`, `Çıktı: Decode(128) -> 1`).
     <details>
     <summary>Hafıza Erişim Logunu Gör</summary>
 
@@ -433,7 +433,7 @@ RealNet'in görsel yetenekleri, sağlamlık, ölçeklenebilirlik ve verimliliği
     ```
     </details>
 *   **Script:** `PoC/experiments/convergence_realnet_as_database.py`
-*   **İçgörü:** RealNet'in **Anahtar-Değer Dikkati (Attention)** mekanizmalarını tamamen dinamikler yoluyla simüle edebileceğini kanıtlar. `GELU` ve yüksek `Israr (Persistence)` (0.5) kullanarak, sorgu sinyaliyle adreslenebilen kararlı "hafıza kuyuları" oluşturur; böylece açık saklama matrisleri olmadan Transformer'ın KV Cache işini yapar.
+*   **İçgörü:** RealNet'in **Anahtar-Değer Dikkati (Attention)** mekanizmalarını tamamen dinamikler yoluyla simüle edebileceğini kanıtlar; sorgu sinyaliyle adreslenebilen kararlı "hafıza kuyuları" oluşturur ve açık saklama matrisleri olmadan Transformer'ın KV Cache işini yapar.
 
 ## 🔮 Vizyon: Silikonun Ruhu (RealNet-1B)
 RealNet, yapay zekanın fabrika modeline karşı bir isyandır. Zekanın mekanik bir katman yığını değil, **sinyallerin organik yankılanması** olduğuna inanıyoruz.
