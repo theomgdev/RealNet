@@ -51,7 +51,8 @@ def main():
         output_ids=output_ids,
         device=DEVICE,
         vocab_size=[79, 10],   # [79 pixels -> 3 neurons, 10 neurons -> decoder]
-        vocab_mode='continuous'
+        vocab_mode='continuous',
+        weight_init='micro_quiet_8bit'
     )
     
     # Speed up core with torch.compile if on PyTorch 2.0+
@@ -60,11 +61,6 @@ def main():
     
     total_params = model.get_num_params(only_trainable=False)
     print(f"Total Params: {total_params} (Goal: < 1000)")
-    
-    trainer = RealNetTrainer(model, device=DEVICE,
-                             chaos_config=ChaosGradConfig.default(lr=2e-3))
-    loss_fn = nn.CrossEntropyLoss()
-    trainer.loss_fn = loss_fn
     
     # Data Preparation
     train_transform = transforms.Compose([
@@ -82,11 +78,30 @@ def main():
     test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=test_transform)
     
     # Hyperparameters for the Elite 470 model
-    BATCH_SIZE = 512 
+    BATCH_SIZE = 16 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, pin_memory=True, num_workers=8)
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, pin_memory=True, num_workers=8)
     
-    NUM_EPOCHS = 1000
+    NUM_EPOCHS = 100
+    steps_per_epoch = len(train_loader)
+    
+    scheduler_config = dict(
+        warmup_steps=10 * steps_per_epoch,
+        max_steps=NUM_EPOCHS * steps_per_epoch,
+        min_lr_ratio=1e-6 / 1e-2,
+        patience=0
+    )
+    
+    trainer = RealNetTrainer(
+        model, 
+        device=DEVICE,
+        chaos_config=ChaosGradConfig.tiny_network(lr=1e-2),
+        scheduler_config=scheduler_config,
+        use_temporal_scheduler=True
+    )
+
+    loss_fn = nn.CrossEntropyLoss()
+    trainer.loss_fn = loss_fn
     
     print(f"Training with Batch Size: {BATCH_SIZE} for {NUM_EPOCHS} Epochs...")
     start_time = time.time()
