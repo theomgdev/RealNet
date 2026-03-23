@@ -35,7 +35,7 @@ def main():
     targets_val = inputs_val
 
     print("Training...")
-    trainer.fit(inputs_val, targets_val, epochs=50, batch_size=64, thinking_steps=50)
+    trainer.fit(inputs_val, targets_val, epochs=100, batch_size=32, thinking_steps=50)
 
     print("\nTest Result:")
     test_inputs = torch.tensor([[1.0], [-1.0]], device=DEVICE)

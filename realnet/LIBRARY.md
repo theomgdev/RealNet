@@ -41,7 +41,15 @@ model = RealNet(
     *   `False`: Input is applied continuously at every step (Stream).
 *   `dropout_rate` (float): Probability of synaptic failure during training (Biological simulation).
 *   `device` (str): 'cpu' or 'cuda'.
-*   `weight_init` (str): Initialization strategy (`'orthogonal'`, `'xavier_uniform'`, `'kaiming_normal'`, etc.). Default is `'orthogonal'`.
+*   `weight_init` (str): Initialization strategy. Default is `'resonant'`.
+    *   `'resonant'` **(Default, RealNet-Native)**: Edge-of-Chaos initialization. Builds a bipolar weight skeleton (Rademacher ±1 signs), adds small Gaussian noise (std=0.02) for symmetry breaking, then scales the matrix so its spectral radius ρ(W) = 1.0 exactly. This guarantees that signals neither explode nor vanish across temporal steps while maintaining both excitatory and inhibitory connections for gate emergence. Projection layers (embed/proj/decoder) automatically use `quiet` init instead of spectral scaling.
+    *   `'orthogonal'`: Orthogonal matrix — great stability for large networks.
+    *   `'xavier_uniform'` / `'xavier_normal'`: Xavier-scaled (good for small logic networks).
+    *   `'kaiming_uniform'` / `'kaiming_normal'`: Kaiming-scaled (ReLU-oriented).
+    *   `'quiet'`: Normal(0, 0.02) — small random start.
+    *   `'micro_quiet'`: Normal(0, 1e-6) — near-zero start.
+    *   `'sparse'`: 90% sparse with std=0.02.
+    *   `'zero'`, `'one'`, `'classic'`: Special cases.
 *   `activation` (str): Activation function used in the update step (`'tanh'`, `'relu'`, `'sigmoid'`, `'gelu'`, `'silu'`, etc.). Default is `'tanh'`.
 *   `vocab_size` (int or list/tuple, optional): Size of the input/output vocabulary. 
     *   **Symmetric**: `vocab_size=50257` (GPT-2 style).

@@ -36,7 +36,7 @@ RESET_DATA_ITER = False
 NUM_NEURONS = 2048
 INPUT_NEURON_COUNT = 128
 OUTPUT_NEURON_COUNT = 128
-ACTIVATION = 'gelu'
+ACTIVATION = 'tanh'
 THINK_GAP = 5
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -292,7 +292,7 @@ def initialize_system(vocab_size, num_neurons, device, input_count=-1, output_co
         device=device,
         dropout_rate=0.0,
         activation=activation,
-        weight_init='orthogonal',
+        weight_init='resonant',
         gradient_checkpointing=True,
         vocab_size=vocab_size,
         vocab_mode='discrete',

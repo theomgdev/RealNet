@@ -6,7 +6,7 @@ import numpy as np
 from typing import cast
 
 class RealNet(nn.Module):
-    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='orthogonal', activation='tanh', gradient_checkpointing=False, vocab_size=None, vocab_mode='hybrid', tie_embeddings=False):
+    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.1, device='cpu', weight_init='resonant', activation='tanh', gradient_checkpointing=False, vocab_size=None, vocab_mode='hybrid', tie_embeddings=False):
         super(RealNet, self).__init__()
         
         # Auto-size to unique input+output IDs
@@ -110,16 +110,15 @@ class RealNet(nn.Module):
         self.state = torch.zeros(1, num_neurons, device=device)
         
     def _init_weights(self, strategy):
-        # Core Matrix
         self._apply_init(self.W, strategy)
         
-        # Projections & Embeddings (LLM Standards)
+        proj_strategy = 'quiet' if strategy == 'resonant' else strategy
         if self.embed is not None:
-            self._apply_init(self.embed.weight, strategy)
+            self._apply_init(self.embed.weight, proj_strategy)
         if self.proj is not None:
-            self._apply_init(self.proj.weight, strategy)
+            self._apply_init(self.proj.weight, proj_strategy)
         if self.output_decoder is not None:
-            self._apply_init(self.output_decoder.weight, strategy)
+            self._apply_init(self.output_decoder.weight, proj_strategy)
         
     def _apply_init(self, tensor, strategy):
         """
@@ -150,6 +149,28 @@ class RealNet(nn.Module):
                 nn.init.zeros_(tensor)
             elif strategy == 'one':
                 nn.init.ones_(tensor)
+            elif strategy == 'resonant':
+                # Resonant Init — ρ(W) = 1.0 (Edge of Chaos)
+                shape = tensor.shape
+                
+                # Rademacher ±1 skeleton: guarantees excitatory + inhibitory connections
+                signs = torch.randint(0, 2, shape, device=tensor.device).float() * 2.0 - 1.0
+                
+                # Small Gaussian perturbation: breaks ±1 symmetry for gradient differentiation
+                noise = torch.randn(shape, device=tensor.device) * 0.02
+                tensor.copy_(signs + noise)
+                
+                # Spectral scaling: divide by σ_max so ρ(W) = 1.0 exactly
+                if tensor.ndim >= 2:
+                    mat = tensor.view(tensor.shape[0], -1)
+                    try:
+                        sigma_max = torch.linalg.matrix_norm(mat, ord=2)
+                        if sigma_max > 1e-8:
+                            tensor.div_(sigma_max)
+                    except Exception:
+                        frob = tensor.norm()
+                        if frob > 1e-8:
+                            tensor.div_(frob / (tensor.numel() ** 0.5))
             else:
                 nn.init.uniform_(tensor, -0.1, 0.1)
 

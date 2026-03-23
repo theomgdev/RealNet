@@ -86,14 +86,15 @@ trainer.fit(inputs, inputs, epochs=50)
 
 #### Initialization Protocols
 
-RealNet adapts to the scale of the problem. We recommend two distinct configurations:
+`weight_init='resonant'` is the default and recommended strategy for all network sizes. It places the weight matrix at the Edge of Chaos (ρ(W) = 1.0) from the start, ensuring signal fidelity across temporal steps without requiring manual tuning.
 
-*   **Large Networks (>10 Neurons, RNN-like tasks):** 
-    *   Use `weight_init='orthogonal'` and `activation='tanh'`. 
-    *   This provides the best stability for long-term temporal dynamics and analog signal processing.
-*   **Tiny Networks (<10 Neurons, Logic Gates):** 
-    *   Use `weight_init='xavier_uniform'` and `activation='gelu'`. 
-    *   Small networks need higher initial variance and better gradient flow to solve sharp logical problems without hidden layers.
+*   **All Networks (Default):**
+    *   Use `weight_init='resonant'` and `activation='tanh'`.
+    *   Bipolar Rademacher skeleton + spectral normalization to ρ = 1.0. Works across tiny logic gates and large temporal networks alike.
+*   **Alternative — Large Networks (>10 Neurons):**
+    *   `weight_init='orthogonal'` remains a solid fallback for pure stability.
+*   **Alternative — Tiny Networks (<10 Neurons, Logic Gates):**
+    *   `weight_init='xavier_uniform'` with `activation='gelu'` if resonant convergence is too slow on very small networks.
 
 ---
 

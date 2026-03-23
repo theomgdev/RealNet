@@ -55,42 +55,53 @@ If you need a new feature (e.g., a new loss function or a custom metric), extend
 
 ## ⚙️ Initialization Protocols (Critical)
 
-RealNet is sensitive to initialization. You must choose the right "personality" for your network based on its size and task.
+RealNet is sensitive to initialization. The default `weight_init='resonant'` is the recommended starting point for all tasks — it places the weight matrix at the Edge of Chaos (ρ(W) = 1.0) from the start and works across all network sizes.
 
-### A. Tiny Networks & Logic Gates (< 10 Neurons)
-For tasks like XOR, Logic Gates, or minimal circuits.
-*   **Activation:** `'gelu'` (Provides better gradient flow in sparse/small graphs).
+### A. Universal Default (All Sizes)
+For any task without a specific constraint, use the native resonant init.
+*   **Activation:** `'tanh'`
+*   **Weight Init:** `'resonant'` *(Default)* — Rademacher ±1 skeleton + spectral normalization to ρ = 1.0. Ensures signal fidelity without exploding or vanishing. Projecton layers (embed/proj/decoder) automatically use `quiet` init.
+*   **Dropout:** `0.0` for memory/logic tasks, `0.1`+ for generalization tasks (MNIST).
+
+```python
+model = RealNet(..., activation='tanh')  # weight_init='resonant' is already the default
+```
+
+### B. Tiny Networks & Logic Gates (< 10 Neurons) — Alternative
+If `resonant` convergence is too slow on very small circuits:
+*   **Activation:** `'gelu'` (Better gradient flow in sparse/small graphs).
 *   **Weight Init:** `'xavier_uniform'` (High variance ensures signals don't die in small circuits).
 *   **Dropout:** `0.0` (Every neuron is vital).
 
 ```python
 model = RealNet(..., activation='gelu', weight_init='xavier_uniform', dropout_rate=0.0)
-trainer = RealNetTrainer(model, ..., synaptic_noise=0.0) # Disable noise for pure logic
+trainer = RealNetTrainer(model, ..., synaptic_noise=0.0)  # Disable noise for pure logic
 ```
 
-### B. Large Networks & Analog Tasks (> 10 Neurons)
-For MNIST, Time-Series, Audio, or general "Brain-like" tasks.
-*   **Activation:** `'tanh'` (Bounded [-1, 1], stable for long recurrent loops).
-*   **Weight Init:** `'orthogonal'` (Mathematically optimal for preserving energy over time).
+### C. Large Networks & Memory Tasks — Alternative
+If long-horizon temporal stability is the priority:
+*   **Activation:** `'tanh'`
+*   **Weight Init:** `'orthogonal'` — solid fallback for pure stability.
 *   **Dropout:** `0.0` for memory tasks (Latch/Adder), `0.1`+ for generalization (MNIST).
 
 ```python
 model = RealNet(..., activation='tanh', weight_init='orthogonal')
 ```
 
-### C. Associative Memory (Database / Key-Value)
+### D. Associative Memory (Database / Key-Value)
 For tasks requiring precise storage and retrieval of values over time (e.g. Neural Database).
 *   **Structure:** High neuron count (256+) to provide "space" for memories.
 
 ```python
-model = RealNet(..., weight_init='orthogonal')
+model = RealNet(...) # resonant default is appropriate here
 ```
 
-### D. Decoupled Projection (Asymmetric Vocabulary)
+### E. Decoupled Projection (Asymmetric Vocabulary)
 For tasks requiring high input/output dimensionality (like vision or LLMs) without scaling the core state size.
 *   **Feature:** Use `vocab_size=(V_IN, V_OUT)` to decouple input/output resolution from internal neuron count.
 *   **Optimization:** This allows a tiny "Thinking Core" (e.g., 10 neurons) to process high-resolution signals (e.g., 784 pixels), achieving extreme parametric efficiency.
 *   **Usage:** Best used in conjunction with sequential signal slices to achieve 'World Record' class compression.
+*   **Note:** When `weight_init='resonant'`, projection layers (embed/proj/decoder) automatically use `quiet` init (Normal(0, 0.02)) — no manual override needed.
 
 ```python
 # RealNet core has N=10 neurons, but processes 784 input channels and 10 output classes.
@@ -174,7 +185,7 @@ Use the `prepare_input` utility implicitly via the Trainer.
 Before submitting a new PoC:
 1.  [ ] Did you place it in the correct folder (`PoC/` vs `PoC/experiments/`)?
 2.  [ ] Are you using `RealNetTrainer`?
-3.  [ ] Did you select the correct `activation` and `weight_init`?
+3.  [ ] Did you select the correct `activation` and `weight_init`? (Default `resonant` is fine for most tasks.)
 4.  [ ] Does it converge reliably?
 5.  [ ] Does the terminal output clearly explain what is happening?
 

@@ -35,7 +35,7 @@ def main():
         output_ids=output_ids, 
         pulse_mode=True, 
         dropout_rate=0.1,
-        # Default activation is 'tanh', weight_init is 'orthogonal'
+        # Default activation is 'tanh', weight_init is 'resonant'
         device=DEVICE
     )
     

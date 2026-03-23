@@ -28,19 +28,15 @@ def main():
     
     print(f"Neurons: {NUM_NEURONS} (9 Parameters)")
     
-    # CRITICAL CONFIG FOR TINY NETWORKS:
-    # 1. dropout_rate=0.0 (Every neuron is vital)
-    # 2. activation='gelu' (Flow allows better gradient flow in small circuits)
-    # 3. weight_init='xavier_uniform' (Higher variance needed for signal propagation in small nets)
+    # TINY NETWORK CONFIG:
+    # dropout_rate=0.0 (Every neuron is vital)
     model = RealNet(
         num_neurons=NUM_NEURONS, 
         input_ids=INPUT_IDS, 
         output_ids=OUTPUT_ID, 
         pulse_mode=True, 
         device=DEVICE,
-        dropout_rate=0.0,
-        activation='gelu',
-        weight_init='xavier_uniform'
+        dropout_rate=0.0
     )
 
     trainer = RealNetTrainer(model, device=DEVICE, synaptic_noise=0.0,
