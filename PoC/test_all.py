@@ -70,9 +70,20 @@ def smart_print(lines, similarity_threshold=0.75):
     # Flush remaining
     flush_buffer(buffer)
 
-def run_script(path):
+def get_line_count(filepath):
+    """Returns the number of lines in a file."""
+    try:
+        with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+            return sum(1 for _ in f)
+    except Exception:
+        return 0
+
+def run_script(path, line_count=None):
     print(f"\n{'='*60}")
-    print(f"RUNNING: {os.path.basename(path)}")
+    header = f"RUNNING: {os.path.basename(path)}"
+    if line_count is not None:
+        header += f" ({line_count} lines)"
+    print(header)
     print(f"{'='*60}")
     
     try:
@@ -121,10 +132,21 @@ def main():
         if name not in blacklist:
             targets.append(s)
             
-    print(f"Found {len(targets)} test scripts.")
+    # Calculate line counts and sort
+    targets_with_counts = []
+    for s in targets:
+        count = get_line_count(s)
+        targets_with_counts.append((count, s))
     
-    for script in targets:
-        run_script(script)
+    # Sort by line count (lowest to highest)
+    targets_with_counts.sort(key=lambda x: x[0])
+    
+    print(f"Found {len(targets_with_counts)} scripts to run:")
+    for count, script in targets_with_counts:
+        print(f" - {os.path.basename(script):<40} | {count:4d} lines")
+    
+    for count, script in targets_with_counts:
+        run_script(script, line_count=count)
 
 if __name__ == "__main__":
     main()
