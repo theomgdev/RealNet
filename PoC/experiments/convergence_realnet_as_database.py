@@ -93,11 +93,10 @@ def main():
         output_ids=output_ids,
         device=DEVICE,
         vocab_size=[RAW_INPUT_DIM, DECODED_OUTPUT_DIM],
-        vocab_mode='continuous',
-        dropout_rate=0.0
+        vocab_mode='continuous'
     )
     
-    trainer = RealNetTrainer(model, device=DEVICE, synaptic_noise=0.0,
+    trainer = RealNetTrainer(model, device=DEVICE,
                              chaos_config=ChaosGradConfig.default(lr=1e-3))
 
     print(

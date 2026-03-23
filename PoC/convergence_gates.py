@@ -29,17 +29,16 @@ def main():
     print(f"Neurons: {NUM_NEURONS} (9 Parameters)")
     
     # TINY NETWORK CONFIG:
-    # dropout_rate=0.0 (Every neuron is vital)
+    # (Every neuron is vital)
     model = RealNet(
         num_neurons=NUM_NEURONS, 
         input_ids=INPUT_IDS, 
         output_ids=OUTPUT_ID, 
         pulse_mode=True, 
-        device=DEVICE,
-        dropout_rate=0.0
+        device=DEVICE
     )
 
-    trainer = RealNetTrainer(model, device=DEVICE, synaptic_noise=0.0,
+    trainer = RealNetTrainer(model, device=DEVICE,
                              chaos_config=ChaosGradConfig.tiny_network(lr=0.01))
     
     # XOR Data

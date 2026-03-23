@@ -55,11 +55,10 @@ def main():
         num_neurons=NUM_NEURONS,
         input_ids=[INPUT_ID],
         output_ids=[OUTPUT_ID],
-        device=DEVICE,
-        dropout_rate=0.0 # overfitting to a mental mechanic is desired
+        device=DEVICE
     )
     
-    trainer = RealNetTrainer(model, device=DEVICE, synaptic_noise=0.0,
+    trainer = RealNetTrainer(model, device=DEVICE,
                              chaos_config=ChaosGradConfig.default(lr=1e-3))
     
     print("Training...")

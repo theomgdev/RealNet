@@ -39,7 +39,6 @@ def main():
         output_ids=output_ids,
         device=DEVICE,
         vocab_size=[INPUT_DIM, 10],   # [784, 10] -> Input 784, Output 10
-        dropout_rate=0.0,
         vocab_mode='continuous'       # Uses nn.Linear for projection
     )
     
@@ -47,7 +46,7 @@ def main():
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Total Params: {total_params}")
     
-    trainer = RealNetTrainer(model, device=DEVICE, synaptic_noise=0.0,
+    trainer = RealNetTrainer(model, device=DEVICE,
                              chaos_config=ChaosGradConfig.default(lr=1e-3))
     loss_fn = nn.CrossEntropyLoss()
     trainer.loss_fn = loss_fn

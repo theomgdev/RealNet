@@ -51,8 +51,7 @@ def main():
         output_ids=output_ids,
         device=DEVICE,
         vocab_size=[79, 10],   # [79 pixels -> 3 neurons, 10 neurons -> decoder]
-        vocab_mode='continuous',
-        dropout_rate=0.0
+        vocab_mode='continuous'
     )
     
     # Speed up core with torch.compile if on PyTorch 2.0+

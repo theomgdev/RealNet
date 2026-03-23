@@ -59,11 +59,10 @@ def main():
         num_neurons=NUM_NEURONS,
         input_ids=[INPUT_ID],
         output_ids=[OUTPUT_ID],
-        dropout_rate=0.0, # Arithmetic requires precise memory
         device=DEVICE
     )
     
-    trainer = RealNetTrainer(model, device=DEVICE, synaptic_noise=0.0,
+    trainer = RealNetTrainer(model, device=DEVICE,
                              chaos_config=ChaosGradConfig.default(lr=1e-3))
     
     print(f"Structure: Pulse A at t={DELAY_1}. Pulse B at t={DELAY_2}. Target at t={SEQ_LEN-1}.")

@@ -290,7 +290,6 @@ def initialize_system(vocab_size, num_neurons, device, input_count=-1, output_co
         input_ids=input_ids,
         output_ids=output_ids,
         device=device,
-        dropout_rate=0.0,
         activation=activation,
         weight_init='resonant',
         gradient_checkpointing=True,
@@ -313,7 +312,7 @@ def initialize_system(vocab_size, num_neurons, device, input_count=-1, output_co
 
     trainer = RealNetTrainer(
         model, lr=lr, device=device,
-        gradient_persistence=0.0, synaptic_noise=0,
+        gradient_persistence=0.0,
         chaos_config=ChaosGradConfig.aggressive(lr=lr),
         scheduler_config=sched_config,
     )

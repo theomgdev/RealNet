@@ -53,12 +53,11 @@ def main():
         input_ids=INPUT_IDS,
         output_ids=OUTPUT_IDS,
         pulse_mode=False, # Continuous Control (VCO Mode)
-        dropout_rate=0.0, # No random failures for generator
         device=DEVICE
     )
     
     # Initialize Trainer
-    trainer = RealNetTrainer(model, device=DEVICE, synaptic_noise=0.0,
+    trainer = RealNetTrainer(model, device=DEVICE,
                              chaos_config=ChaosGradConfig.default(lr=5e-5))
     
     print(f"Model: {NUM_NEURONS} Neurons. Thinking for {STEPS} steps.")

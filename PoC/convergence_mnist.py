@@ -42,7 +42,6 @@ def main():
         input_ids=input_ids, 
         output_ids=output_ids, 
         pulse_mode=True, 
-        dropout_rate=0.0, 
         device=DEVICE
     )
     

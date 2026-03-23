@@ -18,16 +18,15 @@ def main():
     OUTPUT_ID = 1
     
     # CRITICAL CONFIG FOR TINY NETWORKS:
-    # dropout_rate=0.0 (Every neuron is vital)
+    # (Every neuron is vital)
     model = RealNet(
         num_neurons=NUM_NEURONS, 
         input_ids=[INPUT_ID], 
         output_ids=[OUTPUT_ID], 
         pulse_mode=True, 
-        dropout_rate=0.0,
         device=DEVICE
     )
-    trainer = RealNetTrainer(model, device=DEVICE, synaptic_noise=0.0,
+    trainer = RealNetTrainer(model, device=DEVICE,
                              chaos_config=ChaosGradConfig.tiny_network(lr=0.01))
     
     # Data
