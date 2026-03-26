@@ -252,7 +252,8 @@ Triggers **Darwinian Regeneration**. Instead of pruning weak weights, this metho
 
 #### `trainer.predict_loss_after(duration_str)`
 Predicts the precise loss value after a specified duration using power-law extrapolation over time.
-*   **Examples**: `"1 hour"`, `"30 mins"`, `"1 day"`.
+*   **Format**: Use single-letter abbreviations: `s` (seconds), `m` (minutes), `h` (hours), `d` (days), `w` (weeks), `M` (months).
+*   **Examples**: `"1h"`, `"30m"`, `"1d"`, `"1w"`, `"1M"`.
 *   **Benefit**: Allows you to instantly estimate how far the training will go over a specific time window without waiting.
 
 #### `trainer.trigger_plateau_escape()`

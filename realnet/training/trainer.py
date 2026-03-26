@@ -592,22 +592,23 @@ class RealNetTrainer:
         if not hasattr(self, '_loss_time_buffer') or len(self._loss_time_buffer) < 5:
             return "Insufficient data for prediction"
             
-        duration_str = str(duration_str).lower()
-        match = re.search(r"([\d.]+)", duration_str)
+        # Simple abbreviation-based parsing (s, m, h, d, w, M)
+        match = re.search(r"([\d.]+)\s*([smhdwM])", str(duration_str))
         if not match:
-            return "Invalid duration format. Use '1 hour', '1 day', etc."
+            return "Invalid format. Use 's', 'm', 'h', 'd', 'w', 'M' (e.g. '1h', '2d')."
             
         val = float(match.group(1))
-        if any(x in duration_str for x in ['h', 'saat', 'hour']):
-            future_dt = val * 3600
-        elif any(x in duration_str for x in ['d', 'gün', 'day']):
-            future_dt = val * 86400
-        elif any(x in duration_str for x in ['w', 'hafta', 'week']):
-            future_dt = val * 86400 * 7
-        elif any(x in duration_str for x in ['m', 'dak', 'min']):
-            future_dt = val * 60
-        else:
-            future_dt = val
+        unit = match.group(2)
+        
+        mapping = {
+            's': 1,
+            'm': 60,
+            'h': 3600,
+            'd': 86400,
+            'w': 604800,
+            'M': 2592000 # 30 days
+        }
+        future_dt = val * mapping.get(unit, 1)
             
         t_arr = np.array([t for t, l in self._loss_time_buffer])
         l_arr = np.array([l for t, l in self._loss_time_buffer])
