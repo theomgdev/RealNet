@@ -270,7 +270,7 @@ def generate(model, tokenizer, start_str="The", length=None, temperature=0.8, to
 
     return tokenizer.decode(input_seq)
 
-def initialize_system(vocab_size, num_neurons, device, input_count=-1, output_count=-1, lr=1e-4, activation=None, weight_init=None):
+def initialize_system(vocab_size, num_neurons, device, input_count=-1, output_count=-1, lr=1e-4, activation=None, weight_init=None, hook=None):
     if input_count == -1:
         input_neuron_count = num_neurons // 2
     else:
@@ -316,6 +316,7 @@ def initialize_system(vocab_size, num_neurons, device, input_count=-1, output_co
         gradient_persistence=0.0,
         chaos_config=ChaosGradConfig.default(lr=lr),
         scheduler_config=sched_config,
+        anomaly_hook=hook
     )
 
     return model, trainer, input_ids, output_ids
@@ -448,8 +449,33 @@ def main():
 
     dataset = TinyStoriesIterableDataset(SEQ_LEN, TOKENIZER, skip_offset=resume_doc_index, debug=False)
 
+    # --- STATE FOR HOOKS ---
+    hook_state = {'increase_count': 0}
+
+    # --- ANOMALY HOOK ---
+    def my_anomaly_hook(anomaly_type, loss_val):
+        if anomaly_type == "plateau":
+            print(f"\n🚨 [ANOMALY HOOK] '{anomaly_type.upper()}' detected! (Loss: {loss_val:.4f})")
+            print("🚨 [ANOMALY HOOK] Activating manual plateau escape to shake things up...")
+            trainer.trigger_plateau_escape()
+            
+        elif anomaly_type == "increase":
+            if NEUROGENESIS_ENABLED:
+                hook_state['increase_count'] += 1
+                if hook_state['increase_count'] >= MAX_LOSS_INCREASE:
+                    print(f"\n🧬 [ANOMALY HOOK] Loss increase limit reached ({MAX_LOSS_INCREASE}). Expanding Network (Neurogenesis)...")
+                    trainer.expand(amount=NEUROGENESIS_AMOUNT)
+                    global NUM_NEURONS
+                    NUM_NEURONS = model.num_neurons
+                    hook_state['increase_count'] = 0
+
     # --- MODEL SETUP ---
-    model, trainer, input_ids, output_ids = initialize_system(VOCAB_SIZE, NUM_NEURONS, DEVICE, input_count=INPUT_NEURON_COUNT, output_count=OUTPUT_NEURON_COUNT, lr=LEARNING_RATE, activation=ACTIVATION, weight_init=WEIGHT_INIT)
+    model, trainer, input_ids, output_ids = initialize_system(
+        VOCAB_SIZE, NUM_NEURONS, DEVICE, 
+        input_count=INPUT_NEURON_COUNT, output_count=OUTPUT_NEURON_COUNT, 
+        lr=LEARNING_RATE, activation=ACTIVATION, weight_init=WEIGHT_INIT,
+        hook=my_anomaly_hook
+    )
     NUM_NEURONS = model.num_neurons
 
     print(f"Input IDs: {input_ids[0]}-{input_ids[-1]}")
@@ -561,8 +587,6 @@ def main():
     print("--- TRAINING LOOP ---")
 
     epoch = start_epoch
-    prev_loss = float('inf')
-    loss_increase_counter = 0
     best_loss = float('inf')
 
     if os.path.exists(CKPT_BEST_PATH):
@@ -572,9 +596,6 @@ def main():
             print(f"🏆 Historical Best Loss: {best_loss:.4f}")
         except:
             pass
-
-    # NOTE: TemporalScheduler is now integrated into the trainer.
-    # It auto-steps inside train_batch(). No manual scheduler needed.
 
     data_iterator = iter(dataloader)
 
@@ -664,6 +685,14 @@ def main():
                 loss_val = loss.item() if isinstance(loss, torch.Tensor) else loss
                 ppl = np.exp(loss_val)
                 print(f"Epoch {epoch} | Batch {batch_idx} | Doc #{current_doc} | Loss {loss:.4f} | PPL {ppl:.2f} | LR {current_lr:.2e}")
+                
+            if batch_idx > 0 and batch_idx % (LOG_INTERVAL * 5) == 0:
+                pred_1h = trainer.predict_loss_after("1 hour")
+                pred_1d = trainer.predict_loss_after("1 day")
+                if isinstance(pred_1h, float):
+                    print(f"   🔮 [PREDICTION] Exp. loss in 1h: {pred_1h:.4f} | 1d: {pred_1d:.4f}")
+                else:
+                    print(f"   🔮 [PREDICTION] {pred_1h}")
 
         avg_loss = total_loss / steps
         avg_loss_val = avg_loss.item() if isinstance(avg_loss, torch.Tensor) else avg_loss
@@ -694,21 +723,6 @@ def main():
             save_checkpoint(model, trainer.optimizer, epoch, avg_loss, CKPT_BEST_PATH, extra_data=ckpt_extra_data)
             print(f"🏆 NEW RECORD! Saved: {CKPT_BEST_PATH} (Loss: {best_loss:.4f})")
 
-        # --- NEUROGENESIS CONTROL ---
-        if NEUROGENESIS_ENABLED:
-            if avg_loss > prev_loss:
-                loss_increase_counter += 1
-                print(f"⚠️ Loss Increased ({loss_increase_counter}/{MAX_LOSS_INCREASE})")
-
-            if loss_increase_counter >= MAX_LOSS_INCREASE:
-                print(f"🧬 Expanding Network (Neurogenesis)...")
-                trainer.expand(amount=NEUROGENESIS_AMOUNT)
-                NUM_NEURONS = model.num_neurons
-                loss_increase_counter = 0
-                prev_loss = float('inf')
-            else:
-                prev_loss = avg_loss
-
         # --- REGENERATION CONTROL (PHOENIX) ---
         if DARWINIAN_REGENERATION and epoch % REGENERATION_INTERVAL == 0:
             print(f"🔥 Phoenix Protocol: Checking for dead synapses...")
@@ -720,7 +734,6 @@ def main():
 
             if revived > 0:
                 print(f"🔥 Reborn: {revived}/{total} ({revived/total:.2%}) synapses regenerated.")
-                prev_loss = float('inf')
 
         epoch += 1
 

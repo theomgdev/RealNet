@@ -112,7 +112,7 @@ class RealNet(nn.Module):
         # Bias Vector
         self.B = nn.Parameter(torch.zeros(num_neurons, device=device))
 
-        # StepNorm (RMSNorm - faster than LayerNorm, used in modern LLMs)
+        # Norm
         self.norm = nn.RMSNorm(num_neurons).to(device)
         
         self.drop = nn.Dropout(p=dropout_rate)
@@ -180,17 +180,15 @@ class RealNet(nn.Module):
             elif strategy == 'one':
                 nn.init.ones_(tensor)
             elif strategy == 'resonant':
-                # Resonant Init — ρ(W) = 1.0 (Edge of Chaos)
                 shape = tensor.shape
                 
-                # Rademacher ±1 skeleton: guarantees excitatory + inhibitory connections
                 signs = torch.randint(0, 2, shape, device=tensor.device).float() * 2.0 - 1.0
-                
-                # Small Gaussian perturbation: breaks ±1 symmetry for gradient differentiation
                 noise = torch.randn(shape, device=tensor.device) * 0.02
                 tensor.copy_(signs + noise)
                 
-                # Spectral scaling: divide by σ_max so ρ(W) = 1.0 exactly
+                if hasattr(self, 'W') and tensor is self.W and tensor.ndim == 2:
+                    tensor.fill_diagonal_(0.0)
+                
                 if tensor.ndim >= 2:
                     mat = tensor.view(tensor.shape[0], -1)
                     try:
@@ -205,32 +203,17 @@ class RealNet(nn.Module):
                 nn.init.uniform_(tensor, -0.1, 0.1)
 
     def regenerate_weak_weights(self, threshold=0.01, percentage=None):
-        """
-        Darwinian Regeneration (Phoenix Protocol).
-        Re-initializes weights based on magnitude.
-        
-        Args:
-            threshold (float): Absolute value usage threshold. (Used if percentage is None)
-            percentage (float): If provided (0.0 < p < 1.0), regenerates the bottom p% of weights.
-                                E.g., 0.05 will regenerate the weakest 5% of connections.
-        """
         with torch.no_grad():
-            # Determine Threshold dynamically if percentage is active
             current_threshold = threshold
             if percentage is not None:
-                # Calculate the quantile value (e.g. the value at 10%)
-                # We use abs() because we care about magnitude strength
                 current_threshold = torch.quantile(torch.abs(self.W), percentage).item()
 
-            # Create a full fresh tensor
             fresh_W = torch.empty_like(self.W)
             self._apply_init(fresh_W, self.weight_init_strategy)
             
-            # Find weak spots
             weak_mask = torch.abs(self.W) < current_threshold
-            weak_mask.fill_diagonal_(False) # The diagonal is dead memory capacity, ignore it
+            weak_mask.fill_diagonal_(False)
             
-            # Transplant fresh cells into weak spots
             count = weak_mask.sum().item()
             if count > 0:
                 self.W.data[weak_mask] = fresh_W[weak_mask]
@@ -241,11 +224,6 @@ class RealNet(nn.Module):
             return total_revived, total_params
             
     def get_num_params(self, only_trainable=True):
-        """
-        Calculates the effective number of parameters.
-        Subtracts the zeroed-out diagonal of the W matrix from the total count
-        since those connections are handled independently by memory_feedback.
-        """
         total = sum(p.numel() for p in self.parameters() if not only_trainable or p.requires_grad)
         if hasattr(self, 'W'):
             total -= self.W.shape[0]
@@ -304,15 +282,12 @@ class RealNet(nn.Module):
         output_pos = cast(torch.Tensor, self.output_pos)
 
         def _single_step(h_t_in, t_idx, x_input_info):
-            # Projection
             signal = F.linear(h_t_in, self.W.t(), self.B)
             
-            # Memory Feedback (Attractor State)
             feedback = h_t_in * self.memory_feedback
             feedback = self.mem_act(feedback)
             signal = signal + feedback
             
-            # Input Injection
             if x_input_info is not None:
                 if isinstance(x_input_info, tuple):
                     if len(x_input_info) == 2 and x_input_info[0] is True:

@@ -44,7 +44,6 @@ class ChaosGrad(torch.optim.Optimizer):
         plateau_patience (int): Steps of no improvement before perturbation. Default: 0 (disabled).
         plateau_noise_scale (float): Scale of perturbation noise on plateau escape. Default: 0.01.
         spectral_clip (float): Max spectral radius for W matrix. Default: 0 (disabled).
-        input_sentinel (bool): Track input gradient health. Default: False.
         adaptive_lr (bool): Enable per-param adaptive LR scaling. Default: True.
         adaptive_lr_clip (tuple): (min, max) multiplier for adaptive LR. Default: (0.1, 10.0).
         grad_centralization (bool): Center gradients by removing mean. Default: True.
@@ -55,7 +54,7 @@ class ChaosGrad(torch.optim.Optimizer):
                  lightweight_lr_mult=2.0, chaos_core_lr_mult=1.0,
                  projection_lr_mult=1.0, memory_lr_mult=1.0,
                  plateau_patience=0, plateau_noise_scale=0.01,
-                 spectral_clip=0.0, input_sentinel=False,
+                 spectral_clip=0.0,
                  adaptive_lr=True, adaptive_lr_clip=(0.1, 10.0),
                  grad_centralization=True):
         
@@ -71,7 +70,6 @@ class ChaosGrad(torch.optim.Optimizer):
             plateau_patience=plateau_patience,
             plateau_noise_scale=plateau_noise_scale,
             spectral_clip=spectral_clip,
-            input_sentinel=input_sentinel,
             adaptive_lr=adaptive_lr,
             adaptive_lr_clip=adaptive_lr_clip,
             grad_centralization=grad_centralization,
@@ -83,10 +81,9 @@ class ChaosGrad(torch.optim.Optimizer):
         self._loss_history = []
         self._plateau_counter = 0
         self._best_loss = float('inf')
-        self._input_grad_health = 1.0  # 0.0 = dead, 1.0 = healthy
         self._spectral_radius = 0.0
         self._last_perturbation_step = -1
-        self._diagnostics = {}
+        self._force_plateau_escape = False
     
     @staticmethod
     def classify_params(model):
@@ -104,9 +101,6 @@ class ChaosGrad(torch.optim.Optimizer):
         projections = []     # Embeddings, projections, decoders
         lightweight = []     # Bias, scale, norm
         
-        # Track for sentinel
-        input_sentinel_params = set()
-        
         for name, param in model.named_parameters():
             if not param.requires_grad:
                 continue
@@ -120,10 +114,6 @@ class ChaosGrad(torch.optim.Optimizer):
             else:
                 # B, input_scale, output_scale, norm.weight, norm.bias
                 lightweight.append(param)
-                
-            # Input-related params for sentinel
-            if any(k in name for k in ['input_scale', 'proj', 'embed']):
-                input_sentinel_params.add(id(param))
         
         groups = []
         
@@ -167,7 +157,7 @@ class ChaosGrad(torch.optim.Optimizer):
                 '_is_lightweight': True,
             })
         
-        return groups, input_sentinel_params
+        return groups
     
     def report_loss(self, loss_value):
         """Report current loss for plateau detection and adaptive behavior."""
@@ -186,15 +176,17 @@ class ChaosGrad(torch.optim.Optimizer):
         else:
             self._plateau_counter += 1
     
+    def trigger_plateau_escape(self):
+        """Manually trigger a plateau escape perturbation in the next step."""
+        self._force_plateau_escape = True
+
     def get_diagnostics(self):
-        """Returns a dict of current optimizer diagnostics."""
+        """Returns minimal optimizer state."""
         return {
             'global_step': self._global_step,
             'plateau_counter': self._plateau_counter,
             'best_loss': self._best_loss,
-            'input_grad_health': self._input_grad_health,
             'spectral_radius': self._spectral_radius,
-            **self._diagnostics,
         }
 
     @torch.no_grad()
@@ -212,22 +204,18 @@ class ChaosGrad(torch.optim.Optimizer):
         plateau_noise = self.defaults.get('plateau_noise_scale', 0.01)
         is_plateau = (plateau_patience > 0 and 
                      self._plateau_counter >= plateau_patience and
-                     self._global_step - self._last_perturbation_step > plateau_patience)
+                     self._global_step - self._last_perturbation_step > plateau_patience) or self._force_plateau_escape
         
         if is_plateau:
             self._last_perturbation_step = self._global_step
             self._plateau_counter = 0
+            self._force_plateau_escape = False
         
         # Adaptive LR settings
         use_adaptive = self.defaults.get('adaptive_lr', True)
         adaptive_clip = self.defaults.get('adaptive_lr_clip', (0.1, 10.0))
         use_centralization = self.defaults.get('grad_centralization', True)
         spectral_clip = self.defaults.get('spectral_clip', 0.0)
-        
-        # Per-group processing
-        total_grad_norm = 0.0
-        input_grad_norm = 0.0
-        total_param_norm = 0.0
         
         for group in self.param_groups:
             is_core = group.get('_is_chaos_core', False)
@@ -279,22 +267,16 @@ class ChaosGrad(torch.optim.Optimizer):
                 state['step'] += 1
                 exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
                 
-                # --- Gradient Centralization ---
-                # Remove mean of gradient (proven to improve convergence)
                 if use_centralization and grad.dim() >= 2:
                     grad = grad - grad.mean(dim=tuple(range(1, grad.dim())), keepdim=True)
                 
-                # --- Plateau Escape (Controlled Perturbation) ---
                 if is_plateau and is_core:
-                    # Inject targeted noise into gradients for the chaos core
                     noise = torch.randn_like(grad) * plateau_noise * grad.abs().mean()
                     grad = grad + noise
                     
-                # Ensure diagonal is strictly zero for core matrix (handled by memory_feedback)
                 if is_core and grad.dim() == 2 and grad.shape[0] == grad.shape[1]:
                     grad.fill_diagonal_(0.0)
                 
-                # --- Decoupled Weight Decay ---
                 if wd > 0:
                     p.data.mul_(1 - base_lr * lr_mult * wd)
                 
@@ -312,50 +294,39 @@ class ChaosGrad(torch.optim.Optimizer):
                 # Step size
                 step_size = base_lr * lr_mult
                 
-                # --- Adaptive LR Scaling ---
                 if use_adaptive:
-                    # Calculate scalar gradient norm for adaptive scaling.
                     current_grad_norm = grad.norm().item()
 
-                    # Retrieve previous gradient norm, converting to scalar if necessary.
                     prev_grad_norm = state.get('prev_grad_norm', 0.0)
                     if not isinstance(prev_grad_norm, float):
                         prev_grad_norm = prev_grad_norm.item()
 
-                    # Calculate gradient consistency ratio
-                    # If gradients oscillate wildly → reduce LR
-                    # If gradients are consistent → maintain/increase LR
                     if prev_grad_norm > 0.0 and current_grad_norm > 0.0:
                         ratio = current_grad_norm / (prev_grad_norm + eps)
 
-                        # Retrieve smoothed gradient variance, converting to scalar if necessary.
                         grad_var = state.get('grad_variance', 1.0)
                         if not isinstance(grad_var, float):
                             grad_var = grad_var.item()
 
-                        # Smooth the ratio (exponential moving average)
                         grad_var = grad_var * 0.99 + ratio * 0.01
 
-                        # Apply smoothed adaptive scaling multiplier to the step size
                         adaptive_mult = 1.0 / (grad_var + eps)
                         adaptive_mult = max(adaptive_clip[0], min(adaptive_clip[1], adaptive_mult))
                         step_size *= adaptive_mult
 
-                        # Update variance tracked state
                         state['grad_variance'] = grad_var
                     
-                    # Update previous norm tracked state
                     state['prev_grad_norm'] = current_grad_norm
                 
-                # --- Parameter Update ---
                 denom = corrected_avg_sq.sqrt().add_(eps)
                 p.data.addcdiv_(corrected_avg, denom, value=-step_size)
                 
+                if is_core and p.dim() == 2 and p.shape[0] == p.shape[1]:
+                    p.data.fill_diagonal_(0.0)
+
                 # --- Spectral Clip for Core Matrix ---
                 if is_core and spectral_clip > 0 and p.dim() == 2:
                     try:
-                        # Efficient spectral norm estimation using power iteration
-                        # Full SVD is too expensive, we estimate the largest singular value
                         u = torch.randn(p.shape[0], 1, device=p.device)
                         for _ in range(3):  # 3 power iterations
                             v = p.t() @ u
@@ -370,35 +341,7 @@ class ChaosGrad(torch.optim.Optimizer):
                     except Exception:
                         pass
                         
-                # Ensure parameter diagonal stays zero unconditionally
-                if is_core and p.dim() == 2 and p.shape[0] == p.shape[1]:
-                    p.data.fill_diagonal_(0.0)
-                
-                # Track gradient norms for diagnostics
-                g_norm = grad.norm().item()
-                total_grad_norm += g_norm
-                total_param_norm += p.norm().item()
-                
-                # Input sentinel tracking
-                if hasattr(self, '_sentinel_params') and id(p) in self._sentinel_params:
-                    input_grad_norm += g_norm
-        
-        # Update diagnostics
-        self._diagnostics['total_grad_norm'] = total_grad_norm
-        self._diagnostics['total_param_norm'] = total_param_norm
-        
-        # Input gradient health calculation
-        if total_grad_norm > 0:
-            self._input_grad_health = min(1.0, input_grad_norm / (total_grad_norm * 0.1 + 1e-12))
-        
-        if is_plateau:
-            self._diagnostics['plateau_escape_triggered'] = self._global_step
-        
         return loss
-    
-    def set_sentinel_params(self, param_ids):
-        """Set parameter IDs to monitor for input gradient health."""
-        self._sentinel_params = param_ids
 
 
 class ChaosGradConfig:
@@ -480,7 +423,6 @@ class ChaosGradConfig:
             plateau_patience=100,
             plateau_noise_scale=0.01,
             spectral_clip=3.0,
-            input_sentinel=True,
             adaptive_lr=True,
             adaptive_lr_clip=(0.1, 5.0),
             grad_centralization=True,

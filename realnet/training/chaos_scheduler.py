@@ -75,9 +75,6 @@ class TemporalScheduler:
         # Phase tracking
         self._phase = 'warmup'  # 'warmup', 'decay', 'restart_boost'
         self._restart_boost_remaining = 0
-        
-        # Convergence rate tracking
-        self._convergence_rate = 0.0  # Negative = improving, Positive = worsening
     
     def get_lr_multiplier(self, step=None):
         """
@@ -152,15 +149,6 @@ class TemporalScheduler:
             else:
                 self._loss_ema = self.loss_smoothing * self._loss_ema + (1 - self.loss_smoothing) * loss_val
             
-            # Track convergence rate
-            if len(self._loss_history) >= 20:
-                recent = self._loss_history[-10:]
-                earlier = self._loss_history[-20:-10]
-                recent_avg = sum(recent) / len(recent)
-                earlier_avg = sum(earlier) / len(earlier)
-                if earlier_avg > 0:
-                    self._convergence_rate = (recent_avg - earlier_avg) / earlier_avg
-            
             # Plateau detection
             if self._loss_ema < self._best_loss_ema * 0.999:
                 self._best_loss_ema = self._loss_ema
@@ -230,13 +218,6 @@ class TemporalScheduler:
         """Returns current training phase."""
         return self._phase
     
-    def get_convergence_rate(self):
-        """
-        Returns convergence rate.
-        Negative = improving (good), Positive = worsening (bad), ~0 = plateau.
-        """
-        return self._convergence_rate
-    
     def get_diagnostics(self):
         """Returns scheduler diagnostics dict."""
         return {
@@ -244,7 +225,6 @@ class TemporalScheduler:
             'phase': self._phase,
             'restart_count': self._restart_count,
             'plateau_counter': self._plateau_counter,
-            'convergence_rate': self._convergence_rate,
             'loss_ema': self._loss_ema,
             'best_loss_ema': self._best_loss_ema,
             'current_lrs': self.get_last_lr(),
@@ -261,7 +241,6 @@ class TemporalScheduler:
             'loss_ema': self._loss_ema,
             'best_loss_ema': self._best_loss_ema,
             'plateau_counter': self._plateau_counter,
-            'convergence_rate': self._convergence_rate,
             'base_lrs': self.base_lrs,
             'max_steps': self.max_steps,
             'restart_boost_remaining': self._restart_boost_remaining,
@@ -277,7 +256,6 @@ class TemporalScheduler:
         self._loss_ema = state_dict.get('loss_ema', None)
         self._best_loss_ema = state_dict.get('best_loss_ema', float('inf'))
         self._plateau_counter = state_dict.get('plateau_counter', 0)
-        self._convergence_rate = state_dict.get('convergence_rate', 0.0)
         self.max_steps = state_dict.get('max_steps', self.max_steps)
         self._restart_boost_remaining = state_dict.get('restart_boost_remaining', 0)
         

@@ -86,11 +86,11 @@ trainer.fit(inputs, inputs, epochs=50)
 
 #### Başlatma Protokolleri
 
-`weight_init='resonant'` tüm ağ boyutları için varsayılan ve önerilen stratejidir. Ağırlık matrisini baştan Kaosun Kıyısına (ρ(W) = 1.0) yerleştirerek manuel ayar gerektirmeden zamansal adımlarda sinyal kalitesini garanti eder.
+`weight_init=['quiet', 'resonant', 'quiet']` varsayılan stratejidir. Kodlayıcı/çözücü (encoder/decoder), çekirdek matris ve bellek geri beslemesi için sırasıyla en uygun başlatmaları sağlar. `'resonant'` gibi tek bir string değer iletilirse, ağ bunu akıllı bir şekilde otomatik olarak genişletir.
 
-*   **Tüm Ağlar (Varsayılan):**
-    *   `weight_init='resonant'` ve `activation='tanh'` kullanın.
-    *   Kutupsal Rademacher iskeleti + ρ = 1.0'a spektral normalizasyon. Küçük mantık kapılarından büyük zamansal ağlara kadar çalışır.
+*   **Tüm Ağlar (Varsayılan Çekirdek):**
+    *   `weight_init='resonant'` ve `activation='tanh'` kullanın. Çekirdek baştan Kaosun Kıyısına (ρ(W) = 1.0) yerleştirilerek, zamansal adımlarda sinyal kalitesi garanti edilir.
+    *   Kutupsal Rademacher iskeleti + ρ = 1.0'a spektral normalizasyon.
 *   **Alternatif — Büyük Ağlar (>10 Nöron):**
     *   `weight_init='orthogonal'` saf kararlılık için sağlam bir geri dönüş seçeneği olarak kalır.
 *   **Alternatif — Küçük Ağlar (<10 Nöron, Mantık Kapıları):**

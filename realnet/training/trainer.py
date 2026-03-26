@@ -2,6 +2,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
+import time
+import math
+import re
 from typing import Any, cast
 from ..utils.data import prepare_input, to_tensor
 
@@ -40,7 +43,8 @@ class RealNetTrainer:
     def __init__(self, model, optimizer=None, loss_fn=None, lr=1e-4, device='cpu',
                  gradient_persistence=0.0, synaptic_noise=0.0,
                  chaos_config=None, scheduler_config=None,
-                 use_chaos_grad=None, use_temporal_scheduler=None):
+                 use_chaos_grad=None, use_temporal_scheduler=None,
+                 anomaly_hook=None):
         """
         Initializes the trainer.
 
@@ -72,8 +76,10 @@ class RealNetTrainer:
         # --- Optimizer Initialization ---
         self._using_chaos_grad = False
         self._chaos_config = chaos_config  # Store for re-use after neurogenesis
-        self._sentinel_param_ids = set()
         self.scheduler = None
+        self.anomaly_hook = anomaly_hook
+        self._start_time_pred = None
+        self._loss_time_buffer = []
 
         if optimizer:
             # User explicitly provided an optimizer — use it directly.
@@ -128,8 +134,7 @@ class RealNetTrainer:
             config['lr'] = lr
 
         # Classify parameters
-        param_groups, sentinel_params = ChaosGrad.classify_params(model)
-        self._sentinel_param_ids = sentinel_params
+        param_groups = ChaosGrad.classify_params(model)
 
         # Apply config to each group while preserving group-specific flags
         for group in param_groups:
@@ -138,7 +143,6 @@ class RealNetTrainer:
                     group[key] = value
 
         self.optimizer = ChaosGrad(param_groups, **config)
-        self.optimizer.set_sentinel_params(sentinel_params)
         self._using_chaos_grad = True
 
         group_info = {g.get('group_name', '?'): len(g['params']) for g in param_groups}
@@ -283,10 +287,13 @@ class RealNetTrainer:
         # Synaptic Noise
         if self.synaptic_noise > 0.0:
             with torch.no_grad():
-                for param in self.model.parameters():
+                for name, param in self.model.named_parameters():
                     if param.requires_grad:
                         noise = torch.randn_like(param) * self.synaptic_noise
                         param.add_(noise)
+                        # Protect the core matrix diagonal from noise injection
+                        if 'W' in name and param.dim() == 2 and param.shape[0] == param.shape[1]:
+                            param.fill_diagonal_(0.0)
 
         # Prepare Data
         # If model has vocab_size, we assume input is Token IDs or Raw Vects for Projection.
@@ -397,6 +404,54 @@ class RealNetTrainer:
         # Step scheduler if active
         if self.scheduler is not None and step_now:
             self.scheduler.step(loss=loss_val)
+
+        # Predictive tracking formulation natively without blocking performance
+        current_time = time.time()
+        if not hasattr(self, '_start_time_pred') or self._start_time_pred is None:
+            self._start_time_pred = current_time
+            self._loss_time_buffer = []
+
+        t_elapsed = current_time - self._start_time_pred
+        # Buffer update rate throttling (max 1 point per second to ensure clear time signals and minimal overhead)
+        if not self._loss_time_buffer or (t_elapsed - self._loss_time_buffer[-1][0] >= 1.0):
+            self._loss_time_buffer.append((t_elapsed, loss_val))
+            if len(self._loss_time_buffer) > 200:
+                self._loss_time_buffer.pop(0)
+
+        # Anomaly Hook (Spikes, Plateaus, Increases) evaluation
+        if getattr(self, 'anomaly_hook', None) is not None:
+            # 1. Step-to-step absolute increase
+            if hasattr(self, '_prev_step_loss'):
+                if loss_val > self._prev_step_loss:
+                    self.anomaly_hook("increase", loss_val)
+            self._prev_step_loss = loss_val
+
+            # 2. Spike Detection
+            if not hasattr(self, '_anomaly_ewma') or self._anomaly_ewma is None:
+                self._anomaly_ewma = loss_val
+                self._anomaly_var = 0.0
+            else:
+                alpha = 0.05
+                diff = loss_val - self._anomaly_ewma
+                self._anomaly_ewma += alpha * diff
+                self._anomaly_var = (1 - alpha) * (self._anomaly_var + alpha * diff ** 2)
+                std = math.sqrt(self._anomaly_var) + 1e-8
+                
+                if diff > 3 * std and loss_val > 1.2 * self._anomaly_ewma:
+                    self.anomaly_hook("spike", loss_val)
+                    self._anomaly_ewma = loss_val 
+                    self._anomaly_var = 0.0
+
+            # Plateau logic on time buffer
+            if len(self._loss_time_buffer) >= 20:
+                recent = [l for t, l in self._loss_time_buffer[-10:]]
+                older = [l for t, l in self._loss_time_buffer[-20:-10]]
+                if sum(recent) / 10 >= (sum(older) / 10) * 0.999: # Stuck or worsening
+                    if not getattr(self, '_plateau_hook_triggered', False):
+                        self.anomaly_hook("plateau", loss_val)
+                        self._plateau_hook_triggered = True
+                else:
+                    self._plateau_hook_triggered = False
 
         if return_state:
             return loss_val, final_state
@@ -517,6 +572,64 @@ class RealNetTrainer:
 
     # --- Diagnostic Methods ---
 
+    def trigger_plateau_escape(self):
+        """Manually triggers plateau escape mechanisms in optimizer and scheduler."""
+        triggered = False
+        if self._using_chaos_grad:
+            self.optimizer.trigger_plateau_escape()
+            triggered = True
+        if self.scheduler:
+            self.scheduler.manual_restart()
+            triggered = True
+        if triggered:
+            print("🚀 Manual plateau escape triggered!")
+
+    def predict_loss_after(self, duration_str):
+        """
+        Predicts the precise loss value after a specified duration using power-law extrapolation.
+        Supports input strings like "1 hour", "30 mins", "1 day".
+        """
+        if not hasattr(self, '_loss_time_buffer') or len(self._loss_time_buffer) < 5:
+            return "Insufficient data for prediction"
+            
+        duration_str = str(duration_str).lower()
+        match = re.search(r"([\d.]+)", duration_str)
+        if not match:
+            return "Invalid duration format. Use '1 hour', '1 day', etc."
+            
+        val = float(match.group(1))
+        if any(x in duration_str for x in ['h', 'saat', 'hour']):
+            future_dt = val * 3600
+        elif any(x in duration_str for x in ['d', 'gün', 'day']):
+            future_dt = val * 86400
+        elif any(x in duration_str for x in ['w', 'hafta', 'week']):
+            future_dt = val * 86400 * 7
+        elif any(x in duration_str for x in ['m', 'dak', 'min']):
+            future_dt = val * 60
+        else:
+            future_dt = val
+            
+        t_arr = np.array([t for t, l in self._loss_time_buffer])
+        l_arr = np.array([l for t, l in self._loss_time_buffer])
+        
+        # Power Law Fit: log(L) = m * log(t + 1) + c
+        log_t = np.log(t_arr + 1.0)
+        log_l = np.log(l_arr + 1e-8)
+        
+        m, c = np.polyfit(log_t, log_l, 1)
+        
+        # Extrapolate
+        current_t = t_arr[-1]
+        target_t = current_t + future_dt
+        
+        if m >= -1e-4:
+             return f"Loss is currently plateaued or increasing (m={m:.4f}). Extrapolation impossible."
+             
+        pred_log_l = m * math.log(target_t + 1.0) + c
+        pred_l = math.exp(pred_log_l)
+        
+        return pred_l
+
     def get_diagnostics(self):
         """
         Returns comprehensive training diagnostics.
@@ -528,7 +641,7 @@ class RealNetTrainer:
             'step_count': self._step_count,
             'last_loss': self._last_loss,
             'using_chaos_grad': self._using_chaos_grad,
-            'current_lr': self.optimizer.param_groups[0]['lr'] if self.optimizer.param_groups else 0,
+            'current_lr': self.optimizer.param_groups[0]['lr'] if getattr(self, 'optimizer', None) and getattr(self.optimizer, 'param_groups', None) else 0,
         }
 
         if self._using_chaos_grad:
@@ -539,29 +652,3 @@ class RealNetTrainer:
             diag['scheduler'] = self.scheduler.get_diagnostics()
 
         return diag
-
-    def get_input_health(self):
-        """
-        Returns input gradient health score (0.0 = dead, 1.0 = healthy).
-
-        Only meaningful when using ChaosGrad with input_sentinel=True.
-        Useful for detecting "input-blind" local minima in large networks
-        where the network learns to generate reasonable outputs from chaos
-        alone, ignoring actual input.
-        """
-        if self._using_chaos_grad:
-            chaos_opt = cast(ChaosGrad, self.optimizer)
-            return chaos_opt._input_grad_health
-        return -1.0  # Not available
-
-    def get_spectral_radius(self):
-        """
-        Returns estimated spectral radius of the core W matrix.
-
-        Only meaningful when using ChaosGrad with spectral_clip > 0.
-        Values > 1.0 indicate potentially chaotic dynamics.
-        """
-        if self._using_chaos_grad:
-            chaos_opt = cast(ChaosGrad, self.optimizer)
-            return chaos_opt._spectral_radius
-        return -1.0  # Not available

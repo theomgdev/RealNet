@@ -149,6 +149,24 @@ if loss > prev_loss:
 
 ---
 
+## 🩺 Diagnostics and Anomaly Interventions
+
+Experiments that run for a long time should handle training stagnation or spikes intelligently without manual restarts.
+You can pass an `anomaly_hook` to the `RealNetTrainer` to automate recovery (e.g., triggering plateau escapes).
+
+```python
+def my_hook(anomaly_type, loss_val):
+    if anomaly_type == "plateau":
+        print("Triggering plateau escape!")
+        trainer.trigger_plateau_escape()
+
+trainer = RealNetTrainer(model, anomaly_hook=my_hook)
+```
+
+**Convergence Estimation:** Use `trainer.predict_loss_after("1 hour")` within your training loop to get a power-law extrapolation of where the loss will land. This prevents wasting time on dead-end runs.
+
+---
+
 ## 🔢 Data Standards
 
 ### 1. Bipolar Logic (-1 vs 1)

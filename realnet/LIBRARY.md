@@ -186,7 +186,8 @@ trainer = RealNetTrainer(
     chaos_config=ChaosGradConfig.conservative(lr=1e-4),       # ChaosGrad Optimizer
     scheduler_config=TemporalSchedulerConfig.adaptive(),  # Adaptive Scheduler
     gradient_persistence=0.0,   # Ghost Gradients (Persistence)
-    synaptic_noise=0.0          # Thermal Noise (Default: 0.0)
+    synaptic_noise=0.0,         # Thermal Noise (Default: 0.0)
+    anomaly_hook=my_hook        # (Optional) Callable triggered on plateaus/spikes
 )
 ```
 
@@ -210,6 +211,11 @@ trainer = RealNetTrainer(
     *   Adds Gaussian noise (std dev = `synaptic_noise`) to all weights *before* every training step.
     *   Simulates biological thermal noise and prevents overfitting (Stochastic Resonance).
     *   **Default:** `0.0` (Enable for regularization, e.g. `1e-6`, on large or overfitting-prone networks).
+*   `anomaly_hook` (Callable, optional): A user-defined function `hook(anomaly_type, loss_val)` triggered automatically when training encounters anomalies. Supported `anomaly_type` values:
+    *   `"spike"`: A sudden, violent surge in loss (e.g., exploded gradient).
+    *   `"increase"`: Triggered *every single time* the current step's loss is strictly greater than the previous step's loss (even by 0.0001). Perfect for custom patience counters or algorithmic early stopping.
+    *   `"plateau"`: The loss has stagnated and is barely moving over a window.
+    *   **Usage**: Allows for smart interventions (like calling `trigger_plateau_escape()` when stuck).
 
 ### Key Methods
 
@@ -244,14 +250,16 @@ Triggers **Darwinian Regeneration**. Instead of pruning weak weights, this metho
 *   **Purpose**: Allows the network to escape local minima and constantly explore new pathways. Transforms "dead" capacity into "fresh" capacity.
 *   **Returns**: `(revived_count, total_synapses)`
 
+#### `trainer.predict_loss_after(duration_str)`
+Predicts the precise loss value after a specified duration using power-law extrapolation over time.
+*   **Examples**: `"1 hour"`, `"30 mins"`, `"1 day"`.
+*   **Benefit**: Allows you to instantly estimate how far the training will go over a specific time window without waiting.
+
+#### `trainer.trigger_plateau_escape()`
+Manually triggers the plateau escape algorithms (noise injection & warm restarts) in both the optimizer and scheduler. Can be tied with the `anomaly_hook`.
+
 #### `trainer.get_diagnostics()`
-Returns comprehensive training diagnostics including optimizer and scheduler health.
-
-#### `trainer.get_input_health()`
-Returns input gradient health score (0.0 = dead, 1.0 = healthy). Detects **input-blind local minima** in large networks.
-
-#### `trainer.get_spectral_radius()`
-Returns estimated spectral radius of the W matrix (chaos engine stability metric).
+Returns training diagnostics including optimizer and scheduler state.
 
 ---
 
@@ -272,7 +280,6 @@ A **RealNet-native optimizer** that understands and exploits the chaos chamber d
 *   **Adaptive LR**: Per-parameter LR scaling based on gradient consistency.
 *   **Plateau Escape**: Controlled gradient perturbation when training stalls.
 *   **Spectral Clipping**: Keeps chaos core's spectral radius bounded (edge-of-chaos control).
-*   **Input Sentinel**: Monitors input gradient health to detect networks that ignore input.
 
 ### Pre-built Configurations
 
@@ -282,7 +289,7 @@ from realnet import ChaosGradConfig
 ChaosGradConfig.conservative(lr=1e-4)  # Conservative balanced (Standard training)
 ChaosGradConfig.default(lr=3e-4)       # Explorer (Fresh/small networks)
 ChaosGradConfig.finetune(lr=1e-5)      # Conservative (Fine-tuning)
-ChaosGradConfig.large_network(lr=1e-4) # Sentinel (1000+ neuron networks)
+ChaosGradConfig.large_network(lr=1e-4) # Robust monitoring (1000+ neuron networks)
 ChaosGradConfig.tiny_network(lr=0.01)  # Minimal (XOR, Identity)
 ```
 
