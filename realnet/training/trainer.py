@@ -4,7 +4,6 @@ import torch.optim as optim
 import numpy as np
 import time
 import math
-import re
 from typing import Any, Callable, cast
 from ..utils.data import prepare_input, to_tensor
 
@@ -585,53 +584,6 @@ class RealNetTrainer:
             triggered = True
         if triggered:
             print("🚀 Manual plateau escape triggered!")
-
-    def predict_loss_after(self, duration_str):
-        """
-        Predicts the precise loss value after a specified duration using power-law extrapolation.
-        Supports input strings like "1 hour", "30 mins", "1 day".
-        """
-        if not hasattr(self, '_loss_time_buffer') or len(self._loss_time_buffer) < 5:
-            return "Insufficient data for prediction"
-            
-        # Simple abbreviation-based parsing (s, m, h, d, w, M)
-        match = re.search(r"([\d.]+)\s*([smhdwM])", str(duration_str))
-        if not match:
-            return "Invalid format. Use 's', 'm', 'h', 'd', 'w', 'M' (e.g. '1h', '2d')."
-            
-        val = float(match.group(1))
-        unit = match.group(2)
-        
-        mapping = {
-            's': 1,
-            'm': 60,
-            'h': 3600,
-            'd': 86400,
-            'w': 604800,
-            'M': 2592000 # 30 days
-        }
-        future_dt = val * mapping.get(unit, 1)
-            
-        t_arr = np.array([t for t, l in self._loss_time_buffer])
-        l_arr = np.array([l for t, l in self._loss_time_buffer])
-        
-        # Power Law Fit: log(L) = m * log(t + 1) + c
-        log_t = np.log(t_arr + 1.0)
-        log_l = np.log(l_arr + 1e-8)
-        
-        m, c = np.polyfit(log_t, log_l, 1)
-        
-        # Extrapolate
-        current_t = t_arr[-1]
-        target_t = current_t + future_dt
-        
-        if m >= -1e-4:
-             return f"Loss is currently plateaued or increasing (m={m:.4f}). Extrapolation impossible."
-             
-        pred_log_l = m * math.log(target_t + 1.0) + c
-        pred_l = math.exp(pred_log_l)
-        
-        return pred_l
 
     def get_diagnostics(self):
         """

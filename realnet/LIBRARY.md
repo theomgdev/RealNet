@@ -250,12 +250,6 @@ Triggers **Darwinian Regeneration**. Instead of pruning weak weights, this metho
 *   **Purpose**: Allows the network to escape local minima and constantly explore new pathways. Transforms "dead" capacity into "fresh" capacity.
 *   **Returns**: `(revived_count, total_synapses)`
 
-#### `trainer.predict_loss_after(duration_str)`
-Predicts the precise loss value after a specified duration using power-law extrapolation over time.
-*   **Format**: Use single-letter abbreviations: `s` (seconds), `m` (minutes), `h` (hours), `d` (days), `w` (weeks), `M` (months).
-*   **Examples**: `"1h"`, `"30m"`, `"1d"`, `"1w"`, `"1M"`.
-*   **Benefit**: Allows you to instantly estimate how far the training will go over a specific time window without waiting.
-
 #### `trainer.trigger_plateau_escape()`
 Manually triggers the plateau escape algorithms (noise injection & warm restarts) in both the optimizer and scheduler. Can be tied with the `anomaly_hook`.
 

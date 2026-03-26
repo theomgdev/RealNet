@@ -163,8 +163,6 @@ def my_hook(anomaly_type, loss_val):
 trainer = RealNetTrainer(model, anomaly_hook=my_hook)
 ```
 
-**Convergence Estimation:** Use `trainer.predict_loss_after("1h")` within your training loop to get a power-law extrapolation of where the loss will land. This prevents wasting time on dead-end runs.
-
 ---
 
 ## 🔢 Data Standards

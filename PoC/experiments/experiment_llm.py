@@ -686,14 +686,6 @@ def main():
                 ppl = np.exp(loss_val)
                 print(f"Epoch {epoch} | Batch {batch_idx} | Doc #{current_doc} | Loss {loss:.4f} | PPL {ppl:.2f} | LR {current_lr:.2e}")
                 
-            if batch_idx > 0 and batch_idx % (LOG_INTERVAL * 5) == 0:
-                pred_1h = trainer.predict_loss_after("1 hour")
-                pred_1d = trainer.predict_loss_after("1 day")
-                if isinstance(pred_1h, float):
-                    print(f"   🔮 [PREDICTION] Exp. loss in 1h: {pred_1h:.4f} | 1d: {pred_1d:.4f}")
-                else:
-                    print(f"   🔮 [PREDICTION] {pred_1h}")
-
         avg_loss = total_loss / steps
         avg_loss_val = avg_loss.item() if isinstance(avg_loss, torch.Tensor) else avg_loss
         avg_ppl = np.exp(avg_loss_val)
