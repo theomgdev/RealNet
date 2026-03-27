@@ -43,7 +43,7 @@ def main():
     )
     
     # Calculate Params
-    total_params = model.get_num_params(only_trainable=False)
+    total_params = model.get_num_params()
     print(f"Total Params: {total_params}")
     
     trainer = RealNetTrainer(model, device=DEVICE,

@@ -7,11 +7,12 @@ parameters in a chaos chamber:
 
 1. W (Core Matrix): The chaos engine. Needs careful spectral management.
 2. Embeddings/Projections: Standard LLM-style parameters.
-3. Bias/Scale/Norm: Lightweight params that should train faster.
+3. Gates: Parametric gate controls for branch-wise signal modulation.
+4. Bias/Scale/Norm: Lightweight params that should train faster.
 
 Key Features:
 - Per-parameter adaptive learning rates based on gradient health
-- Input-gradient sentinel to detect "input-blind" local minima
+- Input-gradient monitoring to detect "input-blind" local minima
 - Spectral radius awareness for edge-of-chaos control
 - Plateau escape via controlled gradient perturbation
 - Decoupled weight decay for different parameter groups
@@ -29,7 +30,7 @@ class ChaosGrad(torch.optim.Optimizer):
     - Separate momentum/LR for chaos core (W) vs projections vs lightweight params
     - Gradient health monitoring with per-param adaptive LR
     - Plateau detection and escape via controlled perturbation
-    - Input gradient sentinel for detecting vanishing input gradients
+    - Input gradient monitoring for detecting vanishing input gradients
     
     Args:
         params: Iterable of parameters or parameter groups.
@@ -38,9 +39,11 @@ class ChaosGrad(torch.optim.Optimizer):
         eps (float): Numerical stability. Default: 1e-8.
         weight_decay (float): Weight decay for chaos core. Default: 0.01.
         projection_decay (float): Weight decay for projections/embeddings. Default: 0.01.
+        gate_decay (float): Weight decay for gate parameters. Default: 0.0.
         lightweight_lr_mult (float): LR multiplier for bias/scale/norm params. Default: 2.0.
         chaos_core_lr_mult (float): LR multiplier for core W matrix. Default: 1.0.
         projection_lr_mult (float): LR multiplier for projection layers. Default: 1.0.
+        gate_lr_mult (float): LR multiplier for gate parameters. Default: 1.0.
         plateau_patience (int): Steps of no improvement before perturbation. Default: 0 (disabled).
         plateau_noise_scale (float): Scale of perturbation noise on plateau escape. Default: 0.01.
         spectral_clip (float): Max spectral radius for W matrix. Default: 0 (disabled).
@@ -50,9 +53,9 @@ class ChaosGrad(torch.optim.Optimizer):
     """
     
     def __init__(self, params, lr=1e-4, betas=(0.9, 0.999), eps=1e-8,
-                 weight_decay=0.01, projection_decay=0.01, memory_decay=0.0,
+                 weight_decay=0.01, projection_decay=0.01, memory_decay=0.0, gate_decay=0.0,
                  lightweight_lr_mult=2.0, chaos_core_lr_mult=1.0,
-                 projection_lr_mult=1.0, memory_lr_mult=1.0,
+                 projection_lr_mult=1.0, memory_lr_mult=1.0, gate_lr_mult=1.0,
                  plateau_patience=0, plateau_noise_scale=0.01,
                  spectral_clip=0.0,
                  adaptive_lr=True, adaptive_lr_clip=(0.1, 10.0),
@@ -63,10 +66,12 @@ class ChaosGrad(torch.optim.Optimizer):
             weight_decay=weight_decay,
             projection_decay=projection_decay,
             memory_decay=memory_decay,
+            gate_decay=gate_decay,
             lightweight_lr_mult=lightweight_lr_mult,
             chaos_core_lr_mult=chaos_core_lr_mult,
             projection_lr_mult=projection_lr_mult,
             memory_lr_mult=memory_lr_mult,
+            gate_lr_mult=gate_lr_mult,
             plateau_patience=plateau_patience,
             plateau_noise_scale=plateau_noise_scale,
             spectral_clip=spectral_clip,
@@ -93,24 +98,33 @@ class ChaosGrad(torch.optim.Optimizer):
         
         Groups:
         1. chaos_core: W matrix (the NxN core)
-        2. projections: Embedding, Linear projection, Output decoder
-        3. lightweight: Bias, Scale, Norm parameters
+        2. memory_feedback: memory_feedback (self-connections)
+        3. projections: Embedding, Linear projection, Output decoder
+        4. gates: input/output/core/memory gate parameters
+        5. lightweight: Bias, Scale, Norm parameters
         """
         chaos_core = []      # W matrix (cross connections)
         memory_feedback = [] # memory_feedback (self connections)
         projections = []     # Embeddings, projections, decoders
+        gates = []           # Parametric gate vectors
         lightweight = []     # Bias, scale, norm
         
         for name, param in model.named_parameters():
             if not param.requires_grad:
                 continue
+
+            # Torch wrappers (e.g. torch.compile, DDP) often prefix names
+            # like "_orig_mod." or "module.". Use leaf names for exact groups.
+            leaf_name = name.split('.')[-1]
                 
-            if name == 'W':
+            if leaf_name == 'W':
                 chaos_core.append(param)
-            elif name == 'memory_feedback':
+            elif leaf_name == 'memory_feedback':
                 memory_feedback.append(param)
             elif any(k in name for k in ['embed', 'proj', 'output_decoder']):
                 projections.append(param)
+            elif leaf_name in {'input_gate', 'output_gate', 'core_gate', 'memory_gate'}:
+                gates.append(param)
             else:
                 # B, input_scale, output_scale, norm.weight, norm.bias
                 lightweight.append(param)
@@ -124,6 +138,7 @@ class ChaosGrad(torch.optim.Optimizer):
                 '_is_chaos_core': True,
                 '_is_memory_feedback': False,
                 '_is_projection': False,
+                '_is_gate': False,
                 '_is_lightweight': False,
             })
             
@@ -134,6 +149,7 @@ class ChaosGrad(torch.optim.Optimizer):
                 '_is_chaos_core': False,
                 '_is_memory_feedback': True,
                 '_is_projection': False,
+                '_is_gate': False,
                 '_is_lightweight': False,
             })
             
@@ -144,6 +160,18 @@ class ChaosGrad(torch.optim.Optimizer):
                 '_is_chaos_core': False,
                 '_is_memory_feedback': False,
                 '_is_projection': True,
+                '_is_gate': False,
+                '_is_lightweight': False,
+            })
+
+        if gates:
+            groups.append({
+                'params': gates,
+                'group_name': 'gates',
+                '_is_chaos_core': False,
+                '_is_memory_feedback': False,
+                '_is_projection': False,
+                '_is_gate': True,
                 '_is_lightweight': False,
             })
             
@@ -154,6 +182,7 @@ class ChaosGrad(torch.optim.Optimizer):
                 '_is_chaos_core': False,
                 '_is_memory_feedback': False,
                 '_is_projection': False,
+                '_is_gate': False,
                 '_is_lightweight': True,
             })
         
@@ -221,6 +250,7 @@ class ChaosGrad(torch.optim.Optimizer):
             is_core = group.get('_is_chaos_core', False)
             is_memory = group.get('_is_memory_feedback', False)
             is_proj = group.get('_is_projection', False)
+            is_gate = group.get('_is_gate', False)
             is_light = group.get('_is_lightweight', False)
             
             # Select appropriate LR multiplier
@@ -233,6 +263,9 @@ class ChaosGrad(torch.optim.Optimizer):
             elif is_proj:
                 lr_mult = self.defaults['projection_lr_mult']
                 wd = self.defaults['projection_decay']
+            elif is_gate:
+                lr_mult = self.defaults['gate_lr_mult']
+                wd = self.defaults['gate_decay']
             elif is_light:
                 lr_mult = self.defaults['lightweight_lr_mult']
                 wd = 0.0  # No decay for bias/scale/norm
@@ -358,10 +391,12 @@ class ChaosGradConfig:
             weight_decay=0.01,
             projection_decay=0.01,
             memory_decay=0.0,
+            gate_decay=0.0,
             lightweight_lr_mult=2.0,
             chaos_core_lr_mult=1.0,
             projection_lr_mult=1.0,
             memory_lr_mult=1.0,
+            gate_lr_mult=1.0,
             adaptive_lr=True,
             grad_centralization=True,
         )
@@ -375,10 +410,12 @@ class ChaosGradConfig:
             weight_decay=0.001,
             projection_decay=0.001,
             memory_decay=0.0,
+            gate_decay=0.0,
             lightweight_lr_mult=3.0,
             chaos_core_lr_mult=1.5,
             projection_lr_mult=1.2,
             memory_lr_mult=1.0,
+            gate_lr_mult=1.0,
             plateau_patience=50,
             plateau_noise_scale=0.02,
             adaptive_lr=True,
@@ -395,10 +432,12 @@ class ChaosGradConfig:
             weight_decay=0.01,
             projection_decay=0.005,
             memory_decay=0.0,
+            gate_decay=0.0,
             lightweight_lr_mult=1.0,
             chaos_core_lr_mult=0.5,
             projection_lr_mult=0.8,
             memory_lr_mult=0.8,
+            gate_lr_mult=0.8,
             adaptive_lr=True,
             adaptive_lr_clip=(0.5, 2.0),
             grad_centralization=False,
@@ -416,10 +455,12 @@ class ChaosGradConfig:
             weight_decay=0.01,
             projection_decay=0.01,
             memory_decay=0.001,
+            gate_decay=0.0,
             lightweight_lr_mult=3.0,
             chaos_core_lr_mult=0.8,
             projection_lr_mult=1.5,
             memory_lr_mult=1.0,
+            gate_lr_mult=1.0,
             plateau_patience=100,
             plateau_noise_scale=0.01,
             spectral_clip=3.0,
@@ -437,10 +478,12 @@ class ChaosGradConfig:
             weight_decay=0.0,
             projection_decay=0.0,
             memory_decay=0.0,
+            gate_decay=0.0,
             lightweight_lr_mult=1.0,
             chaos_core_lr_mult=1.0,
             projection_lr_mult=1.0,
             memory_lr_mult=1.0,
+            gate_lr_mult=1.0,
             adaptive_lr=False,
             grad_centralization=False,
         )

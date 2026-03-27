@@ -26,7 +26,10 @@ model = RealNet(
     output_ids=[9], 
     pulse_mode=True, 
     dropout_rate=0.0, 
-    device='cuda'
+    device='cuda',
+    weight_init=['quiet', 'resonant', 'quiet', 'zero'],
+    activation=['none', 'tanh', 'tanh', 'none'],
+    gate=None,           # Default resolves to ['none', 'none', 'identity']
     vocab_size=None,     # Optional: Decouples input/output size from neurons
     vocab_mode='hybrid'  # 'hybrid', 'discrete', or 'continuous'
 )
@@ -41,7 +44,7 @@ model = RealNet(
     *   `False`: Input is applied continuously at every step (Stream).
 *   `dropout_rate` (float): Probability of synaptic failure during training (Biological simulation).
 *   `device` (str): 'cpu' or 'cuda'.
-*   `weight_init` (str or list[str]): Initialization strategy. Default is `['quiet', 'resonant', 'quiet']` (Encoder/Decoder, Core, Memory). If a single string is provided, it applies to the core and expands sensibly to other components.
+*   `weight_init` (str or list[str]): Initialization strategy. Default is `['quiet', 'resonant', 'quiet', 'zero']` (Encoder/Decoder, Core, Memory, Gates). If a list is provided, it can contain 1 to 4 entries and missing entries are filled from defaults. A single string still applies to the core and expands sensibly (`'resonant'` keeps encoder/decoder at `'quiet'`).
     *   `'resonant'` **(Default Core)**: Edge-of-Chaos initialization. Builds a bipolar weight skeleton (Rademacher ±1 signs), adds small Gaussian noise (std=0.02) for symmetry breaking, then scales the matrix so its spectral radius ρ(W) = 1.0 exactly. This guarantees that signals neither explode nor vanish across temporal steps while maintaining both excitatory and inhibitory connections for gate emergence.
     *   `'orthogonal'`: Orthogonal matrix — great stability for large networks.
     *   `'xavier_uniform'` / `'xavier_normal'`: Xavier-scaled (good for small logic networks).
@@ -50,7 +53,7 @@ model = RealNet(
     *   `'micro_quiet'`: Normal(0, 1e-6) — near-zero start.
     *   `'sparse'`: 90% sparse with std=0.02.
     *   `'zero'`, `'one'`, `'classic'`: Special cases.
-*   `activation` (str or list[str]): Activation function used in the model (`'tanh'`, `'relu'`, `'sigmoid'`, `'gelu'`, `'gelu_tanh'`, `'silu'`, `'none'`). Can be a single string for all, or a list `[encoder_decoder, core, memory]`. Default is `['none', 'tanh', 'none']`.
+*   `activation` (str or list[str]): Activation function used in the model (`'tanh'`, `'relu'`, `'leaky_relu'`, `'sigmoid'`, `'gelu'`, `'gelu_tanh'`, `'silu'`, `'none'`, `'identity'`). Can be a single string for the core path, or a list with 1 to 4 entries. Logical order is `[encoder_decoder, core, memory, gate_hint]`; missing entries are filled from defaults. Default is `['none', 'tanh', 'tanh', 'none']`. The 4th entry is reserved for config symmetry and does not drive gate behavior.
 *   `vocab_size` (int or list/tuple, optional): Size of the input/output vocabulary. 
     *   **Symmetric**: `vocab_size=50257` (GPT-2 style).
     *   **Asymmetric**: `vocab_size=[v_in, v_out]` (e.g., `[784, 10]` for MNIST to map 784 pixels to 10 classes).
@@ -61,6 +64,13 @@ model = RealNet(
     *   `'continuous'`: Init only Projection (Saves VRAM if only float vectors are used).
 *   `tie_embeddings` (bool): 
     *   If `True`, ties the input embedding weights to the output decoder weights, saving significant VRAM and parameter count (Symmetric `vocab_size` only). Default is `False`.
+*   `gate` (None, str, or list[str]): Optional parametric gating. Default is `None`, which resolves to `['none', 'none', 'identity']`.
+    *   `None`: Uses default branch layout (encoder/decoder off, core off, memory identity gate on).
+    *   `str` (e.g. `'sigmoid'`): Applies the same gate activation to all gate branches.
+    *   `list[str]`: Up to 3 entries in `[encoder_decoder, core, memory]` order; missing entries are filled from defaults.
+    *   `'none'`: Disables the corresponding gate branch.
+    *   `'identity'`: Explicit identity gate branch (learnable parameter still exists, unlike `'none'`).
+    *   Gate parameters are initialized with the 4th `weight_init` entry.
 
 ### Vocabulary Decoupling
 
@@ -142,7 +152,7 @@ output = model(tokens, steps=640)
 
 ### Key Methods
 
-#### `model.get_num_params(only_trainable=True)`
+#### `model.get_num_params()`
 Returns the **effective** parameter count of the network. It accounts for the `memory_feedback` separation by properly discounting the inactive diagonal of the `W` matrix to give you a true representation of learning capacity.
 
 #### `model.compile()`
@@ -268,6 +278,7 @@ A **RealNet-native optimizer** that understands and exploits the chaos chamber d
 | **chaos_core** | W matrix (cross-connections) | Spectral monitoring, adaptive LR, plateau escape |
 | **memory_feedback** | Neuron self-connections | Independent LR and ultra-low decay to preserve temporal memories |
 | **projections** | Embeddings, Projections, Decoder | Standard LR with configurable decay |
+| **gates** | input_gate, output_gate, core_gate, memory_gate | Dedicated LR/decay controls for branch-wise gating |
 | **lightweight** | Bias, Scale, Norm | Higher LR, no weight decay |
 
 ### Key Features
@@ -275,6 +286,7 @@ A **RealNet-native optimizer** that understands and exploits the chaos chamber d
 *   **Adaptive LR**: Per-parameter LR scaling based on gradient consistency.
 *   **Plateau Escape**: Controlled gradient perturbation when training stalls.
 *   **Spectral Clipping**: Keeps chaos core's spectral radius bounded (edge-of-chaos control).
+*   **Gate-Aware Controls**: `gate_lr_mult` and `gate_decay` tune gate dynamics independently from memory/projection groups.
 
 ### Pre-built Configurations
 
@@ -286,6 +298,11 @@ ChaosGradConfig.default(lr=3e-4)       # Explorer (Fresh/small networks)
 ChaosGradConfig.finetune(lr=1e-5)      # Conservative (Fine-tuning)
 ChaosGradConfig.large_network(lr=1e-4) # Robust monitoring (1000+ neuron networks)
 ChaosGradConfig.tiny_network(lr=0.01)  # Minimal (XOR, Identity)
+
+# Gate-specific override example
+cfg = ChaosGradConfig.default(lr=3e-4)
+cfg['gate_lr_mult'] = 1.2
+cfg['gate_decay'] = 0.0
 ```
 
 ### Direct Usage
@@ -294,9 +311,8 @@ ChaosGradConfig.tiny_network(lr=0.01)  # Minimal (XOR, Identity)
 from realnet import ChaosGrad
 
 # Classify parameters and create optimizer manually
-param_groups, sentinel_ids = ChaosGrad.classify_params(model)
+param_groups = ChaosGrad.classify_params(model)
 optimizer = ChaosGrad(param_groups, lr=1e-4, plateau_patience=100)
-optimizer.set_sentinel_params(sentinel_ids)
 
 # Report loss for plateau detection
 optimizer.report_loss(loss_value)
@@ -473,7 +489,7 @@ This module manages model serialization and the transdimensional weight transpla
 ### Example 1: XOR Logic
 ```python
 # 2 Inputs, 1 Output. 0 Hidden Layers.
-model = RealNet(3, [0, 1], [2], device='cuda')
+model = RealNet(num_neurons=3, input_ids=[0, 1], output_ids=[2], device='cuda')
 trainer = RealNetTrainer(model, gradient_persistence=0.1)
 
 # Training logic...

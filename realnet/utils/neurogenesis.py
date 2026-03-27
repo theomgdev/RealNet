@@ -47,7 +47,7 @@ class Neurogenesis:
             torch.optim.Optimizer: The new optimizer instance.
         """
         if verbose:
-            print(f"\n🌱 Neurogenesis: Growing Network {model.num_neurons} -> {model.num_neurons + amount} Neurons")
+            print(f"\nNeurogenesis: Growing Network {model.num_neurons} -> {model.num_neurons + amount} Neurons")
         
         old_n = model.num_neurons
         new_n = old_n + amount
@@ -64,6 +64,13 @@ class Neurogenesis:
         
         old_input_scale = model.input_scale
         old_output_scale = model.output_scale
+
+        # Optional gate parameters (present when gate branch is enabled)
+        old_input_gate_param = getattr(model, 'input_gate', None)
+        old_output_gate_param = getattr(model, 'output_gate', None)
+        old_core_gate_param = getattr(model, 'core_gate', None)
+        old_memory_gate_param = getattr(model, 'memory_gate', None)
+        gate_init_strategy = getattr(model, 'gate_weight_init', 'zero')
         
         # Explicitly preserve ID lists (vital for offsets)
         old_input_ids = list(model.input_ids)
@@ -80,6 +87,7 @@ class Neurogenesis:
         new_W[:old_n, old_n:] = torch.randn(old_n, amount, device=device) * noise_std
         new_W[old_n:, :old_n] = torch.randn(amount, old_n, device=device) * noise_std
         new_W[old_n:, old_n:] = torch.randn(amount, amount, device=device) * noise_std
+        new_W.fill_diagonal_(0.0)
         
         # Expand B
         new_B = torch.zeros(new_n, device=device)
@@ -116,6 +124,14 @@ class Neurogenesis:
         model.W = nn.Parameter(new_W)
         model.B = nn.Parameter(new_B)
         model.memory_feedback = nn.Parameter(new_memory)
+
+        # Preserve W diagonal constraints after replacing parameter
+        with torch.no_grad():
+            model.W.fill_diagonal_(0.0)
+
+        def _zero_diagonal_grad(grad):
+            return grad.clone().fill_diagonal_(0.0)
+        model.W.register_hook(_zero_diagonal_grad)
         
         # StepNorm
         model.norm = new_norm
@@ -123,6 +139,48 @@ class Neurogenesis:
         # Scaling params
         model.input_scale = nn.Parameter(old_input_scale.data)
         model.output_scale = nn.Parameter(old_output_scale.data)
+
+        # Recreate gate params so optimizer can safely rebind state.
+        if isinstance(old_input_gate_param, nn.Parameter):
+            model.input_gate = nn.Parameter(old_input_gate_param.data.clone())
+        else:
+            model.input_gate = None
+
+        if isinstance(old_output_gate_param, nn.Parameter):
+            model.output_gate = nn.Parameter(old_output_gate_param.data.clone())
+        else:
+            model.output_gate = None
+
+        if isinstance(old_core_gate_param, nn.Parameter):
+            new_core_gate = torch.empty(new_n, device=device)
+            new_core_gate[:old_n] = old_core_gate_param.data
+            if amount > 0:
+                tail = torch.empty(amount, device=device)
+                if hasattr(model, '_apply_init'):
+                    model._apply_init(tail, gate_init_strategy)
+                else:
+                    nn.init.zeros_(tail)
+                new_core_gate[old_n:] = tail
+            model.core_gate = nn.Parameter(new_core_gate)
+        else:
+            model.core_gate = None
+
+        if isinstance(old_memory_gate_param, nn.Parameter):
+            new_memory_gate = torch.empty(new_n, device=device)
+            new_memory_gate[:old_n] = old_memory_gate_param.data
+            if amount > 0:
+                tail = torch.empty(amount, device=device)
+                if hasattr(model, '_apply_init'):
+                    model._apply_init(tail, gate_init_strategy)
+                else:
+                    nn.init.zeros_(tail)
+                new_memory_gate[old_n:] = tail
+            model.memory_gate = nn.Parameter(new_memory_gate)
+        else:
+            model.memory_gate = None
+
+        if hasattr(model, '_cached_scaled_input'):
+            delattr(model, '_cached_scaled_input')
         
         # Re-bind IDs and update buffers
         model.input_ids = old_input_ids
@@ -164,7 +222,7 @@ class Neurogenesis:
                 )
 
         except Exception as e:
-            print(f"⚠️ Optimizer re-init failed: {e}. Falling back to standard AdamW.")
+            print(f"WARNING: Optimizer re-init failed: {e}. Falling back to standard AdamW.")
             new_opt = torch.optim.AdamW(model.parameters(), lr=group.get('lr', 0.001))
 
         # Migrate internal optimizer state
@@ -223,7 +281,7 @@ class Neurogenesis:
                 is_bnb = True
         
         if is_bnb:
-             print("   👉 BNB Optimizer Detected. Skipping State Transfer (Cold Restart) to avoid quantization explosion.")
+               print("   INFO: BNB optimizer detected. Skipping state transfer (cold restart) to avoid quantization issues.")
         else:
             try:
                 transfer_state(old_W_param, model.W, is_matrix=True)
@@ -237,6 +295,15 @@ class Neurogenesis:
                 
                 transfer_state(old_input_scale, model.input_scale, is_matrix=False)
                 transfer_state(old_output_scale, model.output_scale, is_matrix=False)
+
+                if isinstance(old_input_gate_param, nn.Parameter) and isinstance(getattr(model, 'input_gate', None), nn.Parameter):
+                    transfer_state(old_input_gate_param, model.input_gate, is_matrix=False)
+                if isinstance(old_output_gate_param, nn.Parameter) and isinstance(getattr(model, 'output_gate', None), nn.Parameter):
+                    transfer_state(old_output_gate_param, model.output_gate, is_matrix=False)
+                if isinstance(old_core_gate_param, nn.Parameter) and isinstance(getattr(model, 'core_gate', None), nn.Parameter):
+                    transfer_state(old_core_gate_param, model.core_gate, is_matrix=False)
+                if isinstance(old_memory_gate_param, nn.Parameter) and isinstance(getattr(model, 'memory_gate', None), nn.Parameter):
+                    transfer_state(old_memory_gate_param, model.memory_gate, is_matrix=False)
                 
                 # Transfer Vocab Layers State (Shapes are constant during Neurogenesis)
                 if hasattr(model, 'embed') and model.embed is not None:
@@ -248,9 +315,9 @@ class Neurogenesis:
                 if hasattr(model, 'output_decoder') and model.output_decoder is not None:
                      transfer_state(model.output_decoder.weight, model.output_decoder.weight, is_matrix=True)
                 
-                print("   ✅ Optimizer State Transferred (Momentum Preserved)")
+                print("   OK: Optimizer state transferred (momentum preserved)")
             except Exception as e:
-                print(f"   ⚠️ Optimizer State Transfer Failed ({e}). Performing Cold Restart.")
+                print(f"   WARNING: Optimizer state transfer failed ({e}). Performing cold restart.")
 
         # Cleanup
         del old_W_param
@@ -261,12 +328,16 @@ class Neurogenesis:
         del old_opt
         del old_input_scale
         del old_output_scale
+        del old_input_gate_param
+        del old_output_gate_param
+        del old_core_gate_param
+        del old_memory_gate_param
         
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             
         if verbose:
-            print(f"✅ Neurogenesis Complete. Optimizer Migrated. New Size: {new_n}. VRAM Cleared.")
+            print(f"Neurogenesis complete. Optimizer migrated. New size: {new_n}. VRAM cleared.")
             
         return new_opt

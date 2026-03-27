@@ -15,7 +15,7 @@ RealNet achieves its efficiency through **Space-Time Trade-off**. Instead of add
 
 > 🏆 **WORLD RECORD: Parametric Intelligence Density**
 >
-> RealNet 2.0 achieved **89.5% accuracy** on MNIST with only **470 parameters**. This is **110x more efficient** than the legendary LeNet-5, bridging the gap between artificial networks and **Entropic Compression Limits**. 
+> RealNet 2.0 achieved **89.5% accuracy** on MNIST with only **480 parameters**. This is **110x more efficient** than the legendary LeNet-5, bridging the gap between artificial networks and **Entropic Compression Limits**. 
 
 ---
 
@@ -37,7 +37,7 @@ In these tests, the Input Layer is directly connected to the Output Layer (and i
 | **XOR** | Needs Hidden Layer | **Chaos Gate** (Time-folded) | **Solved (3 Neurons)** | `convergence_gates.py` |
 | **MNIST** | Needs Hidden Layer | **Zero-Hidden** | **Acc: 96.2%** | `convergence_mnist.py` |
 | **MNIST (8k)**| Needs Hidden Layer | **Embedded Challenge** | **Acc: 93.6%** | `convergence_mnist_embed.py` |
-| **MNIST (Record)**| Needs Hidden Layer | **The 470-Param Record** | **Acc: 89.5%** | `convergence_mnist_record.py` |
+| **MNIST (Record)**| Needs Hidden Layer | **The 480-Param Record** | **Acc: 89.5%** | `convergence_mnist_record.py` |
 | **Sine Wave** | Needs Oscillator | **Programmable VCO** | **Perfect Sync** | `convergence_sine_wave.py` |
 | **Latch** | Needs LSTM | **Attractor Basin** (Willpower) | **Infinite Hold** | `convergence_latch.py` |
 | **Stopwatch**| Needs Clock | **Internal Rhythm** | **Error: 0** | `convergence_stopwatch.py` |
@@ -86,7 +86,11 @@ trainer.fit(inputs, inputs, epochs=50)
 
 #### Initialization Protocols
 
-`weight_init=['quiet', 'resonant', 'quiet']` is the default strategy. It provides optimal initializations for the encoder/decoder, core matrix, and memory feedback respectively. If a single string like `'resonant'` is passed, the network automatically expands it intelligently.
+`weight_init=['quiet', 'resonant', 'quiet', 'zero']` is the default strategy. It provides optimal initializations for encoder/decoder, core matrix, memory feedback, and gate parameters respectively. If a single string like `'resonant'` is passed, the network automatically expands it intelligently.
+
+`activation=['none', 'tanh', 'tanh', 'none']` is the default activation layout. The first 3 entries map to encoder/decoder, core, and memory paths. The 4th activation slot is reserved for config symmetry.
+
+`gate=None` now resolves to the default gate layout `['none', 'none', 'identity']` (encoder/decoder off, core off, memory identity gate on). You can pass `gate='sigmoid'` to gate all branches, a short list like `['none', 'none', 'sigmoid']` to gate only memory with sigmoid, or `['none', 'none', 'none']` to disable all gating.
 
 *   **All Networks (Default Core):**
     *   Use `weight_init='resonant'` and `activation='tanh'`. The core will be placed at the Edge of Chaos (ρ(W) = 1.0) from the start, ensuring signal fidelity across temporal steps.
@@ -95,6 +99,9 @@ trainer.fit(inputs, inputs, epochs=50)
     *   `weight_init='orthogonal'` remains a solid fallback for pure stability.
 *   **Alternative — Tiny Networks (<10 Neurons, Logic Gates):**
     *   `weight_init='xavier_uniform'` with `activation='gelu'` if resonant convergence is too slow on very small networks.
+*   **Optional — Parametric Gating:**
+    *   Use `gate='sigmoid'` for global gating, or branch-specific lists in `[encoder_decoder, core, memory]` order.
+    *   Use `'none'` to disable a branch and `'identity'` for explicit identity gating with learnable gate parameters.
 
 ---
 
@@ -127,7 +134,7 @@ By "thinking" for 15 steps, RealNet simulates a 15-layer deep network using **on
 Uncontrolled feedback loops lead to explosion. RealNet engineers the chaos to form stable **Attractors**.
 *   **StepNorm** acts as gravity, keeping energy bounded.
 *   **GELU** filters meaningful signals.
-*   **ChaosGrad Optimizer**: Treats internal connections intelligently by isolating the **Memory Feedback** (Neuron self-connections) from the **Chaos Core** (cross-connections). It independently optimizes memory states to preserve critical temporal depth without degrading projection learning rates.
+*   **ChaosGrad Optimizer**: Treats internal connections intelligently by isolating the **Memory Feedback** (Neuron self-connections) from the **Chaos Core** (cross-connections), and now handles **Gate Parameters** as a dedicated group with independent `gate_lr_mult` and `gate_decay`.
 *   **The Latch Experiment** proved RealNet can create a "deep well" aka a stable attractor to hold a decision forever against noise.
 
 ### 5. Why Not RNN or LSTM?
@@ -290,19 +297,19 @@ RealNet's vision capabilities were tested under four distinct conditions to prov
 *   **Script:** `PoC/experiments/convergence_mnist_embed.py`
 *   **Insight:** Proves that we don't need 784 active neurons to process 784 pixels. By using an **asymmetric vocab projection**, we can squeeze the visual information into a tiny "Thinking Core" of just 10 neurons, which then solves the classification through temporal resonance. This is 10x more parameter-efficient than standard models.
 
-### E. The 470-Parameter World Record (Elite Intelligence Density)
+### E. The 480-Parameter World Record (Elite Intelligence Density)
 *   **Target:** Solve MNIST and achieve high accuracy with **less than 500 parameters**.
 *   **The Setup:**
     *   **Architecture:** RealNet with 10 core neurons.
     *   **Strategy:** 10 Sequential Chunks (79 pixels each).
     *   **Secret Sauce:** A tiny 3-neuron input projection and a 10-class output decoder.
-    *   **Total Parameters:** **470**.
+    *   **Total Parameters:** **480**.
 *   **Result:** **Acc: 89.52%** in 1000 epochs.
     <details>
     <summary>See the "Parametric Efficiency" Log</summary>
 
     ```text
-    RealNet 2.0: MNIST RECORD CHALLENGE (Elite 470-Param Model)
+    RealNet 2.0: MNIST RECORD CHALLENGE (Elite 480-Param Model)
     Epoch      1/1000 | Acc 44.24% | LR 2.00e-03 (Hyperspace start)
     ...
     Epoch    100/1000 | Acc 85.81% | LR 1.95e-03

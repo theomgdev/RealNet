@@ -36,8 +36,8 @@ RESET_DATA_ITER = False
 NUM_NEURONS = 2048
 INPUT_NEURON_COUNT = 128
 OUTPUT_NEURON_COUNT = 128
-ACTIVATION = ['none', 'gelu_tanh', 'none']
-WEIGHT_INIT = ['quiet', 'resonant', 'quiet']  # [Encoder/Decoder, Core, Memory]
+ACTIVATION = ['none', 'gelu_tanh', 'tanh', 'none']  # [Encoder/Decoder, Core, Memory, (Optional) Gates]
+WEIGHT_INIT = ['quiet', 'resonant', 'quiet', 'zero']  # [Encoder/Decoder, Core, Memory, (Optional) Gates]
 THINK_GAP = 5
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -335,7 +335,7 @@ def calculate_optimal_batch_size(model, device, seq_len, think_gap, truncated_bp
         # 1. BASELINE VRAM (Batch-size independent)
         # Note: 'actual_total_params' naturally reflects True param count. If tie_embeddings is enabled,
         # the parameter count is automatically smaller, accurately reflecting the VRAM savings.
-        actual_total_params = model.get_num_params(only_trainable=True)
+        actual_total_params = model.get_num_params()
         
         # Optimizer overhead + PyTorch/CUBLAS contexts (~1.5 GB workspace limit)
         baseline_vram = (actual_total_params * 16) + (1.5 * 1024 * 1024 * 1024)
@@ -572,7 +572,7 @@ def main():
         return out.reshape(-1, dataset.get_vocab_size())
 
     # --- MODEL INFO ---
-    total_params = model.get_num_params(only_trainable=True)
+    total_params = model.get_num_params()
     print(f"\n--- MODEL INFO ---")
     print(f"Total Trainable Parameters: {total_params:,}")
 

@@ -15,7 +15,7 @@ RealNet verimliliğini **Uzay-Zaman Takası** (Space-Time Trade-off) ile sağlar
 
 > 🏆 **DÜNYA REKORU: Parametrik Zeka Yoğunluğu**
 >
-> RealNet 2.0, MNIST üzerinde yalnızca **470 parametre** ile **%89.5 doğruluk** elde etti. Bu, efsanevi LeNet-5'ten **110 kat daha verimli** olup yapay ağlar ile **Entropi Sıkıştırma Limitleri** arasındaki uçurumu kapatıyor.
+> RealNet 2.0, MNIST üzerinde yalnızca **480 parametre** ile **%89.5 doğruluk** elde etti. Bu, efsanevi LeNet-5'ten **110 kat daha verimli** olup yapay ağlar ile **Entropi Sıkıştırma Limitleri** arasındaki uçurumu kapatıyor.
 
 ---
 
@@ -37,7 +37,7 @@ Bu testlerde Giriş Katmanı doğrudan Çıkış Katmanına (ve kendisine) bağl
 | **XOR** | Gizli Katman Gerekir | **Kaos Kapısı** (Zamana Katlanmış) | **Çözüldü (3 Nöron)** | `convergence_gates.py` |
 | **MNIST** | Gizli Katman Gerekir | **Sıfır-Gizli** | **Doğ: %96.2** | `convergence_mnist.py` |
 | **MNIST (8k)**| Gizli Katman Gerekir | **Gömülü Meydan Okuma** | **Doğ: %93.6** | `convergence_mnist_embed.py` |
-| **MNIST (Rekor)**| Gizli Katman Gerekir | **470-Param Rekoru** | **Doğ: %89.5** | `convergence_mnist_record.py` |
+| **MNIST (Rekor)**| Gizli Katman Gerekir | **480-Param Rekoru** | **Doğ: %89.5** | `convergence_mnist_record.py` |
 | **Sinüs Dalgası** | Osilatör Gerekir | **Programlanabilir VCO** | **Mükemmel Senkron** | `convergence_sine_wave.py` |
 | **Mandal** | LSTM Gerekir | **Çekici Havzası** (İrade) | **Sonsuz Tutma** | `convergence_latch.py` |
 | **Kronometre**| Saat Gerekir | **İç Ritim** | **Hata: 0** | `convergence_stopwatch.py` |
@@ -86,7 +86,11 @@ trainer.fit(inputs, inputs, epochs=50)
 
 #### Başlatma Protokolleri
 
-`weight_init=['quiet', 'resonant', 'quiet']` varsayılan stratejidir. Kodlayıcı/çözücü (encoder/decoder), çekirdek matris ve bellek geri beslemesi için sırasıyla en uygun başlatmaları sağlar. `'resonant'` gibi tek bir string değer iletilirse, ağ bunu akıllı bir şekilde otomatik olarak genişletir.
+`weight_init=['quiet', 'resonant', 'quiet', 'zero']` varsayılan stratejidir. Kodlayıcı/çözücü (encoder/decoder), çekirdek matris, bellek geri beslemesi ve gate parametreleri için sırasıyla uygun başlatmaları sağlar. `'resonant'` gibi tek bir string değer iletilirse, ağ bunu akıllı bir şekilde otomatik olarak genişletir.
+
+`activation=['none', 'tanh', 'tanh', 'none']` varsayılan aktivasyon düzenidir. İlk 3 giriş encoder/decoder, core ve memory yollarına karşılık gelir. 4. aktivasyon alanı konfigürasyon simetrisi için ayrılmıştır.
+
+`gate=None` artık varsayılan gate düzeni olan `['none', 'none', 'identity']` anlamına gelir (encoder/decoder kapalı, core kapalı, memory identity gate açık). Tüm dalları gate etmek için `gate='sigmoid'`, sadece memory için `['none', 'none', 'sigmoid']`, tüm gating'i kapatmak için `['none', 'none', 'none']` kullanılabilir.
 
 *   **Tüm Ağlar (Varsayılan Çekirdek):**
     *   `weight_init='resonant'` ve `activation='tanh'` kullanın. Çekirdek baştan Kaosun Kıyısına (ρ(W) = 1.0) yerleştirilerek, zamansal adımlarda sinyal kalitesi garanti edilir.
@@ -95,6 +99,9 @@ trainer.fit(inputs, inputs, epochs=50)
     *   `weight_init='orthogonal'` saf kararlılık için sağlam bir geri dönüş seçeneği olarak kalır.
 *   **Alternatif — Küçük Ağlar (<10 Nöron, Mantık Kapıları):**
     *   Rezonant yakınsama çok yavaşsa `weight_init='xavier_uniform'` ve `activation='gelu'` deneyin.
+*   **Opsiyonel — Parametrik Gating:**
+    *   Global gating için `gate='sigmoid'`, dal bazlı gating için `[encoder_decoder, core, memory]` sıralı listeler kullanın.
+    *   Bir dalı kapatmak için `'none'`, öğrenilebilir ama kimlik geçişli bir kapı için `'identity'` kullanın.
 
 ---
 
@@ -127,7 +134,7 @@ Sinyal her nörondan diğer her nörona ($N \times N$) yolculuk eder.
 Kontrolsüz geri besleme döngüleri patlamaya yol açar. RealNet kaosun mühendisliğini yaparak kararlı **Çekiciler** oluşturur.
 *   **StepNorm** yerçekimi gibi davranır, enerjiyi sınırlı tutar.
 *   **GELU** anlamlı sinyalleri filtreler.
-*   **ChaosGrad Optimizer:** İç bağlantıları zekice işleyerek **Hafıza Geri Beslemesini** (Nöron özbağlantıları) **Kaos Çekirdeğinden** (çapraz bağlantılar) izole eder. Projeksiyon öğrenme oranlarını bozmadan kritik zamansal derinliği korumak için hafıza durumlarını bağımsız olarak optimize eder.
+*   **ChaosGrad Optimizer:** İç bağlantıları zekice işleyerek **Hafıza Geri Beslemesini** (Nöron özbağlantıları) **Kaos Çekirdeğinden** (çapraz bağlantılar) izole eder ve **Gate Parametrelerini** bağımsız bir grup olarak `gate_lr_mult` ve `gate_decay` ile ayri optimize eder.
 *   **Mandal Deneyi** RealNet'in gürültüye karşı bir kararı sonsuza kadar tutmak için "derin bir kuyu" yani kararlı bir çekici oluşturabileceğini kanıtladı.
 
 ### 5. Neden RNN veya LSTM Değil?
@@ -290,19 +297,19 @@ RealNet'in görme yetenekleri sağlamlık, ölçeklenebilirlik ve verimliliği k
 *   **Script:** `PoC/experiments/convergence_mnist_embed.py`
 *   **Çıkarım:** 784 pikseli işlemek için 784 aktif nörona ihtiyaç duymadığımızı kanıtlar. **Asimetrik kelime dağarcığı projeksiyonu** kullanarak görsel bilgiyi yalnızca 10 nöronluk küçük bir "Düşünme Çekirdeğine" sıkıştırabiliriz; bu çekirdek daha sonra zamansal rezonans aracılığıyla sınıflandırmayı çözer. Standart modellerden 10 kat daha parametre-verimli.
 
-### E. 470 Parametrelik Dünya Rekoru (Elit Zeka Yoğunluğu)
+### E. 480 Parametrelik Dünya Rekoru (Elit Zeka Yoğunluğu)
 *   **Hedef:** MNIST'i çözmek ve **500'den az parametre** ile yüksek doğruluk elde etmek.
 *   **Kurulum:**
     *   **Mimari:** 10 çekirdek nöronlu RealNet.
     *   **Strateji:** 10 Sıralı Parça (her biri 79 piksel).
     *   **Gizli Sos:** Küçük 3 nöronlu giriş projeksiyonu ve 10 sınıflı çıkış çözümleyici.
-    *   **Toplam Parametre:** **470**.
+    *   **Toplam Parametre:** **480**.
 *   **Sonuç:** 1000 epoch'ta **Doğ: %89.52**.
     <details>
     <summary>"Parametrik Verimlilik" Günlüğünü Gör</summary>
 
     ```text
-    RealNet 2.0: MNIST RECORD CHALLENGE (Elite 470-Param Model)
+    RealNet 2.0: MNIST RECORD CHALLENGE (Elite 480-Param Model)
     Epoch      1/1000 | Acc 44.24% | LR 2.00e-03 (Hyperspace start)
     ...
     Epoch    100/1000 | Acc 85.81% | LR 1.95e-03

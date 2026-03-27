@@ -210,7 +210,7 @@ class RealNetTrainer:
                 self.scheduler.load_state_dict(scheduler_state)
             except Exception as e:
                 if verbose:
-                    print(f"   ⚠️ TemporalScheduler state restore failed after expand: {e}. Resetting scheduler state.")
+                    print(f"   WARNING: TemporalScheduler state restore failed after expand: {e}. Resetting scheduler state.")
 
     def state_dict(self):
         """Return trainer runtime state for robust checkpoint resume."""
@@ -255,7 +255,7 @@ class RealNetTrainer:
             try:
                 self.scheduler.load_state_dict(scheduler_state)
             except Exception as e:
-                print(f"⚠️ Could not restore TemporalScheduler state: {e}")
+                print(f"WARNING: Could not restore TemporalScheduler state: {e}")
 
         scaler_state = state.get('scaler_state_dict', None)
         if scaler_state is not None:
@@ -263,7 +263,7 @@ class RealNetTrainer:
                 self._ensure_scaler()
                 self.scaler.load_state_dict(scaler_state)
             except Exception as e:
-                print(f"⚠️ Could not restore GradScaler state: {e}")
+                print(f"WARNING: Could not restore GradScaler state: {e}")
 
         self._clear_persistent_grads()
         persistent_payload = state.get('persistent_grads', None)
@@ -568,7 +568,7 @@ class RealNetTrainer:
 
         # Neurogenesis internally orchestrates optimizer state migration.
         if self._using_chaos_grad and verbose:
-            print("   🌪️ ChaosGrad: Optimizer state preserved after neurogenesis.")
+            print("   ChaosGrad: Optimizer state preserved after neurogenesis.")
 
     # --- Diagnostic Methods ---
 
@@ -583,7 +583,7 @@ class RealNetTrainer:
             self.scheduler.manual_restart()
             triggered = True
         if triggered:
-            print("🚀 Manual plateau escape triggered!")
+            print("Manual plateau escape triggered!")
 
     def get_diagnostics(self):
         """

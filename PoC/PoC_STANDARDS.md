@@ -61,6 +61,7 @@ RealNet is sensitive to initialization. The default `weight_init='resonant'` is 
 For any task without a specific constraint, use the native resonant init.
 *   **Activation:** `'tanh'`
 *   **Weight Init:** `'resonant'` *(Default)* — Rademacher ±1 skeleton + spectral normalization to ρ = 1.0. Ensures signal fidelity without exploding or vanishing. Projecton layers (embed/proj/decoder) automatically use `quiet` init.
+*   **Gate:** `None` *(Default)* — resolves to `['none', 'none', 'identity']` (memory identity gate enabled; starts closed with zero gate init and opens if training needs it).
 *   **Dropout:** `0.0` *(Default)* — Enable explicitly (e.g. `0.1`) only when overfitting is observed.
 
 ```python
@@ -71,6 +72,7 @@ model = RealNet(..., activation='tanh')  # weight_init='resonant' is already the
 If `resonant` convergence is too slow on very small circuits:
 *   **Activation:** `'gelu'` (Better gradient flow in sparse/small graphs).
 *   **Weight Init:** `'xavier_uniform'` (High variance ensures signals don't die in small circuits).
+*   **Gate (Optional):** `'sigmoid'` if you need stronger branch control.
 *   **Dropout:** `0.0` (Every neuron is vital).
 
 ```python
@@ -82,11 +84,30 @@ trainer = RealNetTrainer(model, ..., synaptic_noise=0.0)  # Disable noise for pu
 If long-horizon temporal stability is the priority:
 *   **Activation:** `'tanh'`
 *   **Weight Init:** `'orthogonal'` — solid fallback for pure stability.
+*   **Gate (Optional):** `['none', 'none', 'sigmoid']` for memory-only gating.
 *   **Dropout:** `0.0` *(Default)* — Enable explicitly when overfitting is a concern.
 
 ```python
 model = RealNet(..., activation='tanh', weight_init='orthogonal')
 ```
+
+### Gate Contract (Init API)
+*   `gate=None`: default branch layout `['none', 'none', 'identity']`.
+*   `gate='sigmoid'`: same gate activation for `[encoder_decoder, core, memory]`.
+*   `gate=['none', 'none', 'sigmoid']`: only memory branch is gated.
+*   `gate=['none', 'none', 'none']`: disables all gating.
+*   List supports 1-3 entries and is right-padded from defaults.
+*   `'none'` disables a gate branch entirely.
+*   `'identity'` enables explicit identity gating (learnable gate params still exist).
+*   Gate parameter initialization uses the 4th `weight_init` slot. Default layout is `['quiet', 'resonant', 'quiet', 'zero']`.
+*   Activation layout supports 1-4 entries with default `['none', 'tanh', 'tanh', 'none']`; 4th slot is reserved for config symmetry.
+
+### Gate Optimizer Contract (ChaosGrad)
+When `gate` parameters exist, ChaosGrad handles them in a dedicated `gates` group.
+*   `gate_lr_mult`: Independent LR multiplier for gate params.
+*   `gate_decay`: Independent weight decay for gate params.
+*   Default behavior keeps gates stable (`gate_decay=0.0`) and matches base group speed (`gate_lr_mult=1.0`).
+*   Recommended start for stronger gate adaptation: `gate_lr_mult=1.1` to `1.3`, `gate_decay=0.0`.
 
 ### D. Associative Memory (Database / Key-Value)
 For tasks requiring precise storage and retrieval of values over time (e.g. Neural Database).
@@ -201,7 +222,7 @@ Use the `prepare_input` utility implicitly via the Trainer.
 Before submitting a new PoC:
 1.  [ ] Did you place it in the correct folder (`PoC/` vs `PoC/experiments/`)?
 2.  [ ] Are you using `RealNetTrainer`?
-3.  [ ] Did you select the correct `activation` and `weight_init`? (Default `resonant` is fine for most tasks.)
+3.  [ ] Did you select the correct `activation`, `weight_init`, and `gate` setup? (Default `resonant` + `gate=None` is fine for most tasks.)
 4.  [ ] Does it converge reliably?
 5.  [ ] Does the terminal output clearly explain what is happening?
 

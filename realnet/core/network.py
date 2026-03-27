@@ -6,7 +6,7 @@ import numpy as np
 from typing import cast
 
 class RealNet(nn.Module):
-    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.0, device='cpu', weight_init=None, activation=None, gradient_checkpointing=False, vocab_size=None, vocab_mode='hybrid', tie_embeddings=False):
+    def __init__(self, num_neurons, input_ids, output_ids, pulse_mode=True, dropout_rate=0.0, device='cpu', weight_init=None, activation=None, gradient_checkpointing=False, vocab_size=None, vocab_mode='hybrid', tie_embeddings=False, gate=None):
         super(RealNet, self).__init__()
         
         # Auto-size to unique input+output IDs
@@ -77,26 +77,33 @@ class RealNet(nn.Module):
         self.gradient_checkpointing = gradient_checkpointing
         self._device = device # Private variable for property
         
-        # Parse Lists
-        if weight_init is None:
-            weight_init = ['quiet', 'resonant', 'quiet']
-        elif isinstance(weight_init, str):
-            weight_init = ['quiet' if weight_init == 'resonant' else weight_init, weight_init, 'quiet']
-            
-        if activation is None:
-            activation = ['none', 'tanh', 'none']
-        elif isinstance(activation, str):
-            activation = ['none', activation, 'none']
-            
-        self.enc_dec_weight_init, self.core_weight_init, self.mem_weight_init = weight_init
+        # Parse configurable component settings
+        weight_init = self._normalize_weight_init(weight_init)
+        activation = self._normalize_activation(activation)
+        gate = self._normalize_gate(gate)
+
+        self.enc_dec_weight_init, self.core_weight_init, self.mem_weight_init, self.gate_weight_init = weight_init
         self.weight_init_strategy = self.core_weight_init
 
         self.enc_dec_act = self._build_activation(activation[0])
         self.act = self._build_activation(activation[1])        
         self.mem_act = self._build_activation(activation[2])
+        # Kept for API compatibility with optional 4th activation entry.
+        self.gate_activation_hint = activation[3]
+
+        self.enc_dec_gate_act = self._build_gate_activation(gate[0])
+        self.core_gate_act = self._build_gate_activation(gate[1])
+        self.mem_gate_act = self._build_gate_activation(gate[2])
         
         # Weight Matrix (N x N)
         self.W = nn.Parameter(torch.empty(num_neurons, num_neurons, device=device))
+
+        # Learnable gate parameters (enabled only for non-'none' gate entries)
+        self.input_gate = self._create_gate_parameter(len(input_ids), self.enc_dec_gate_act, device)
+        self.output_gate = self._create_gate_parameter(len(output_ids), self.enc_dec_gate_act, device)
+        self.core_gate = self._create_gate_parameter(num_neurons, self.core_gate_act, device)
+        self.memory_gate = self._create_gate_parameter(num_neurons, self.mem_gate_act, device)
+
         self._init_weights()
         
         # Memory Feedback (Neuron self-connections)
@@ -121,24 +128,106 @@ class RealNet(nn.Module):
         self.state = torch.zeros(1, num_neurons, device=device)
         
     def _build_activation(self, name):
-        if name is None or (isinstance(name, str) and name.lower() == 'none'):
+        if name is None:
             return nn.Identity()
-        elif name == 'tanh':
+
+        key = name.lower() if isinstance(name, str) else name
+        if key == 'none' or key == 'identity':
+            return nn.Identity()
+        elif key == 'tanh':
             return nn.Tanh()
-        elif name == 'relu':
+        elif key == 'relu':
             return nn.ReLU()
-        elif name == 'leaky_relu':
+        elif key == 'leaky_relu':
             return nn.LeakyReLU()
-        elif name == 'sigmoid':
+        elif key == 'sigmoid':
             return nn.Sigmoid()
-        elif name == 'gelu':
+        elif key == 'gelu':
             return nn.GELU()
-        elif name == 'gelu_tanh':
+        elif key == 'gelu_tanh':
             return nn.GELU(approximate='tanh')
-        elif name == 'silu':
+        elif key == 'silu':
              return nn.SiLU()
         else:
              raise ValueError(f"Unknown activation function: {name}")
+
+    def _normalize_component_list(self, value, defaults, name):
+        if value is None:
+            return defaults.copy()
+
+        if isinstance(value, (list, tuple)):
+            values = list(value)
+            if len(values) == 0:
+                raise ValueError(f"{name} list cannot be empty")
+            if len(values) > len(defaults):
+                raise ValueError(f"{name} list supports at most {len(defaults)} items, got {len(values)}")
+
+            normalized = defaults.copy()
+            normalized[:len(values)] = values
+            return normalized
+
+        raise TypeError(f"{name} must be None, str, list, or tuple")
+
+    def _normalize_weight_init(self, weight_init):
+        defaults = ['quiet', 'resonant', 'quiet', 'zero']
+        if weight_init is None:
+            return defaults.copy()
+
+        if isinstance(weight_init, str):
+            enc_dec = 'quiet' if weight_init == 'resonant' else weight_init
+            return [enc_dec, weight_init, 'quiet', 'zero']
+
+        return self._normalize_component_list(weight_init, defaults, 'weight_init')
+
+    def _normalize_activation(self, activation):
+        defaults = ['none', 'tanh', 'tanh', 'none']
+        if activation is None:
+            return defaults.copy()
+
+        if isinstance(activation, str):
+            normalized = defaults.copy()
+            normalized[1] = activation
+            return normalized
+
+        return self._normalize_component_list(activation, defaults, 'activation')
+
+    def _normalize_gate(self, gate):
+        defaults = ['none', 'none', 'identity']
+        if gate is None:
+            return defaults.copy()
+
+        if isinstance(gate, str):
+            return [gate, gate, gate]
+
+        return self._normalize_component_list(gate, defaults, 'gate')
+
+    def _build_gate_activation(self, gate_name):
+        if gate_name is None:
+            return None
+        if not isinstance(gate_name, str):
+            raise TypeError(f"gate entries must be strings or None, got {type(gate_name).__name__}")
+
+        if gate_name.lower() == 'none':
+            return None
+
+        return self._build_activation(gate_name)
+
+    def _create_gate_parameter(self, dim, gate_act, device):
+        if gate_act is None:
+            return None
+        return nn.Parameter(torch.empty(dim, device=device))
+
+    def _get_input_scale(self, dtype):
+        input_scale = self.input_scale.to(dtype)
+        if self.enc_dec_gate_act is not None and self.input_gate is not None:
+            input_scale = input_scale * self.enc_dec_gate_act(self.input_gate.to(dtype))
+        return input_scale
+
+    def _get_output_scale(self, dtype):
+        output_scale = self.output_scale.to(dtype)
+        if self.enc_dec_gate_act is not None and self.output_gate is not None:
+            output_scale = output_scale * self.enc_dec_gate_act(self.output_gate.to(dtype))
+        return output_scale
 
     def _init_weights(self):
         self._apply_init(self.W, self.core_weight_init)
@@ -149,6 +238,14 @@ class RealNet(nn.Module):
             self._apply_init(self.proj.weight, self.enc_dec_weight_init)
         if self.output_decoder is not None:
             self._apply_init(self.output_decoder.weight, self.enc_dec_weight_init)
+        if self.input_gate is not None:
+            self._apply_init(self.input_gate, self.gate_weight_init)
+        if self.output_gate is not None:
+            self._apply_init(self.output_gate, self.gate_weight_init)
+        if self.core_gate is not None:
+            self._apply_init(self.core_gate, self.gate_weight_init)
+        if self.memory_gate is not None:
+            self._apply_init(self.memory_gate, self.gate_weight_init)
         
     def _apply_init(self, tensor, strategy):
         """
@@ -223,8 +320,8 @@ class RealNet(nn.Module):
             
             return total_revived, total_params
             
-    def get_num_params(self, only_trainable=True):
-        total = sum(p.numel() for p in self.parameters() if not only_trainable or p.requires_grad)
+    def get_num_params(self):
+        total = sum(p.numel() for p in self.parameters() if p.requires_grad)
         if hasattr(self, 'W'):
             total -= self.W.shape[0]
         return total
@@ -283,10 +380,21 @@ class RealNet(nn.Module):
 
         def _single_step(h_t_in, t_idx, x_input_info):
             signal = F.linear(h_t_in, self.W.t(), self.B)
+
+            if self.core_gate_act is not None and self.core_gate is not None:
+                core_gate = self.core_gate_act(self.core_gate.to(signal.dtype))
+                signal = signal * core_gate.unsqueeze(0)
             
             feedback = h_t_in * self.memory_feedback
             feedback = self.mem_act(feedback)
+
+            if self.mem_gate_act is not None and self.memory_gate is not None:
+                memory_gate = self.mem_gate_act(self.memory_gate.to(feedback.dtype))
+                feedback = feedback * memory_gate.unsqueeze(0)
+
             signal = signal + feedback
+
+            input_scale = self._get_input_scale(signal.dtype)
             
             if x_input_info is not None:
                 if isinstance(x_input_info, tuple):
@@ -300,7 +408,7 @@ class RealNet(nn.Module):
                         v_neurons = cast(torch.Tensor, x_input_info[1])
                         s_idx = cast(torch.Tensor, x_input_info[2])
                         if v_mask.any():
-                            signal[v_mask, v_neurons] += self.input_scale[s_idx].to(signal.dtype)
+                            signal[v_mask, v_neurons] += input_scale[s_idx]
                 else:
                     # Legacy Dense Injection
                     signal = signal + x_input_info
@@ -371,14 +479,14 @@ class RealNet(nn.Module):
                          
                          # 3. Map to Network State
                          if vector is not None:
-                              # Apply Encoder Activation
-                              vector = self.enc_dec_act(vector)
-                              
-                              # Apply Input Scaling
-                              vector = vector * self.input_scale.to(vector.dtype)
-                              
-                              # Sparse tuple payload: (Flag, Data)
-                              x_step_info = (True, vector)
+                             # Apply Encoder Activation
+                             vector = self.enc_dec_act(vector)
+
+                             # Apply Input Scaling
+                             vector = vector * self._get_input_scale(vector.dtype)
+
+                             # Sparse tuple payload: (Flag, Data)
+                             x_step_info = (True, vector)
                          
                          # Caching for Continuous/Pulse persistence if needed
                          if self.pulse_mode and t==0:
@@ -436,19 +544,19 @@ class RealNet(nn.Module):
                         # Sequential Input: (Batch, MultiSteps, Neurons)
                         if t % ratio == 0 and (t // ratio) < x_input.shape[1]:
                             x_step = x_input[:, t // ratio, :].clone()
-                            x_step[:, input_pos] = x_step[:, input_pos] * self.input_scale.to(x_step.dtype)
+                            x_step[:, input_pos] = x_step[:, input_pos] * self._get_input_scale(x_step.dtype)
                             x_step_info = x_step
                             
                     elif self.pulse_mode:
                         if t == 0:
                             x_step = x_input.clone()
-                            x_step[:, input_pos] = x_step[:, input_pos] * self.input_scale.to(x_step.dtype)
+                            x_step[:, input_pos] = x_step[:, input_pos] * self._get_input_scale(x_step.dtype)
                             x_step_info = x_step
                     else:
                         # Continuous mode
                         if t == 0:
                             self._cached_scaled_input = x_input.clone()
-                            self._cached_scaled_input[:, input_pos] = self._cached_scaled_input[:, input_pos] * self.input_scale.to(self._cached_scaled_input.dtype)
+                            self._cached_scaled_input[:, input_pos] = self._cached_scaled_input[:, input_pos] * self._get_input_scale(self._cached_scaled_input.dtype)
                         x_step_info = self._cached_scaled_input
             
             # Gradient checkpointing
@@ -463,7 +571,7 @@ class RealNet(nn.Module):
 
         # Apply Output Scaling
         stacked_outputs = torch.stack(outputs, dim=1)
-        stacked_outputs[:, :, output_pos] = stacked_outputs[:, :, output_pos] * self.output_scale.to(stacked_outputs.dtype)
+        stacked_outputs[:, :, output_pos] = stacked_outputs[:, :, output_pos] * self._get_output_scale(stacked_outputs.dtype)
 
         # Vocab Decoding
         if self.output_decoder is not None:

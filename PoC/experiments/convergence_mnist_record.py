@@ -19,7 +19,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from realnet import RealNet, RealNetTrainer, ChaosGradConfig
 
 def main():
-    print("RealNet 2.0: MNIST RECORD CHALLENGE (Elite 470-Param Model)")
+    print("RealNet 2.0: MNIST RECORD CHALLENGE (Elite 480-Param Model)")
     print("Strategy: 10 Sequential Chunks (79 pixels) -> Embed(3 Neurons) -> Core(10) -> Decoder(10 Classes)")
     
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -59,7 +59,7 @@ def main():
     if 'model_compile' in locals() and model_compile:
         model = torch.compile(model)
     
-    total_params = model.get_num_params(only_trainable=False)
+    total_params = model.get_num_params()
     print(f"Total Params: {total_params} (Goal: < 1000)")
     
     # Data Preparation
@@ -77,7 +77,7 @@ def main():
     train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=train_transform)
     test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=test_transform)
     
-    # Hyperparameters for the Elite 470 model
+    # Hyperparameters for the Elite 480 model
     BATCH_SIZE = 16 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, pin_memory=True, num_workers=8)
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, pin_memory=True, num_workers=8)
