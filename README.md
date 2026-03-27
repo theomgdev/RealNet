@@ -19,11 +19,11 @@ OdyssNet achieves its efficiency through **Space-Time Trade-off**. Instead of ad
 
 ## TLDR
 
-- OdyssNet replaces spatial depth with temporal depth: one recurrent chamber "thinks" for multiple steps instead of stacking hidden layers.
-- It solves non-linear tasks (including XOR and MNIST) with **zero hidden layers** via trainable dynamics.
-- Best highlighted result: **89.5% MNIST** at only **480 parameters**.
-- The same core shows memory, rhythm, attractor stability, and transferable skills across tasks.
-- Start from [PoC experiments](PoC) for proofs, then use the library API in [odyssnet](odyssnet) for your own workloads.
+- OdyssNet replaces spatial depth with temporal depth: one recurrent core "thinks" for multiple steps instead of stacking hidden layers.
+- It solves non-linear tasks (XOR, MNIST) with **zero hidden layers** via trainable dynamics.
+- Achieves **89.5% MNIST accuracy** with only **480 parameters** (110x more efficient than LeNet-5).
+- Demonstrates memory, rhythm, attractor stability, and transferable skills across tasks.
+- Start with [PoC experiments](PoC) for proofs, then use the library API in [odyssnet](odyssnet) for your own workloads.
 
 ---
 
@@ -96,22 +96,22 @@ trainer.fit(inputs, inputs, epochs=50)
 
 #### Initialization Protocols
 
-`weight_init=['quiet', 'resonant', 'quiet', 'zero']` is the default strategy. It provides optimal initializations for encoder/decoder, core matrix, memory feedback, and gate parameters respectively. If a single string like `'resonant'` is passed, the network automatically expands it intelligently.
+`weight_init=['quiet', 'resonant', 'quiet', 'zero']` is the default strategy, providing optimal initializations for encoder/decoder, core matrix, memory feedback, and gate parameters respectively. Single string values like `'resonant'` are automatically expanded intelligently.
 
-`activation=['none', 'tanh', 'tanh', 'none']` is the default activation layout. The first 3 entries map to encoder/decoder, core, and memory paths. The 4th activation slot is reserved for config symmetry.
+`activation=['none', 'tanh', 'tanh', 'none']` is the default activation layout. The first 3 entries map to encoder/decoder, core, and memory paths. The 4th slot is reserved for config symmetry.
 
-`gate=None` now resolves to the default gate layout `['none', 'none', 'identity']` (encoder/decoder off, core off, memory identity gate on). You can pass `gate='sigmoid'` to gate all branches, a short list like `['none', 'none', 'sigmoid']` to gate only memory with sigmoid, or `['none', 'none', 'none']` to disable all gating.
+`gate=None` resolves to the default gate layout `['none', 'none', 'identity']` (encoder/decoder off, core off, memory identity gate on). You can pass `gate='sigmoid'` to gate all branches, `['none', 'none', 'sigmoid']` for memory-only gating, or `['none', 'none', 'none']` to disable all gating.
 
 *   **All Networks (Default Core):**
     *   Use `weight_init='resonant'` and `activation='tanh'`. The core will be placed at the Edge of Chaos (ρ(W) = 1.0) from the start, ensuring signal fidelity across temporal steps.
-    *   Bipolar Rademacher skeleton + spectral normalization to ρ = 1.0. 
+    *   Bipolar Rademacher skeleton + spectral normalization to ρ = 1.0.
 *   **Alternative — Large Networks (>10 Neurons):**
     *   `weight_init='orthogonal'` remains a solid fallback for pure stability.
 *   **Alternative — Tiny Networks (<10 Neurons, Logic Gates):**
-    *   `weight_init='xavier_uniform'` with `activation='gelu'` if resonant convergence is too slow on very small networks.
+    *   `weight_init='xavier_uniform'` with `activation='gelu'` if resonant convergence is too slow.
 *   **Optional — Parametric Gating:**
     *   Use `gate='sigmoid'` for global gating, or branch-specific lists in `[encoder_decoder, core, memory]` order.
-    *   Use `'none'` to disable a branch and `'identity'` for explicit identity gating with learnable gate parameters.
+    *   Use `'none'` to disable a branch and `'identity'` for explicit identity gating with learnable parameters.
 
 ---
 
@@ -144,8 +144,8 @@ By "thinking" for 15 steps, OdyssNet simulates a 15-layer deep network using **o
 Uncontrolled feedback loops lead to explosion. OdyssNet engineers the chaos to form stable **Attractors**.
 *   **StepNorm** acts as gravity, keeping energy bounded.
 *   **GELU** filters meaningful signals.
-*   **ChaosGrad Optimizer**: Treats internal connections intelligently by isolating the **Memory Feedback** (Neuron self-connections) from the **Chaos Core** (cross-connections), and now handles **Gate Parameters** as a dedicated group with independent `gate_lr_mult` and `gate_decay`.
-*   **The Latch Experiment** proved OdyssNet can create a "deep well" aka a stable attractor to hold a decision forever against noise.
+*   **ChaosGrad Optimizer**: Treats internal connections intelligently by isolating the **Memory Feedback** (neuron self-connections) from the **Chaos Core** (cross-connections), and handles **Gate Parameters** as a dedicated group with independent `gate_lr_mult` and `gate_decay`.
+*   **The Latch Experiment** proved OdyssNet can create a stable attractor to hold a decision forever against noise.
 
 ### 5. Why Not RNN or LSTM?
 

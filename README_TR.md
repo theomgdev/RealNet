@@ -21,9 +21,9 @@ OdyssNet verimliliğini **Uzay-Zaman Takası** (Space-Time Trade-off) ile sağla
 
 - OdyssNet, uzamsal derinlik yerine zamansal derinlik kullanır: katman yığmak yerine tek bir dinamik çekirdek birden fazla adım "düşünür".
 - **Sıfır gizli katman** ile XOR ve MNIST gibi doğrusal olmayan görevleri eğitilebilir dinamiklerle çözer.
-- Öne çıkan sonuç: yalnızca **480 parametre** ile **%89.5 MNIST doğruluğu**.
-- Aynı çekirdek; bellek, ritim, çekici kararlılığı ve görevler arası beceri transferi sergiler.
-- Kanıtlar için [PoC deneyleri](PoC), kendi kullanımın için [odyssnet kütüphanesi](odyssnet) başlangıç noktasıdır.
+- Yalnızca **480 parametre** ile **%89.5 MNIST doğruluğu** elde eder (LeNet-5'ten 110 kat daha verimli).
+- Bellek, ritim, çekici kararlılığı ve görevler arası beceri transferi sergiler.
+- Kanıtlar için [PoC deneyleri](PoC), kendi kullanımınız için [odyssnet kütüphanesi](odyssnet) başlangıç noktasıdır.
 
 ---
 
@@ -96,9 +96,9 @@ trainer.fit(inputs, inputs, epochs=50)
 
 #### Başlatma Protokolleri
 
-`weight_init=['quiet', 'resonant', 'quiet', 'zero']` varsayılan stratejidir. Kodlayıcı/çözücü (encoder/decoder), çekirdek matris, bellek geri beslemesi ve gate parametreleri için sırasıyla uygun başlatmaları sağlar. `'resonant'` gibi tek bir string değer iletilirse, ağ bunu akıllı bir şekilde otomatik olarak genişletir.
+`weight_init=['quiet', 'resonant', 'quiet', 'zero']` varsayılan stratejidir ve encoder/decoder, çekirdek matris, bellek geri beslemesi ve gate parametreleri için sırasıyla uygun başlatmaları sağlar. `'resonant'` gibi tek string değerler otomatik olarak akıllıca genişletilir.
 
-`activation=['none', 'tanh', 'tanh', 'none']` varsayılan aktivasyon düzenidir. İlk 3 giriş encoder/decoder, core ve memory yollarına karşılık gelir. 4. aktivasyon alanı konfigürasyon simetrisi için ayrılmıştır.
+`activation=['none', 'tanh', 'tanh', 'none']` varsayılan aktivasyon düzenidir. İlk 3 giriş encoder/decoder, core ve memory yollarına karşılık gelir. 4. alan konfigürasyon simetrisi için ayrılmıştır.
 
 `gate=None` artık varsayılan gate düzeni olan `['none', 'none', 'identity']` anlamına gelir (encoder/decoder kapalı, core kapalı, memory identity gate açık). Tüm dalları gate etmek için `gate='sigmoid'`, sadece memory için `['none', 'none', 'sigmoid']`, tüm gating'i kapatmak için `['none', 'none', 'none']` kullanılabilir.
 
@@ -111,7 +111,7 @@ trainer.fit(inputs, inputs, epochs=50)
     *   Rezonant yakınsama çok yavaşsa `weight_init='xavier_uniform'` ve `activation='gelu'` deneyin.
 *   **Opsiyonel — Parametrik Gating:**
     *   Global gating için `gate='sigmoid'`, dal bazlı gating için `[encoder_decoder, core, memory]` sıralı listeler kullanın.
-    *   Bir dalı kapatmak için `'none'`, öğrenilebilir ama kimlik geçişli bir kapı için `'identity'` kullanın.
+    *   Bir dalı kapatmak için `'none'`, öğrenilebilir parametreli kimlik geçişli bir kapı için `'identity'` kullanın.
 
 ---
 
@@ -144,8 +144,8 @@ Sinyal her nörondan diğer her nörona ($N \times N$) yolculuk eder.
 Kontrolsüz geri besleme döngüleri patlamaya yol açar. OdyssNet kaosun mühendisliğini yaparak kararlı **Çekiciler** oluşturur.
 *   **StepNorm** yerçekimi gibi davranır, enerjiyi sınırlı tutar.
 *   **GELU** anlamlı sinyalleri filtreler.
-*   **ChaosGrad Optimizer:** İç bağlantıları zekice işleyerek **Hafıza Geri Beslemesini** (Nöron özbağlantıları) **Kaos Çekirdeğinden** (çapraz bağlantılar) izole eder ve **Gate Parametrelerini** bağımsız bir grup olarak `gate_lr_mult` ve `gate_decay` ile ayri optimize eder.
-*   **Mandal Deneyi** OdyssNet'in gürültüye karşı bir kararı sonsuza kadar tutmak için "derin bir kuyu" yani kararlı bir çekici oluşturabileceğini kanıtladı.
+*   **ChaosGrad Optimizer:** İç bağlantıları zekice işleyerek **Hafıza Geri Beslemesini** (nöron özbağlantıları) **Kaos Çekirdeğinden** (çapraz bağlantılar) izole eder ve **Gate Parametrelerini** bağımsız bir grup olarak `gate_lr_mult` ve `gate_decay` ile ayrı optimize eder.
+*   **Mandal Deneyi** OdyssNet'in gürültüye karşı bir kararı sonsuza kadar tutmak için kararlı bir çekici oluşturabileceğini kanıtladı.
 
 ### 5. Neden RNN veya LSTM Değil?
 
