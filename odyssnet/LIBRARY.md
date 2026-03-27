@@ -484,6 +484,30 @@ from odyssnet.utils.data import to_tensor
 data_tensor = to_tensor(data, 'cuda')
 ```
 
+#### `set_seed(seed=42)`
+Sets a fixed seed for **reproducible results** across all random sources (Python, NumPy, PyTorch, CUDA).
+
+*   **Purpose**: Ensures consistent behavior across runs for reliable experimentation and debugging.
+*   **Seed Value**: The provided seed is applied to all randomization sources simultaneously.
+*   **CUDA Support**: Automatically configures CUDA random state if GPU is available.
+
+```python
+from odyssnet import set_seed
+
+# At the start of your script for full reproducibility
+set_seed(42)
+
+# Train or run experiments - results will be identical across runs
+model = OdyssNet(...)
+trainer = OdyssNetTrainer(model)
+trainer.fit(x, y, epochs=100)
+```
+
+**Best Practice:**
+*   Call `set_seed()` **at the start of your script**, before any random operations.
+*   Use consistent seed values (e.g., 42) for reproducible PoC and experiment validation.
+*   Different seeds can be used for ensemble training or robustness testing.
+
 ### 2. Neurogenesis (`odyssnet.utils.neurogenesis`)
 See **Neurogenesis** section above.
 

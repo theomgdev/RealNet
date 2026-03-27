@@ -206,7 +206,27 @@ Use the `prepare_input` utility implicitly via the Trainer.
 
 ## 📝 Code Style & Documentation
 
-1.  **Reproducibility:** Always clear the seed if possible, or accept that chaos is part of the design.
+1.  **Reproducibility & Seeding:** 🔴 **MANDATORY** — All PoC and experiment scripts MUST set a fixed seed for reproducible results.
+    *   **Why?** Reproducible results are essential for debugging, comparing strategies, and publishing findings.
+    *   **How?** Always call `set_seed(42)` at the **very start** of your `main()` function, before any random operations.
+    *   **Import:** `from odyssnet import set_seed`
+    *   **Example:**
+    ```python
+    def main():
+        set_seed(42)  # ← FIRST LINE in main()
+        
+        # Now all randomness is locked: model init, data shuffling, dropout, etc.
+        model = OdyssNet(...)
+        trainer = OdyssNetTrainer(model)
+        trainer.fit(X, Y, epochs=100)
+    ```
+    *   **Applies to:** 
+        *   Model weight initialization (deterministic via `torch.manual_seed`).
+        *   Data shuffling / batch sampling.
+        *   Dropout and stochastic regularization.
+        *   CUDA random state (for GPU consistency).
+    *   **Test:** If you run the script twice with the same seed, loss curves and final results should be **identical**, byte-for-byte.
+
 2.  **Visuals:** Your PoC should print a cool visualization. Don't just print "Loss: 0.01". Print the timeline.
     *   *Example:* `t=05 | Input: 1 | Output: 0.99 🟢`
 3.  **Comments:** Explain *why* you chose a specific setup.
@@ -221,10 +241,11 @@ Use the `prepare_input` utility implicitly via the Trainer.
 ## 🚀 Checklist for New Contributors
 
 Before submitting a new PoC:
-1.  [ ] Did you place it in the correct folder (`PoC/` vs `PoC/experiments/`)?
-2.  [ ] Are you using `OdyssNetTrainer`?
-3.  [ ] Did you select the correct `activation`, `weight_init`, and `gate` setup? (Default `resonant` + `gate=None` is fine for most tasks.)
-4.  [ ] Does it converge reliably?
-5.  [ ] Does the terminal output clearly explain what is happening?
+1.  [ ] **Does your script call `set_seed(42)` at the START of `main()`?** (MANDATORY for reproducibility)
+2.  [ ] Did you place it in the correct folder (`PoC/` vs `PoC/experiments/`)?
+3.  [ ] Are you using `OdyssNetTrainer`?
+4.  [ ] Did you select the correct `activation`, `weight_init`, and `gate` setup? (Default `resonant` + `gate=None` is fine for most tasks.)
+5.  [ ] Does it converge reliably?
+6.  [ ] Does the terminal output clearly explain what is happening?
 
 Welcome to the Order of the Algorithm. Let's code Time.

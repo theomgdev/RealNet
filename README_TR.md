@@ -50,7 +50,7 @@ Bu testlerde Giriş Katmanı doğrudan Çıkış Katmanına (ve kendisine) bağl
 | **Sinüs Dalgası** | Osilatör Gerekir | **Programlanabilir VCO** | **Mükemmel Senkron** | `convergence_sine_wave.py` |
 | **Mandal** | LSTM Gerekir | **Çekici Havzası** (İrade) | **Sonsuz Tutma** | `convergence_latch.py` |
 | **Kronometre**| Saat Gerekir | **İç Ritim** | **Hata: 0** | `convergence_stopwatch.py` |
-| **Dedektif**| Bellek Gerekir | **Bilişsel Sessizlik** (Akıl Yürütme) | **Mükemmel Tespit**| `convergence_detective.py` |
+| **Dedektif**| Bellek Gerekir | **Bilişsel Sessizlik** (Akıl Yürütme) | **Mükemmel Tespit**| `convergence_detective_thinking.py` |
 | **Beceri Transferi**| Baştan Eğitim Gerekir | **Toplama -> Çarpma Transplantı** | **3.5x Daha Hızlı** | `convergence_skill_transfer.py` |
 
 ### MNIST Sıfır-Gizli Mucizesi
@@ -82,7 +82,11 @@ pip install -r requirements.txt
 ### Hızlı Başlangıç
 
 ```python
-from odyssnet import OdyssNet, OdyssNetTrainer
+import torch
+from odyssnet import OdyssNet, OdyssNetTrainer, set_seed
+
+# Tüm PoC/deneyler için yeniden üretilebilir sonuçlar
+set_seed(42)
 
 # Sıfır-Gizli Ağ başlat
 # 1 Giriş, 1 Çıkış.

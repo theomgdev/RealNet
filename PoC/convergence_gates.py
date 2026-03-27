@@ -2,18 +2,9 @@ import torch
 import torch.nn as nn
 import sys
 import os
-import random
-import numpy as np
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from odyssnet import OdyssNet, OdyssNetTrainer, ChaosGradConfig
-
-def set_seed(seed=42):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+from odyssnet import OdyssNet, OdyssNetTrainer, ChaosGradConfig, set_seed
 
 def main():
     print("OdyssNet 2.0: The Impossible XOR (Zero-Hidden)...")

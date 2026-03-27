@@ -50,7 +50,7 @@ In these tests, the Input Layer is directly connected to the Output Layer (and i
 | **Sine Wave** | Needs Oscillator | **Programmable VCO** | **Perfect Sync** | `convergence_sine_wave.py` |
 | **Latch** | Needs LSTM | **Attractor Basin** (Willpower) | **Infinite Hold** | `convergence_latch.py` |
 | **Stopwatch**| Needs Clock | **Internal Rhythm** | **Error: 0** | `convergence_stopwatch.py` |
-| **Detective**| Needs Memory | **Cognitive Silence** (Reasoning) | **Perfect Detect**| `convergence_detective.py` |
+| **Detective**| Needs Memory | **Cognitive Silence** (Reasoning) | **Perfect Detect**| `convergence_detective_thinking.py` |
 | **Skill Transfer**| Needs Re-Training | **Add -> Multiply Transplant** | **3.5x Faster** | `convergence_skill_transfer.py` |
 
 ### The MNIST Zero-Hidden Miracle
@@ -82,7 +82,11 @@ pip install -r requirements.txt
 ### Quick Start
 
 ```python
-from odyssnet import OdyssNet, OdyssNetTrainer
+import torch
+from odyssnet import OdyssNet, OdyssNetTrainer, set_seed
+
+# Reproducible results for all PoC/experiments
+set_seed(42)
 
 # Initialize a Zero-Hidden Network
 # 1 Input, 1 Output. 

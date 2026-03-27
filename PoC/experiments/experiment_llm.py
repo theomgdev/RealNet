@@ -17,6 +17,8 @@ except ImportError:
 
 # --- ENVIRONMENT & IMPORTS ---
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+from odyssnet import OdyssNet, OdyssNetTrainer, save_checkpoint, load_checkpoint, transplant_weights, ChaosGradConfig, TemporalSchedulerConfig, set_seed
+from datasets import load_dataset
 from odyssnet import OdyssNet, OdyssNetTrainer, save_checkpoint, load_checkpoint, transplant_weights, ChaosGradConfig, TemporalSchedulerConfig
 from datasets import load_dataset
 
@@ -395,6 +397,7 @@ def main():
     global NUM_NEURONS, BATCH_SIZE # Allow updating global config if needed
 
     print(f"🚀 OdyssNet-LLM (TinyStories Streaming) - NATIVE THINKING MODE")
+    set_seed(42)
     print(f"--- Configuration ---")
     print(f"SEQ_LEN: {SEQ_LEN}")
     print(f"BATCH_SIZE: {BATCH_SIZE} (Will Auto-Tune if -1)")

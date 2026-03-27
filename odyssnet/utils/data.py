@@ -1,4 +1,19 @@
 import torch
+import random
+import numpy as np
+
+def set_seed(seed=42):
+    """
+    Sets a fixed seed for reproducible results across all random sources.
+    
+    Args:
+        seed (int): The seed value to set. Default is 42.
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 def prepare_input(input_features, model_input_ids, num_neurons, device):
     """

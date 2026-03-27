@@ -1,4 +1,3 @@
-
 import torch
 import torch.nn as nn
 import sys
@@ -6,7 +5,7 @@ import os
 
 # Adjust path to import odyssnet
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from odyssnet import OdyssNet, OdyssNetTrainer, ChaosGradConfig
+from odyssnet import OdyssNet, OdyssNetTrainer, ChaosGradConfig, set_seed
 
 def generate_latch_data(batch_size, seq_len, device):
     """
@@ -32,6 +31,7 @@ def generate_latch_data(batch_size, seq_len, device):
 def main():
     print("OdyssNet Experiment: Catch & Hold (The Latch)")
     print("Objective: Wait for a pulse using chaos. Once received, hold the state output at 1.0 forever.")
+    set_seed(42)
     
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Running on {DEVICE}")

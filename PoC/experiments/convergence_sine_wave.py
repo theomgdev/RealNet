@@ -1,4 +1,3 @@
-
 import torch
 import torch.nn as nn
 import sys
@@ -7,7 +6,7 @@ import math
 
 # Adjust path to import odyssnet
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from odyssnet import OdyssNet, OdyssNetTrainer, ChaosGradConfig
+from odyssnet import OdyssNet, OdyssNetTrainer, ChaosGradConfig, set_seed
 
 def generate_sine_data(batch_size, steps, device):
     """
@@ -35,6 +34,7 @@ def generate_sine_data(batch_size, steps, device):
 def main():
     print("OdyssNet Experiment: The Harmonic Oscillator (Sine Wave Generator)")
     print("Objective: One continuous input sets the frequency. The network must oscillate at that frequency for N steps.")
+    set_seed(42)
     
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Running on {DEVICE}")

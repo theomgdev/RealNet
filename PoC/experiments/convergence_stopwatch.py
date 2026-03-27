@@ -1,4 +1,3 @@
-
 import torch
 import torch.nn as nn
 import sys
@@ -6,7 +5,7 @@ import os
 
 # Adjust path to import odyssnet
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from odyssnet import OdyssNet, OdyssNetTrainer, ChaosGradConfig
+from odyssnet import OdyssNet, OdyssNetTrainer, ChaosGradConfig, set_seed
 
 def generate_stopwatch_data(batch_size, seq_len, device):
     """
@@ -38,6 +37,7 @@ def generate_stopwatch_data(batch_size, seq_len, device):
 def main():
     print("OdyssNet Experiment: The Stopwatch (Internal Clock)")
     print("Objective: Input tells 'Wait X steps'. Network must wait in silence and fire at exactly t=X.")
+    set_seed(42)
     
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Running on {DEVICE}")

@@ -1,4 +1,3 @@
-
 import torch
 import torch.nn as nn
 from torchvision import datasets, transforms
@@ -16,11 +15,12 @@ warnings.filterwarnings("ignore", message="Detected call of `lr_scheduler.step()
 os.environ["NO_BNB"] = "1"
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from odyssnet import OdyssNet, OdyssNetTrainer, ChaosGradConfig
+from odyssnet import OdyssNet, OdyssNetTrainer, ChaosGradConfig, set_seed
 
 def main():
     print("OdyssNet 2.0: MNIST RECORD CHALLENGE (Elite 480-Param Model)")
     print("Strategy: 10 Sequential Chunks (79 pixels) -> Embed(3 Neurons) -> Core(10) -> Decoder(10 Classes)")
+    set_seed(42)
     
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
     

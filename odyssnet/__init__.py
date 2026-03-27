@@ -4,6 +4,7 @@ from .training.chaos_optimizer import ChaosGrad, ChaosGradConfig
 from .training.chaos_scheduler import TemporalScheduler, TemporalSchedulerConfig
 from .utils.odyssstore import save_checkpoint, load_checkpoint, transplant_weights, get_checkpoint_info
 from .utils.neurogenesis import Neurogenesis
+from .utils.data import set_seed
 
 __all__ = [
     'OdyssNet', 
@@ -17,4 +18,5 @@ __all__ = [
     'transplant_weights',
     'get_checkpoint_info',
     'Neurogenesis',
+    'set_seed',
 ]

@@ -1,4 +1,3 @@
-
 import torch
 import torch.nn as nn
 from torchvision import datasets, transforms
@@ -8,12 +7,12 @@ import os
 import time
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from odyssnet import OdyssNet, OdyssNetTrainer, ChaosGradConfig
+from odyssnet import OdyssNet, OdyssNetTrainer, ChaosGradConfig, set_seed
 
 def main():
     print("OdyssNet 2.0: EMBEDDED MNIST CHALLENGE (8k Params)")
     print("Strategy: 784 Pixels -> Proj(10) -> RNN(10) -> Decode(10)")
-    
+    set_seed(42)
     
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
     

@@ -7,16 +7,7 @@ import torch
 
 # Adjust path to import odyssnet
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from odyssnet import ChaosGradConfig, OdyssNet, OdyssNetTrainer, save_checkpoint, transplant_weights
-
-
-def set_seed(seed=42):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-
+from odyssnet import ChaosGradConfig, OdyssNet, OdyssNetTrainer, save_checkpoint, transplant_weights, set_seed
 
 def generate_two_pulse_batch(batch_size, seq_len, delay_a, delay_b, task, device):
     """

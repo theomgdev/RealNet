@@ -1,11 +1,10 @@
-
 import torch
 import torch.nn as nn
 import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from odyssnet import OdyssNet, OdyssNetTrainer, ChaosGradConfig
+from odyssnet import OdyssNet, OdyssNetTrainer, ChaosGradConfig, set_seed
 
 def generate_dilated_data(batch_size, logic_len, gap, device):
     """
@@ -57,6 +56,7 @@ def generate_dilated_data(batch_size, logic_len, gap, device):
 def main():
     print("OdyssNet Experiment: The Thinking Detective 🕵️‍♂️")
     print("Objective: Watch a stream of bits. BUT... you have time to think between bits.")
+    set_seed(42)
     
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Running on {DEVICE}")
