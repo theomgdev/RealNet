@@ -38,6 +38,7 @@ INPUT_NEURON_COUNT = 128
 OUTPUT_NEURON_COUNT = 128
 ACTIVATION = ['none', 'gelu_tanh', 'tanh', 'none']  # [Encoder/Decoder, Core, Memory, (Optional) Gates]
 WEIGHT_INIT = ['quiet', 'resonant', 'quiet', 'zero']  # [Encoder/Decoder, Core, Memory, (Optional) Gates]
+GATES = ['none', 'none', 'identity']  # [Encoder/Decoder, Core, Memory]
 THINK_GAP = 5
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -270,7 +271,7 @@ def generate(model, tokenizer, start_str="The", length=None, temperature=0.8, to
 
     return tokenizer.decode(input_seq)
 
-def initialize_system(vocab_size, num_neurons, device, input_count=-1, output_count=-1, lr=1e-4, activation=None, weight_init=None, hook=None):
+def initialize_system(vocab_size, num_neurons, device, input_count=-1, output_count=-1, lr=1e-4, activation=None, weight_init=None, gates=None, hook=None):
     if input_count == -1:
         input_neuron_count = num_neurons // 2
     else:
@@ -293,6 +294,7 @@ def initialize_system(vocab_size, num_neurons, device, input_count=-1, output_co
         device=device,
         activation=activation,
         weight_init=weight_init,
+        gate=gates,
         gradient_checkpointing=True,
         vocab_size=vocab_size,
         vocab_mode='discrete',
@@ -408,6 +410,7 @@ def main():
     print(f"THINK_GAP: {THINK_GAP}")
     print(f"ACTIVATION: {ACTIVATION}")
     print(f"WEIGHT_INIT: {WEIGHT_INIT}")
+    print(f"GATES: {GATES}")
     print(f"TIE_EMBEDDINGS: {TIE_EMBEDDINGS}")
     tiktoken_info = f", Encoding: {TIKTOKEN_ENCODING}" if USE_TIKTOKEN else ""
     print(f"VOCAB_SIZE: {VOCAB_SIZE} (Tiktoken: {USE_TIKTOKEN}{tiktoken_info})")
@@ -473,7 +476,7 @@ def main():
     model, trainer, input_ids, output_ids = initialize_system(
         VOCAB_SIZE, NUM_NEURONS, DEVICE, 
         input_count=INPUT_NEURON_COUNT, output_count=OUTPUT_NEURON_COUNT, 
-        lr=LEARNING_RATE, activation=ACTIVATION, weight_init=WEIGHT_INIT,
+        lr=LEARNING_RATE, activation=ACTIVATION, weight_init=WEIGHT_INIT, gates=GATES,
         hook=my_anomaly_hook
     )
     NUM_NEURONS = model.num_neurons
@@ -518,7 +521,7 @@ def main():
                     if action == '1':
                         print(f"🔄 Resizing to {saved_dim}...")
                         NUM_NEURONS = saved_dim
-                        model, trainer, _, _ = initialize_system(VOCAB_SIZE, NUM_NEURONS, DEVICE, input_count=INPUT_NEURON_COUNT, output_count=OUTPUT_NEURON_COUNT, lr=LEARNING_RATE, activation=ACTIVATION, weight_init=WEIGHT_INIT)
+                        model, trainer, _, _ = initialize_system(VOCAB_SIZE, NUM_NEURONS, DEVICE, input_count=INPUT_NEURON_COUNT, output_count=OUTPUT_NEURON_COUNT, lr=LEARNING_RATE, activation=ACTIVATION, weight_init=WEIGHT_INIT, gates=GATES)
                         restore_checkpoint_runtime()
                         print(f"✅ Resuming from Epoch {start_epoch}")
 
