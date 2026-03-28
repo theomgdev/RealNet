@@ -131,7 +131,7 @@ def main():
     # Model Configuration
     # 12 neurons total:
     #   - Neurons 0-1: Input (receives digit label as scalar)
-    #   - Neurons 2-7: Output (projects to 49 pixels each = 294 pixels per step)
+    #   - Neurons 2-7: Output (6 neurons decoded together into 49 pixels per step)
     #   - Neurons 8-11: Hidden (internal processing)
     NUM_NEURONS = 12
     input_ids = [0, 1]
@@ -140,9 +140,9 @@ def main():
     # Model Initialization
     # vocab_size=[1, 49]:
     #   - Input vocab: 1 value (digit/10.0 scalar)
-    #   - Output vocab: 49 values (7×7 pixel patches per output neuron per step)
+    #   - Output vocab: 49 values (7×7 pixel patch decoded from all 6 output neurons per step)
     # Runtime uses 21 internal steps: first 5 warmup-only, last 16 supervised outputs.
-    # Supervised output remains 16 patches × 49 pixels = 784 pixels (28×28 image)
+    # Supervised output: 16 patches × 49 pixels = 784 pixels (28×28 image)
     # micro_quiet_8bit is kept intentionally for this tiny-core stability profile.
     model = OdyssNet(
         num_neurons=NUM_NEURONS,
