@@ -47,7 +47,7 @@ In these tests, the Input Layer is directly connected to the Output Layer (and i
 | **MNIST** | Needs Hidden Layer | **Zero-Hidden** | **Acc: 97.5%** | `convergence_mnist.py` |
 | **MNIST (8k)**| Needs Hidden Layer | **Embedded Challenge** | **Acc: 94.38%** | `convergence_mnist_embed.py` |
 | **MNIST (Record)**| Needs Hidden Layer | **The 480-Param Record** | **Acc: 90.14%** | `convergence_mnist_record.py` |
-| **MNIST Reverse (Generation)** | Needs Decoder | **The 484-Param Generator** | **98.83% Compression** | `convergence_mnist_reverse_record.py` |
+| **MNIST Reverse (Generation)** | Needs Decoder | **The 484-Param Generator** | **93.83% Compression** | `convergence_mnist_reverse_record.py` |
 | **Sine Wave** | Needs Oscillator | **Programmable VCO** | **Perfect Sync** | `convergence_sine_wave.py` |
 | **Latch** | Needs LSTM | **Attractor Basin** (Willpower) | **Infinite Hold** | `convergence_latch.py` |
 | **Stopwatch**| Needs Clock | **Internal Rhythm** | **Error: 0** | `convergence_stopwatch.py` |
