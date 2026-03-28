@@ -346,7 +346,7 @@ OdyssNet's vision capabilities were tested under four distinct conditions to pro
     The network successfully learned to map each scalar input (0.0, 0.1, ..., 0.9) to its corresponding digit's visual pattern. Output shows all 10 digits cleanly reconstructed from the learned dynamics.
     </details>
 *   **Script:** `PoC/experiments/convergence_mnist_reverse_record.py`
-*   **Insight:** Proves that OdyssNet can solve **bidirectional mappings**. The same 484-parameter architecture that solves classification can also solve generation—combining pattern storage with sequential synthesis. This demonstrates that temporal dynamics can encode complete visual patterns in microscopic parameter space. When combined with the 480-parameter classifier, we have achieved a **complete bidirectional MNIST model with ~1KB of parameters total**—a gateway to ultra-efficient neural computing.
+*   **Insight:** Proves that OdyssNet can solve **bidirectional mappings**. This 484-parameter generator, paired with the separate 480-parameter classifier architecture, shows that OdyssNet can handle both classification and generation—combining pattern storage with sequential synthesis. This demonstrates that temporal dynamics can encode complete visual patterns in microscopic parameter space. Together, the 480-parameter classifier and 484-parameter generator form a **complete bidirectional MNIST model with ~1KB of parameters total**—a gateway to ultra-efficient neural computing.
 
 ### G. The Sine Wave Generator (Dynamic Resonance)
 *   **Target:** Generate a sine wave where the frequency is controlled by a single input value at $t=0$.
