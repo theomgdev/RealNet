@@ -336,7 +336,7 @@ OdyssNet'in görme yetenekleri sağlamlık, ölçeklenebilirlik ve verimliliği 
     *   **Strateji:** 5 ısınma adımı + 16 çıkış adımı = toplam 21 düşünme adımı.
     *   **Parçalar:** 16 parça (7×7 her biri) 28×28 ızgarada döşenmiş.
     *   **Toplam Parametre:** **484**.
-    *   **Sıkıştırma:** 10×784 = 7,840 değer vs. 484 parametre = **%98.83 Nöral Sıkıştırma**.
+    *   **Sıkıştırma:** 10×784 = 7,840 değer vs. 484 parametre = **≈%93.83 Nöral Sıkıştırma**.
 *   **Sonuç:** Eğitim sırasında tüm MNIST rakamlarının mükemmel görsel rekonstruksiyonu.
     <details>
     <summary>Üretilmiş Görselleri Gör (Eğitim İlerleme)</summary>
