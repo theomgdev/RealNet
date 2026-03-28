@@ -79,15 +79,17 @@ def save_samples(model, trainer, device, total_thinking_steps, warmup_steps, out
         preds_full = trainer.predict(digits, thinking_steps=total_thinking_steps, full_sequence=True)
         preds = preds_full[:, warmup_steps:warmup_steps + output_steps, :]
         
-        # Reshape: (10, 16, 49) -> (10, 784) -> (10, 28, 28)
-        # Each digit's 16 patches are concatenated into a flat 784-pixel vector,
-        # then reshaped into a 28×28 image grid
-        images = preds.reshape(10, 784).cpu().numpy()
+        # Reshape patches: (10, 16, 49) -> (10, 4, 4, 7, 7) -> (10, 28, 28)
+        # Interpret 16 outputs as a 4×4 grid of 7×7 patches and tile them
+        # back into a full 28×28 image for visualization.
+        images = preds.reshape(10, 4, 4, 7, 7)              # (B, patch_row, patch_col, h, w)
+        images = images.permute(0, 1, 3, 2, 4).reshape(10, 28, 28)  # (B, H, W)
         images = (images + 1.0) / 2.0  # Denormalize from (-1, 1) to (0, 1)
+        images = images.cpu().numpy()
         
     fig, axes = plt.subplots(1, 10, figsize=(15, 2))
     for i in range(10):
-        axes[i].imshow(images[i].reshape(28, 28), cmap='gray')
+        axes[i].imshow(images[i], cmap='gray')
         axes[i].set_title(str(i))
         axes[i].axis('off')
     
